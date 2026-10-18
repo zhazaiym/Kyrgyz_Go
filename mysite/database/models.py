@@ -329,3 +329,52 @@ class TravelRequest(Base):
 
 
 
+class Chat(Base):
+    __tablename__ = "chats"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    booking_id: Mapped[int] = mapped_column(
+        ForeignKey("travel_requests.id"),
+        unique=True,
+        nullable=False
+    )
+    client_token: Mapped[str] = mapped_column(
+        String(128), unique=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc
+    )
+
+    messages: Mapped[list["ChatMessage"]] = relationship(
+        back_populates="chat",
+        cascade="all, delete-orphan"
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    chat_id: Mapped[int] = mapped_column(
+        ForeignKey("chats.id"), nullable=False
+    )
+    sender: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )
+    text: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc
+    )
+
+    chat: Mapped["Chat"] = relationship(
+        back_populates="messages"
+    )
+
+
+
