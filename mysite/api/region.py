@@ -3,13 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
-from mysite.database.models import Region
+from mysite.database.models import Region, Country
 from mysite.database.schema import (
     RegionInputSchema,
     RegionUpdateSchema,
     RegionOutSchema
 )
-
 
 region_router = APIRouter(
     prefix="/regions",
@@ -21,7 +20,8 @@ def region_result(region_db):
     return {
         "id": region_db.id,
         "name": region_db.name,
-        "image": region_db.image
+        "image": region_db.image,
+        "country_id": region_db.country_id
     }
 
 
@@ -30,9 +30,19 @@ def create_region(
     region: RegionInputSchema,
     db: Session = Depends(get_db)
 ):
+    if region.country_id is not None:
+        country_db = db.get(Country, region.country_id)
+
+        if country_db is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Мындай мамлекет жок"
+            )
+
     region_db = Region(
         name=region.name,
-        image=region.image
+        image=region.image,
+        country_id=region.country_id
     )
 
     db.add(region_db)
@@ -94,6 +104,21 @@ def update_region(
 
     if "image" in data:
         region_db.image = data["image"]
+
+    if "country_id" in data:
+        if data["country_id"] is not None:
+            country_db = db.get(
+                Country,
+                data["country_id"]
+            )
+
+            if country_db is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Мындай мамлекет жок"
+                )
+
+        region_db.country_id = data["country_id"]
 
     db.commit()
     db.refresh(region_db)
