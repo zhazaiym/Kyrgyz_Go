@@ -6,8 +6,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from mysite.database.db import Base, engine
-import mysite.database.models
 
 from mysite.api.admin import admin_router
 from mysite.api.tour_category import category_router
@@ -32,6 +30,7 @@ from mysite.api.about import about_router
 from mysite.api.about_section import about_section_router
 from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
+from mysite.admin.setup import setup_admin
 
 app = FastAPI(
     title="KYRGYZGO",
@@ -39,7 +38,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +71,7 @@ app.include_router(about_router)
 app.include_router(about_section_router)
 app.include_router(tour_image_router)
 app.include_router(tour_program_router)
+setup_admin(app)
 
 
 @app.get("/")

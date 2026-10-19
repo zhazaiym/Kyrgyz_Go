@@ -376,5 +376,3 @@ class ChatMessage(Base):
         back_populates="messages"
     )
 
-
-
