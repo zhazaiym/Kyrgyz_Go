@@ -1,7 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
-from mysite.database.models import PriceUnitChoices, RequestStatusChoices, TourTypeChoices
+
+from mysite.database.models import (
+    PriceUnitChoices,
+    RequestStatusChoices,
+    TourTypeChoices
+)
 
 class AdminInputSchema(BaseModel):
     username: str
@@ -218,14 +223,32 @@ class TourProgramOutSchema(BaseModel):
     end_time: str | None
 
 
+
+class CountryInputSchema(BaseModel):
+    name: str
+
+
+class CountryUpdateSchema(BaseModel):
+    name: str | None = None
+
+
+class CountryOutSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class RegionInputSchema(BaseModel):
     name: str
     image: str | None = None
+    country_id: int | None = None
 
 
 class RegionUpdateSchema(BaseModel):
     name: str | None = None
     image: str | None = None
+    country_id: int | None = None
 
 
 class RegionOutSchema(BaseModel):
@@ -234,6 +257,7 @@ class RegionOutSchema(BaseModel):
     id: int
     name: str
     image: str | None
+    country_id: int | None
 
 
 class DistrictInputSchema(BaseModel):

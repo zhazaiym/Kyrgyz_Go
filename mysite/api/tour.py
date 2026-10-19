@@ -1,21 +1,107 @@
 
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
-from mysite.database.models import Tour, TourCategory
+from mysite.database.models import Tour, TourCategory, TourTranslation
 from mysite.database.schema import (
     TourInputSchema,
     TourUpdateSchema,
     TourOutSchema,
     TourDetailSchema
 )
+from mysite.translations.translator import translate_tour
 
 
 tour_router = APIRouter(
     prefix="/tours",
     tags=["Tours"]
 )
+
+logger = logging.getLogger(__name__)
+
+LANGUAGES = ["en", "de", "zh"]
+TRANSLATED_FIELDS = [
+    "title",
+    "description",
+    "included",
+    "excluded"
+]
+
+
+def save_translations(tour_db: Tour, db: Session):
+    data = {
+        field: getattr(tour_db, field)
+        for field in TRANSLATED_FIELDS
+    }
+
+    translations = translate_tour(data)
+
+    for lang in LANGUAGES:
+        fields = translations[lang]
+
+        translation_db = db.query(TourTranslation).filter(
+            TourTranslation.tour_id == tour_db.id,
+            TourTranslation.lang == lang
+        ).first()
+
+        if translation_db is None:
+            translation_db = TourTranslation(
+                tour_id=tour_db.id,
+                lang=lang,
+                **fields
+            )
+            db.add(translation_db)
+        else:
+            for key, value in fields.items():
+                setattr(translation_db, key, value)
+
+
+def try_save_translations(tour_db: Tour, db: Session):
+    try:
+        # Котормо иштебесе, негизги тур сакталат.
+        # savepoint котормодогу DB өзгөрүүлөрүн
+        # өзүнчө артка кайтарууга жардам берет.
+        with db.begin_nested():
+            save_translations(tour_db, db)
+
+        return True
+
+    except Exception:
+        logger.exception(
+            "Tour %s котормосу сакталган жок",
+            tour_db.id
+        )
+        return False
+
+
+def get_localized_tour(
+    tour_db: Tour,
+    db: Session,
+    lang: str,
+    detail: bool = False
+):
+    schema = TourDetailSchema if detail else TourOutSchema
+
+    result = schema.model_validate(tour_db).model_dump(
+        mode="json"
+    )
+
+    if lang == "ru":
+        return result
+
+    translation_db = db.query(TourTranslation).filter(
+        TourTranslation.tour_id == tour_db.id,
+        TourTranslation.lang == lang
+    ).first()
+
+    if translation_db is not None:
+        for field in TRANSLATED_FIELDS:
+            result[field] = getattr(translation_db, field)
+
+    return result
 
 
 @tour_router.post("/", response_model=TourOutSchema)
@@ -32,23 +118,54 @@ def create_tour(
                 detail="Категория табылган жок"
             )
 
-    tour_db = Tour(**tour.model_dump())
+    try:
+        tour_db = Tour(**tour.model_dump())
 
-    db.add(tour_db)
-    db.commit()
-    db.refresh(tour_db)
+        db.add(tour_db)
+        db.flush()
 
-    return tour_db
+        try_save_translations(tour_db, db)
+
+        db.commit()
+        db.refresh(tour_db)
+
+        return tour_db
+
+    except Exception:
+        db.rollback()
+        logger.exception("Турду сактоо катасы")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Турду сактоо ишке ашкан жок"
+        )
 
 
 @tour_router.get("/", response_model=list[TourOutSchema])
-def list_tours(db: Session = Depends(get_db)):
-    return db.query(Tour).filter(Tour.is_active.is_(True)).all()
+def list_tours(
+    lang: str = Query(
+        default="ru",
+        pattern="^(ru|en|de|zh)$"
+    ),
+    db: Session = Depends(get_db)
+):
+    tours = db.query(Tour).filter(
+        Tour.is_active.is_(True)
+    ).all()
+
+    return [
+        get_localized_tour(tour, db, lang)
+        for tour in tours
+    ]
 
 
 @tour_router.get("/{tour_id}/", response_model=TourDetailSchema)
 def detail_tour(
     tour_id: int,
+    lang: str = Query(
+        default="ru",
+        pattern="^(ru|en|de|zh)$"
+    ),
     db: Session = Depends(get_db)
 ):
     tour_db = db.get(Tour, tour_id)
@@ -59,7 +176,12 @@ def detail_tour(
             detail="Тур табылган жок"
         )
 
-    return tour_db
+    return get_localized_tour(
+        tour_db,
+        db,
+        lang,
+        detail=True
+    )
 
 
 @tour_router.put("/{tour_id}/", response_model=TourOutSchema)
@@ -79,7 +201,10 @@ def update_tour(
     data = tour.model_dump(exclude_unset=True)
 
     if data.get("category_id") is not None:
-        category_db = db.get(TourCategory, data["category_id"])
+        category_db = db.get(
+            TourCategory,
+            data["category_id"]
+        )
 
         if category_db is None:
             raise HTTPException(
@@ -87,13 +212,80 @@ def update_tour(
                 detail="Категория табылган жок"
             )
 
-    for key, value in data.items():
-        setattr(tour_db, key, value)
+    try:
+        for key, value in data.items():
+            setattr(tour_db, key, value)
 
-    db.commit()
-    db.refresh(tour_db)
+        db.flush()
 
-    return tour_db
+        if any(
+            field in data
+            for field in TRANSLATED_FIELDS
+        ):
+            # Эски котормо жаңы орусча текстке
+            # туура келбей калышы мүмкүн.
+            db.query(TourTranslation).filter(
+                TourTranslation.tour_id == tour_db.id
+            ).delete(synchronize_session=False)
+
+            db.flush()
+            try_save_translations(tour_db, db)
+
+        db.commit()
+        db.refresh(tour_db)
+
+        return tour_db
+
+    except Exception:
+        db.rollback()
+        logger.exception("Турду жаңыртуу катасы")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Турду жаңыртуу ишке ашкан жок"
+        )
+
+
+@tour_router.post("/{tour_id}/translate/")
+def retry_tour_translation(
+    tour_id: int,
+    db: Session = Depends(get_db)
+):
+    tour_db = db.get(Tour, tour_id)
+
+    if tour_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Тур табылган жок"
+        )
+
+    try:
+        if not try_save_translations(tour_db, db):
+            db.rollback()
+
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini котормосу азыр жеткиликсиз"
+            )
+
+        db.commit()
+
+        return {
+            "message": "Тур 3 тилге которулду",
+            "languages": LANGUAGES
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception:
+        db.rollback()
+        logger.exception("Котормону сактоо катасы")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Котормону сактоо ишке ашкан жок"
+        )
 
 
 @tour_router.delete("/{tour_id}/")
@@ -109,7 +301,21 @@ def delete_tour(
             detail="Тур табылган жок"
         )
 
-    db.delete(tour_db)
-    db.commit()
+    try:
+        db.query(TourTranslation).filter(
+            TourTranslation.tour_id == tour_id
+        ).delete(synchronize_session=False)
 
-    return {"message": "Тур өчүрүлдү"}
+        db.delete(tour_db)
+        db.commit()
+
+        return {"message": "Тур өчүрүлдү"}
+
+    except Exception:
+        db.rollback()
+        logger.exception("Турду өчүрүү катасы")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Турду өчүрүү ишке ашкан жок"
+        )
