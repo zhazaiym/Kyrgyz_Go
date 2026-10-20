@@ -160,7 +160,7 @@ async def respond(message: str, state: dict, history: list, on_chunk=None):
                 result = await asyncio.to_thread(tool.invoke, call.get('args', {})) if tool else {'error': 'Unknown tool'}
             except Exception:
                 log.exception('Read-only tool failed: %s', name)
-                result = {'error': 'Р”Р°РЅРЅС‹Рµ РєРѕРјРїР°РЅРёРё СЃРµР№С‡Р°СЃ РЅРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ'}
+                result = {'error': 'Данные компании сейчас не удалось проверить'}
             msgs.append(ToolMessage(content=json.dumps(result, ensure_ascii=False, default=str),
                                     tool_call_id=call['id'], name=name))
     raise RuntimeError('Agent exceeded maximum tool rounds')
