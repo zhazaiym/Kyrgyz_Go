@@ -1,0 +1,142 @@
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from mysite.database.db import get_db
+from mysite.database.models import District, Region
+from mysite.database.schema import (
+    DistrictInputSchema,
+    DistrictUpdateSchema,
+    DistrictOutSchema
+)
+
+
+district_router = APIRouter(
+    prefix="/districts",
+    tags=["Districts"]
+)
+
+
+@district_router.post("/", response_model=DistrictOutSchema)
+def create_district(
+    district: DistrictInputSchema,
+    db: Session = Depends(get_db)
+):
+    region_db = db.get(Region, district.region_id)
+
+    if region_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Область табылган жок"
+        )
+
+    district_db = District(**district.model_dump())
+
+    db.add(district_db)
+    db.commit()
+    db.refresh(district_db)
+
+    return district_db
+
+
+@district_router.get("/", response_model=list[DistrictOutSchema])
+def list_districts(
+    db: Session = Depends(get_db)
+):
+    return db.query(District).all()
+
+
+@district_router.get("/{district_id}/", response_model=DistrictOutSchema)
+def detail_district(
+    district_id: int,
+    db: Session = Depends(get_db)
+):
+    district_db = db.get(District, district_id)
+
+    if district_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Район табылган жок"
+        )
+
+    return district_db
+
+
+@district_router.put("/{district_id}/", response_model=DistrictOutSchema)
+def update_district(
+    district_id: int,
+    district: DistrictUpdateSchema,
+    db: Session = Depends(get_db)
+):
+    district_db = db.get(District, district_id)
+
+    if district_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Район табылган жок"
+        )
+
+    data = district.model_dump(exclude_unset=True)
+
+    if "region_id" in data:
+        if data["region_id"] is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Область милдеттүү"
+            )
+
+        region_db = db.get(Region, data["region_id"])
+
+        if region_db is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Область табылган жок"
+            )
+
+        if (
+            data["region_id"] != district_db.region_id
+            and district_db.hotels
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Районго мейманканалар байланышкан"
+            )
+
+    for key, value in data.items():
+        if key == "name" and value is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Райондун аты бош болбошу керек"
+            )
+
+        setattr(district_db, key, value)
+
+    db.commit()
+    db.refresh(district_db)
+
+    return district_db
+
+
+@district_router.delete("/{district_id}/")
+def delete_district(
+    district_id: int,
+    db: Session = Depends(get_db)
+):
+    district_db = db.get(District, district_id)
+
+    if district_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Район табылган жок"
+        )
+
+    if district_db.hotels:
+        raise HTTPException(
+            status_code=400,
+            detail="Бул районго мейманканалар байланышкан"
+        )
+
+    db.delete(district_db)
+    db.commit()
+
+    return {"message": "Район өчүрүлдү"}
