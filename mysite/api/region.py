@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Region, Country
 from mysite.database.schema import (
     RegionInputSchema,
@@ -25,7 +26,7 @@ def region_result(region_db):
     }
 
 
-@region_router.post("/", response_model=RegionOutSchema)
+@region_router.post("/", response_model=RegionOutSchema, dependencies=[Depends(get_current_admin)])
 def create_region(
     region: RegionInputSchema,
     db: Session = Depends(get_db)
@@ -77,7 +78,7 @@ def detail_region(
     return region_result(region_db)
 
 
-@region_router.put("/{region_id}/", response_model=RegionOutSchema)
+@region_router.put("/{region_id}/", response_model=RegionOutSchema, dependencies=[Depends(get_current_admin)])
 def update_region(
     region_id: int,
     region: RegionUpdateSchema,
@@ -126,7 +127,7 @@ def update_region(
     return region_result(region_db)
 
 
-@region_router.delete("/{region_id}/")
+@region_router.delete("/{region_id}/", dependencies=[Depends(get_current_admin)])
 def delete_region(
     region_id: int,
     db: Session = Depends(get_db)

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Trekking, TrekkingImage
 from mysite.database.schema import (
     TrekkingImageInputSchema,
@@ -17,7 +18,7 @@ trekking_image_router = APIRouter(
 )
 
 
-@trekking_image_router.post("/", response_model=TrekkingImageOutSchema)
+@trekking_image_router.post("/", response_model=TrekkingImageOutSchema, dependencies=[Depends(get_current_admin)])
 def create_trekking_image(
     trekking_image: TrekkingImageInputSchema,
     db: Session = Depends(get_db)
@@ -63,7 +64,7 @@ def detail_trekking_image(
     return image_db
 
 
-@trekking_image_router.put("/{image_id}/", response_model=TrekkingImageOutSchema)
+@trekking_image_router.put("/{image_id}/", response_model=TrekkingImageOutSchema, dependencies=[Depends(get_current_admin)])
 def update_trekking_image(
     image_id: int,
     trekking_image: TrekkingImageUpdateSchema,
@@ -115,7 +116,7 @@ def update_trekking_image(
     return image_db
 
 
-@trekking_image_router.delete("/{image_id}/")
+@trekking_image_router.delete("/{image_id}/", dependencies=[Depends(get_current_admin)])
 def delete_trekking_image(
     image_id: int,
     db: Session = Depends(get_db)

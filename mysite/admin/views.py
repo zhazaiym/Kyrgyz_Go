@@ -2,7 +2,7 @@ from mysite.database.models import (Admin, About, AboutSection, TourCategory, To
                                      TourImage,TourProgram, Region, District, Hotel, HotelImage,
                                      Transport, TransportImage, HelicopterTour, HelicopterImage,
                                     Trekking, TrekkingImage, TrekkingProgram, Contact, FAQ, TravelRequest,
-                                    Chat, ChatMessage)
+                                   )
 from sqladmin import ModelView
 
 
@@ -91,10 +91,10 @@ class FAQAdmin(ModelView, model= FAQ):
 class TravelRequestAdmin(ModelView, model= TravelRequest):
     column_list = [TravelRequest.id, TravelRequest.name]
 
-
-class ChatAdmin(ModelView, model= Chat):
-    column_list = [Chat.id, Chat.client_token]
-
-
-class ChatMessageAdmin(ModelView, model= ChatMessage):
-    column_list = [ChatMessage.id, ChatMessage.text]
+#
+# class ChatAdmin(ModelView, model= Chat):
+#     column_list = [Chat.id, Chat.client_token]
+#
+#
+# class ChatMessageAdmin(ModelView, model= ChatMessage):
+#     column_list = [ChatMessage.id, ChatMessage.text]

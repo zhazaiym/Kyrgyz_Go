@@ -1,14 +1,11 @@
 import uvicorn
-from contextlib import asynccontextmanager
+import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
-
-# DATABASE
-from mysite.database import db as database
 
 # ADMIN
 from mysite.api.admin import admin_router
@@ -17,6 +14,7 @@ from mysite.admin.setup import setup_admin
 # OLD KYRGYZGO API
 from mysite.api.tour_category import category_router
 from mysite.api.tour import tour_router
+from mysite.api.country import country_router
 from mysite.api.region import region_router
 from mysite.api.district import district_router
 
@@ -50,29 +48,27 @@ from mysite.api.chat import chat_router
 from mysite.api.chat_ws import router as chat_ws_router
 
 
-# DATABASE LIFESPAN
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    database.Base.metadata.create_all(bind=database.engine)
-    yield
-
-
 # FASTAPI
 app = FastAPI(
     title="KYRGYZGO",
     description="KYRGYZGO Tourism API + AI Travel Assistant",
     version="1.0.0",
-    lifespan=lifespan
 )
 
 
 # CORS
+cors_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000;http://127.0.0.1:3000",
+    ).split(";")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -86,6 +82,7 @@ app.include_router(admin_router)
 # TOUR ROUTERS
 app.include_router(category_router)
 app.include_router(tour_router)
+app.include_router(country_router)
 app.include_router(region_router)
 app.include_router(district_router)
 
@@ -141,5 +138,5 @@ if __name__ == "__main__":
         "main:app",
         host="127.0.0.1",
         port=8000,
-        reload=True
+        reload=False
     )

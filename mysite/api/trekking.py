@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Trekking
 from mysite.database.schema import (
     TrekkingInputSchema,
@@ -17,7 +18,7 @@ trekking_router = APIRouter(
 )
 
 
-@trekking_router.post("/", response_model=TrekkingOutSchema)
+@trekking_router.post("/", response_model=TrekkingOutSchema, dependencies=[Depends(get_current_admin)])
 def create_trekking(
     trekking: TrekkingInputSchema,
     db: Session = Depends(get_db)
@@ -52,7 +53,7 @@ def detail_trekking(
     return trekking_db
 
 
-@trekking_router.put("/{trekking_id}/", response_model=TrekkingOutSchema)
+@trekking_router.put("/{trekking_id}/", response_model=TrekkingOutSchema, dependencies=[Depends(get_current_admin)])
 def update_trekking(
     trekking_id: int,
     trekking: TrekkingUpdateSchema,
@@ -84,7 +85,7 @@ def update_trekking(
     return trekking_db
 
 
-@trekking_router.delete("/{trekking_id}/")
+@trekking_router.delete("/{trekking_id}/", dependencies=[Depends(get_current_admin)])
 def delete_trekking(
     trekking_id: int,
     db: Session = Depends(get_db)

@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mysite.database.db import Base
@@ -102,6 +102,22 @@ class Tour(Base):
     category: Mapped["TourCategory | None"] = relationship(back_populates="tours")
     images: Mapped[list["TourImage"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
     programs: Mapped[list["TourProgram"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
+    translations: Mapped[list["TourTranslation"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
+
+
+class TourTranslation(Base):
+    __tablename__ = "tour_translations"
+    __table_args__ = (UniqueConstraint("tour_id", "lang", name="uq_tour_translation"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id", ondelete="CASCADE"), nullable=False)
+    lang: Mapped[str] = mapped_column(String(2), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    included: Mapped[str | None] = mapped_column(Text)
+    excluded: Mapped[str | None] = mapped_column(Text)
+    tour: Mapped["Tour"] = relationship(back_populates="translations")
+
 
 class TourImage(Base):
     __tablename__ = "tour_images"
@@ -125,13 +141,25 @@ class TourProgram(Base):
     end_time: Mapped[str | None] = mapped_column(String(10))
     tour: Mapped["Tour"] = relationship(back_populates="programs")
 
+class Country(Base):
+    __tablename__ = "countries"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(
+        String(150), nullable=False
+    )
+    regions: Mapped[list["Region"]] = relationship(back_populates="country")
 
 class Region(Base):
     __tablename__ = "regions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"))
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     image: Mapped[str | None] = mapped_column(String(500))
+    country: Mapped["Country | None"] = relationship(back_populates="regions")
     districts: Mapped[list["District"]] = relationship(back_populates="region")
     hotels: Mapped[list["Hotel"]] = relationship(back_populates="region")
 
@@ -326,6 +354,4 @@ class TravelRequest(Base):
     message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[RequestStatusChoices] = mapped_column(Enum(RequestStatusChoices), default=RequestStatusChoices.new, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-
-
 

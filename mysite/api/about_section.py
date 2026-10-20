@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import AboutSection
 from mysite.database.schema import (
     AboutSectionInputSchema,
@@ -14,7 +15,7 @@ about_section_router = APIRouter(
 )
 
 
-@about_section_router.post("/", response_model=AboutSectionOutSchema)
+@about_section_router.post("/", response_model=AboutSectionOutSchema, dependencies=[Depends(get_current_admin)])
 def create_about_section(data: AboutSectionInputSchema, db: Session = Depends(get_db)):
     section_db = AboutSection(**data.model_dump())
     db.add(section_db)
@@ -36,7 +37,7 @@ def detail_about_section(section_id: int, db: Session = Depends(get_db)):
     return section_db
 
 
-@about_section_router.put("/{section_id}/", response_model=AboutSectionOutSchema)
+@about_section_router.put("/{section_id}/", response_model=AboutSectionOutSchema, dependencies=[Depends(get_current_admin)])
 def update_about_section(section_id: int, data: AboutSectionUpdateSchema, db: Session = Depends(get_db)):
     section_db = db.get(AboutSection, section_id)
     if not section_db:
@@ -50,7 +51,7 @@ def update_about_section(section_id: int, data: AboutSectionUpdateSchema, db: Se
     return section_db
 
 
-@about_section_router.delete("/{section_id}/")
+@about_section_router.delete("/{section_id}/", dependencies=[Depends(get_current_admin)])
 def delete_about_section(section_id: int, db: Session = Depends(get_db)):
     section_db = db.get(AboutSection, section_id)
     if not section_db:

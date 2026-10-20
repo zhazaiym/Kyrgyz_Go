@@ -1,0 +1,23 @@
+services:
+  api:
+    image: kyrgyzgo-api:local
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "${API_BIND_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

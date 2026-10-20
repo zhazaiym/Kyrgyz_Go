@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Tour, TourProgram
 from mysite.database.schema import (
     TourProgramInputSchema,
@@ -12,7 +13,7 @@ from mysite.database.schema import (
 tour_program_router = APIRouter(prefix="/tour-programs", tags=["Tour Programs"])
 
 
-@tour_program_router.post("/", response_model=TourProgramOutSchema)
+@tour_program_router.post("/", response_model=TourProgramOutSchema, dependencies=[Depends(get_current_admin)])
 def create_tour_program(data: TourProgramInputSchema, db: Session = Depends(get_db)):
     if not db.get(Tour, data.tour_id):
         raise HTTPException(status_code=404, detail="Тур табылган жок")
@@ -40,7 +41,7 @@ def detail_tour_program(program_id: int, db: Session = Depends(get_db)):
     return program_db
 
 
-@tour_program_router.put("/{program_id}/", response_model=TourProgramOutSchema)
+@tour_program_router.put("/{program_id}/", response_model=TourProgramOutSchema, dependencies=[Depends(get_current_admin)])
 def update_tour_program(program_id: int, data: TourProgramUpdateSchema, db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db:
@@ -59,7 +60,7 @@ def update_tour_program(program_id: int, data: TourProgramUpdateSchema, db: Sess
     return program_db
 
 
-@tour_program_router.delete("/{program_id}/")
+@tour_program_router.delete("/{program_id}/", dependencies=[Depends(get_current_admin)])
 def delete_tour_program(program_id: int, db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db:

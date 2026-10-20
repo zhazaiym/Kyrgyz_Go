@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import About
 from mysite.database.schema import (
     AboutInputSchema,
@@ -12,7 +13,7 @@ from mysite.database.schema import (
 about_router = APIRouter(prefix="/abouts", tags=["About"])
 
 
-@about_router.post("/", response_model=AboutOutSchema)
+@about_router.post("/", response_model=AboutOutSchema, dependencies=[Depends(get_current_admin)])
 def create_about(data: AboutInputSchema, db: Session = Depends(get_db)):
     about_db = About(**data.model_dump())
     db.add(about_db)
@@ -34,7 +35,7 @@ def detail_about(about_id: int, db: Session = Depends(get_db)):
     return about_db
 
 
-@about_router.put("/{about_id}/", response_model=AboutOutSchema)
+@about_router.put("/{about_id}/", response_model=AboutOutSchema, dependencies=[Depends(get_current_admin)])
 def update_about(about_id: int, data: AboutUpdateSchema, db: Session = Depends(get_db)):
     about_db = db.get(About, about_id)
     if not about_db:
@@ -48,7 +49,7 @@ def update_about(about_id: int, data: AboutUpdateSchema, db: Session = Depends(g
     return about_db
 
 
-@about_router.delete("/{about_id}/")
+@about_router.delete("/{about_id}/", dependencies=[Depends(get_current_admin)])
 def delete_about(about_id: int, db: Session = Depends(get_db)):
     about_db = db.get(About, about_id)
     if not about_db:

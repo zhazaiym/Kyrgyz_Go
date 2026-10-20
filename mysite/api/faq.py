@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import FAQ
 from mysite.database.schema import (
     FAQInputSchema,
@@ -17,7 +18,7 @@ faq_router = APIRouter(
 )
 
 
-@faq_router.post("/", response_model=FAQOutSchema)
+@faq_router.post("/", response_model=FAQOutSchema, dependencies=[Depends(get_current_admin)])
 def create_faq(
     faq: FAQInputSchema,
     db: Session = Depends(get_db)
@@ -55,7 +56,7 @@ def detail_faq(
     return faq_db
 
 
-@faq_router.put("/{faq_id}/", response_model=FAQOutSchema)
+@faq_router.put("/{faq_id}/", response_model=FAQOutSchema, dependencies=[Depends(get_current_admin)])
 def update_faq(
     faq_id: int,
     faq: FAQUpdateSchema,
@@ -94,7 +95,7 @@ def update_faq(
     return faq_db
 
 
-@faq_router.delete("/{faq_id}/")
+@faq_router.delete("/{faq_id}/", dependencies=[Depends(get_current_admin)])
 def delete_faq(
     faq_id: int,
     db: Session = Depends(get_db)

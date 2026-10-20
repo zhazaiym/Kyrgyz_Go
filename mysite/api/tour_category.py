@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import TourCategory
 from mysite.database.schema import (
     TourCategoryInputSchema,
@@ -17,7 +18,7 @@ category_router = APIRouter(
 )
 
 
-@category_router.post("/", response_model=TourCategoryOutSchema)
+@category_router.post("/", response_model=TourCategoryOutSchema, dependencies=[Depends(get_current_admin)])
 def create_category(
     category: TourCategoryInputSchema,
     db: Session = Depends(get_db)
@@ -52,7 +53,7 @@ def detail_category(
     return category_db
 
 
-@category_router.put("/{category_id}/", response_model=TourCategoryOutSchema)
+@category_router.put("/{category_id}/", response_model=TourCategoryOutSchema, dependencies=[Depends(get_current_admin)])
 def update_category(
     category_id: int,
     category: TourCategoryUpdateSchema,
@@ -75,7 +76,7 @@ def update_category(
     return category_db
 
 
-@category_router.delete("/{category_id}/")
+@category_router.delete("/{category_id}/", dependencies=[Depends(get_current_admin)])
 def delete_category(
     category_id: int,
     db: Session = Depends(get_db)
