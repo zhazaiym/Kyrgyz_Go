@@ -1,0 +1,105 @@
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from mysite.database.db import get_db
+from mysite.database.models import TravelRequest
+from mysite.database.schema import (
+    TravelRequestInputSchema,
+    TravelRequestUpdateSchema,
+    TravelRequestOutSchema
+)
+
+
+travel_request_router = APIRouter(
+    prefix="/travel-requests",
+    tags=["Travel Requests"]
+)
+
+
+@travel_request_router.post("/", response_model=TravelRequestOutSchema)
+def create_travel_request(
+    request: TravelRequestInputSchema,
+    db: Session = Depends(get_db)
+):
+    request_db = TravelRequest(**request.model_dump())
+
+    db.add(request_db)
+    db.commit()
+    db.refresh(request_db)
+
+    return request_db
+
+
+@travel_request_router.get("/", response_model=list[TravelRequestOutSchema])
+def list_travel_requests(db: Session = Depends(get_db)):
+    return db.query(TravelRequest).order_by(
+        TravelRequest.id.desc()
+    ).all()
+
+
+@travel_request_router.get("/{request_id}/", response_model=TravelRequestOutSchema)
+def detail_travel_request(
+    request_id: int,
+    db: Session = Depends(get_db)
+):
+    request_db = db.get(TravelRequest, request_id)
+
+    if request_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Заявка табылган жок"
+        )
+
+    return request_db
+
+
+@travel_request_router.put("/{request_id}/", response_model=TravelRequestOutSchema)
+def update_travel_request(
+    request_id: int,
+    request: TravelRequestUpdateSchema,
+    db: Session = Depends(get_db)
+):
+    request_db = db.get(TravelRequest, request_id)
+
+    if request_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Заявка табылган жок"
+        )
+
+    data = request.model_dump(exclude_unset=True)
+
+    for field in ("name", "phone", "status"):
+        if field in data and data[field] is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field} бош болбошу керек"
+            )
+
+    for key, value in data.items():
+        setattr(request_db, key, value)
+
+    db.commit()
+    db.refresh(request_db)
+
+    return request_db
+
+
+@travel_request_router.delete("/{request_id}/")
+def delete_travel_request(
+    request_id: int,
+    db: Session = Depends(get_db)
+):
+    request_db = db.get(TravelRequest, request_id)
+
+    if request_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Заявка табылган жок"
+        )
+
+    db.delete(request_db)
+    db.commit()
+
+    return {"message": "Заявка өчүрүлдү"}
