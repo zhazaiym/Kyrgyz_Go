@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Transport
 from mysite.database.schema import (
     TransportInputSchema,
@@ -17,7 +18,7 @@ transport_router = APIRouter(
 )
 
 
-@transport_router.post("/", response_model=TransportOutSchema)
+@transport_router.post("/", response_model=TransportOutSchema, dependencies=[Depends(get_current_admin)])
 def create_transport(
     transport: TransportInputSchema,
     db: Session = Depends(get_db)
@@ -54,7 +55,7 @@ def detail_transport(
     return transport_db
 
 
-@transport_router.put("/{transport_id}/", response_model=TransportOutSchema)
+@transport_router.put("/{transport_id}/", response_model=TransportOutSchema, dependencies=[Depends(get_current_admin)])
 def update_transport(
     transport_id: int,
     transport: TransportUpdateSchema,
@@ -86,7 +87,7 @@ def update_transport(
     return transport_db
 
 
-@transport_router.delete("/{transport_id}/")
+@transport_router.delete("/{transport_id}/", dependencies=[Depends(get_current_admin)])
 def delete_transport(
     transport_id: int,
     db: Session = Depends(get_db)

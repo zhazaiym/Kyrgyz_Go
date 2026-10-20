@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import TravelRequest
 from mysite.database.schema import (
     TravelRequestInputSchema,
@@ -31,14 +32,14 @@ def create_travel_request(
     return request_db
 
 
-@travel_request_router.get("/", response_model=list[TravelRequestOutSchema])
+@travel_request_router.get("/", response_model=list[TravelRequestOutSchema], dependencies=[Depends(get_current_admin)])
 def list_travel_requests(db: Session = Depends(get_db)):
     return db.query(TravelRequest).order_by(
         TravelRequest.id.desc()
     ).all()
 
 
-@travel_request_router.get("/{request_id}/", response_model=TravelRequestOutSchema)
+@travel_request_router.get("/{request_id}/", response_model=TravelRequestOutSchema, dependencies=[Depends(get_current_admin)])
 def detail_travel_request(
     request_id: int,
     db: Session = Depends(get_db)
@@ -54,7 +55,7 @@ def detail_travel_request(
     return request_db
 
 
-@travel_request_router.put("/{request_id}/", response_model=TravelRequestOutSchema)
+@travel_request_router.put("/{request_id}/", response_model=TravelRequestOutSchema, dependencies=[Depends(get_current_admin)])
 def update_travel_request(
     request_id: int,
     request: TravelRequestUpdateSchema,
@@ -86,7 +87,7 @@ def update_travel_request(
     return request_db
 
 
-@travel_request_router.delete("/{request_id}/")
+@travel_request_router.delete("/{request_id}/", dependencies=[Depends(get_current_admin)])
 def delete_travel_request(
     request_id: int,
     db: Session = Depends(get_db)

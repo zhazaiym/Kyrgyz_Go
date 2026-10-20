@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Tour, TourCategory, TourTranslation
 from mysite.database.schema import (
     TourInputSchema,
@@ -104,7 +105,7 @@ def get_localized_tour(
     return result
 
 
-@tour_router.post("/", response_model=TourOutSchema)
+@tour_router.post("/", response_model=TourOutSchema, dependencies=[Depends(get_current_admin)])
 def create_tour(
     tour: TourInputSchema,
     db: Session = Depends(get_db)
@@ -184,7 +185,7 @@ def detail_tour(
     )
 
 
-@tour_router.put("/{tour_id}/", response_model=TourOutSchema)
+@tour_router.put("/{tour_id}/", response_model=TourOutSchema, dependencies=[Depends(get_current_admin)])
 def update_tour(
     tour_id: int,
     tour: TourUpdateSchema,
@@ -246,7 +247,7 @@ def update_tour(
         )
 
 
-@tour_router.post("/{tour_id}/translate/")
+@tour_router.post("/{tour_id}/translate/", dependencies=[Depends(get_current_admin)])
 def retry_tour_translation(
     tour_id: int,
     db: Session = Depends(get_db)
@@ -288,7 +289,7 @@ def retry_tour_translation(
         )
 
 
-@tour_router.delete("/{tour_id}/")
+@tour_router.delete("/{tour_id}/", dependencies=[Depends(get_current_admin)])
 def delete_tour(
     tour_id: int,
     db: Session = Depends(get_db)

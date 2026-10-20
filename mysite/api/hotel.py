@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Hotel, Region, District
 from mysite.database.schema import (
     HotelInputSchema,
@@ -41,7 +42,7 @@ def check_location(db, region_id, district_id):
         )
 
 
-@hotel_router.post("/", response_model=HotelOutSchema)
+@hotel_router.post("/", response_model=HotelOutSchema, dependencies=[Depends(get_current_admin)])
 def create_hotel(
     hotel: HotelInputSchema,
     db: Session = Depends(get_db)
@@ -84,7 +85,7 @@ def detail_hotel(
     return hotel_db
 
 
-@hotel_router.put("/{hotel_id}/", response_model=HotelOutSchema)
+@hotel_router.put("/{hotel_id}/", response_model=HotelOutSchema, dependencies=[Depends(get_current_admin)])
 def update_hotel(
     hotel_id: int,
     hotel: HotelUpdateSchema,
@@ -131,7 +132,7 @@ def update_hotel(
     return hotel_db
 
 
-@hotel_router.delete("/{hotel_id}/")
+@hotel_router.delete("/{hotel_id}/", dependencies=[Depends(get_current_admin)])
 def delete_hotel(
     hotel_id: int,
     db: Session = Depends(get_db)

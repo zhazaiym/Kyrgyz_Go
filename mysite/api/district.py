@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import District, Region
 from mysite.database.schema import (
     DistrictInputSchema,
@@ -17,7 +18,7 @@ district_router = APIRouter(
 )
 
 
-@district_router.post("/", response_model=DistrictOutSchema)
+@district_router.post("/", response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)])
 def create_district(
     district: DistrictInputSchema,
     db: Session = Depends(get_db)
@@ -62,7 +63,7 @@ def detail_district(
     return district_db
 
 
-@district_router.put("/{district_id}/", response_model=DistrictOutSchema)
+@district_router.put("/{district_id}/", response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)])
 def update_district(
     district_id: int,
     district: DistrictUpdateSchema,
@@ -117,7 +118,7 @@ def update_district(
     return district_db
 
 
-@district_router.delete("/{district_id}/")
+@district_router.delete("/{district_id}/", dependencies=[Depends(get_current_admin)])
 def delete_district(
     district_id: int,
     db: Session = Depends(get_db)

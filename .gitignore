@@ -5,3 +5,7 @@
 __pycache__/
 *.pyc
 .venv/
+venv/
+.test_*.db
+.pytest_cache/
+pytest-cache-files-*/

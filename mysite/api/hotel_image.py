@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Hotel, HotelImage
 from mysite.database.schema import (
     HotelImageInputSchema,
@@ -17,7 +18,7 @@ hotel_image_router = APIRouter(
 )
 
 
-@hotel_image_router.post("/", response_model=HotelImageOutSchema)
+@hotel_image_router.post("/", response_model=HotelImageOutSchema, dependencies=[Depends(get_current_admin)])
 def create_hotel_image(
     hotel_image: HotelImageInputSchema,
     db: Session = Depends(get_db)
@@ -67,7 +68,7 @@ def detail_hotel_image(
     return hotel_image_db
 
 
-@hotel_image_router.put("/{image_id}/", response_model=HotelImageOutSchema)
+@hotel_image_router.put("/{image_id}/", response_model=HotelImageOutSchema, dependencies=[Depends(get_current_admin)])
 def update_hotel_image(
     image_id: int,
     hotel_image: HotelImageUpdateSchema,
@@ -119,7 +120,7 @@ def update_hotel_image(
     return hotel_image_db
 
 
-@hotel_image_router.delete("/{image_id}/")
+@hotel_image_router.delete("/{image_id}/", dependencies=[Depends(get_current_admin)])
 def delete_hotel_image(
     image_id: int,
     db: Session = Depends(get_db)

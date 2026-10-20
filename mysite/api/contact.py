@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Contact
 from mysite.database.schema import (
     ContactInputSchema,
@@ -31,12 +32,12 @@ def create_contact(
     return contact_db
 
 
-@contact_router.get("/", response_model=list[ContactOutSchema])
+@contact_router.get("/", response_model=list[ContactOutSchema], dependencies=[Depends(get_current_admin)])
 def list_contacts(db: Session = Depends(get_db)):
     return db.query(Contact).all()
 
 
-@contact_router.get("/{contact_id}/", response_model=ContactOutSchema)
+@contact_router.get("/{contact_id}/", response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)])
 def detail_contact(
     contact_id: int,
     db: Session = Depends(get_db)
@@ -52,7 +53,7 @@ def detail_contact(
     return contact_db
 
 
-@contact_router.put("/{contact_id}/", response_model=ContactOutSchema)
+@contact_router.put("/{contact_id}/", response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)])
 def update_contact(
     contact_id: int,
     contact: ContactUpdateSchema,
@@ -83,7 +84,7 @@ def update_contact(
     return contact_db
 
 
-@contact_router.delete("/{contact_id}/")
+@contact_router.delete("/{contact_id}/", dependencies=[Depends(get_current_admin)])
 def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db)

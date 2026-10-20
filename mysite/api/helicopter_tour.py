@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import HelicopterTour
 from mysite.database.schema import (
     HelicopterTourInputSchema,
@@ -17,7 +18,7 @@ helicopter_tour_router = APIRouter(
 )
 
 
-@helicopter_tour_router.post("/", response_model=HelicopterTourOutSchema)
+@helicopter_tour_router.post("/", response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)])
 def create_helicopter_tour(
     helicopter: HelicopterTourInputSchema,
     db: Session = Depends(get_db)
@@ -54,7 +55,7 @@ def detail_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.put("/{helicopter_id}/", response_model=HelicopterTourOutSchema)
+@helicopter_tour_router.put("/{helicopter_id}/", response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)])
 def update_helicopter_tour(
     helicopter_id: int,
     helicopter: HelicopterTourUpdateSchema,
@@ -86,7 +87,7 @@ def update_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.delete("/{helicopter_id}/")
+@helicopter_tour_router.delete("/{helicopter_id}/", dependencies=[Depends(get_current_admin)])
 def delete_helicopter_tour(
     helicopter_id: int,
     db: Session = Depends(get_db)

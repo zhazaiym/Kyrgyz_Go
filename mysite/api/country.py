@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Country
 from mysite.database.schema import (
     CountryInputSchema,
@@ -16,7 +17,7 @@ country_router = APIRouter(
 )
 
 
-@country_router.post("/", response_model=CountryOutSchema)
+@country_router.post("/", response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)])
 def create_country(
     country: CountryInputSchema,
     db: Session = Depends(get_db)
@@ -55,7 +56,7 @@ def detail_country(
     return country_db
 
 
-@country_router.put("/{country_id}/", response_model=CountryOutSchema)
+@country_router.put("/{country_id}/", response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)])
 def update_country(
     country_id: int,
     country: CountryUpdateSchema,
@@ -86,7 +87,7 @@ def update_country(
     return country_db
 
 
-@country_router.delete("/{country_id}/")
+@country_router.delete("/{country_id}/", dependencies=[Depends(get_current_admin)])
 def delete_country(
     country_id: int,
     db: Session = Depends(get_db)
