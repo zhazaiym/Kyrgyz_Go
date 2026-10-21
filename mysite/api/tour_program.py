@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Tour, TourProgram
 from mysite.database.schema import (
     TourProgramInputSchema,
@@ -20,25 +21,26 @@ def create_tour_program(data: TourProgramInputSchema, db: Session = Depends(get_
 
     program_db = TourProgram(**data.model_dump())
     db.add(program_db)
+    update_translations(program_db)
     db.commit()
     db.refresh(program_db)
     return program_db
 
 
 @tour_program_router.get("/", response_model=list[TourProgramOutSchema])
-def list_tour_programs(tour_id: int | None = None, db: Session = Depends(get_db)):
+def list_tour_programs(tour_id: int | None = None, lang: Language = "ru", db: Session = Depends(get_db)):
     query = db.query(TourProgram)
     if tour_id is not None:
         query = query.filter(TourProgram.tour_id == tour_id)
-    return query.order_by(TourProgram.day_number).all()
+    return [localized(record, lang) for record in query.order_by(TourProgram.day_number).all()]
 
 
 @tour_program_router.get("/{program_id}/", response_model=TourProgramOutSchema)
-def detail_tour_program(program_id: int, db: Session = Depends(get_db)):
+def detail_tour_program(program_id: int, lang: Language = "ru", db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db:
         raise HTTPException(status_code=404, detail="Программа табылган жок")
-    return program_db
+    return localized(program_db, lang)
 
 
 @tour_program_router.put("/{program_id}/", response_model=TourProgramOutSchema, dependencies=[Depends(get_current_admin)])
@@ -55,6 +57,7 @@ def update_tour_program(program_id: int, data: TourProgramUpdateSchema, db: Sess
     for key, value in values.items():
         setattr(program_db, key, value)
 
+    update_translations(program_db)
     db.commit()
     db.refresh(program_db)
     return program_db

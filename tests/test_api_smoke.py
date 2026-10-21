@@ -19,6 +19,7 @@ PUBLIC_LIST_ROUTES = [
     "/trekking-images/",
     "/trekking-programs/",
     "/faqs/",
+    "/contacts/",
     "/abouts/",
     "/about-sections/",
     "/tour-images/",
@@ -64,7 +65,6 @@ def test_catalogue_writes_reject_anonymous_requests(client, method, path):
 
 
 def test_private_customer_routes_reject_anonymous_requests(client):
-    assert client.get("/contacts/").status_code == 401
     assert client.get("/contacts/1/").status_code == 401
     assert client.get("/travel-requests/").status_code == 401
     assert client.get("/travel-requests/1/").status_code == 401

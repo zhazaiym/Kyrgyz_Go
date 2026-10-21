@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Trekking
 from mysite.database.schema import (
     TrekkingInputSchema,
@@ -26,6 +27,7 @@ def create_trekking(
     trekking_db = Trekking(**trekking.model_dump())
 
     db.add(trekking_db)
+    update_translations(trekking_db)
     db.commit()
     db.refresh(trekking_db)
 
@@ -33,13 +35,14 @@ def create_trekking(
 
 
 @trekking_router.get("/", response_model=list[TrekkingOutSchema])
-def list_trekkings(db: Session = Depends(get_db)):
-    return db.query(Trekking).all()
+def list_trekkings(lang: Language = "ru", db: Session = Depends(get_db)):
+    return [localized(record, lang) for record in db.query(Trekking).all()]
 
 
 @trekking_router.get("/{trekking_id}/", response_model=TrekkingOutSchema)
 def detail_trekking(
     trekking_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     trekking_db = db.get(Trekking, trekking_id)
@@ -50,7 +53,7 @@ def detail_trekking(
             detail="Треккинг табылган жок"
         )
 
-    return trekking_db
+    return localized(trekking_db, lang)
 
 
 @trekking_router.put("/{trekking_id}/", response_model=TrekkingOutSchema, dependencies=[Depends(get_current_admin)])
@@ -79,6 +82,7 @@ def update_trekking(
     for key, value in data.items():
         setattr(trekking_db, key, value)
 
+    update_translations(trekking_db)
     db.commit()
     db.refresh(trekking_db)
 

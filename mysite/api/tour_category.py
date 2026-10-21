@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import TourCategory
 from mysite.database.schema import (
     TourCategoryInputSchema,
@@ -26,6 +27,7 @@ def create_category(
     category_db = TourCategory(**category.model_dump())
 
     db.add(category_db)
+    update_translations(category_db)
     db.commit()
     db.refresh(category_db)
 
@@ -33,13 +35,14 @@ def create_category(
 
 
 @category_router.get("/", response_model=list[TourCategoryOutSchema])
-def list_category(db: Session = Depends(get_db)):
-    return db.query(TourCategory).all()
+def list_category(lang: Language = "ru", db: Session = Depends(get_db)):
+    return [localized(record, lang) for record in db.query(TourCategory).all()]
 
 
 @category_router.get("/{category_id}/", response_model=TourCategoryOutSchema)
 def detail_category(
     category_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     category_db = db.get(TourCategory, category_id)
@@ -50,7 +53,7 @@ def detail_category(
             detail="Категория табылган жок"
         )
 
-    return category_db
+    return localized(category_db, lang)
 
 
 @category_router.put("/{category_id}/", response_model=TourCategoryOutSchema, dependencies=[Depends(get_current_admin)])
@@ -70,6 +73,7 @@ def update_category(
     for key, value in category.model_dump(exclude_unset=True).items():
         setattr(category_db, key, value)
 
+    update_translations(category_db)
     db.commit()
     db.refresh(category_db)
 

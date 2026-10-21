@@ -82,6 +82,57 @@ SQLite database.
 
 ### HTTPS on a Linux server
 
+Alternatively, use the included Caddy proxy with automatic HTTPS:
+
+1. Use your public IP (currently `13.53.40.37`), or point a domain's DNS A/AAAA
+   records to the server. Allow inbound TCP ports 80 and 443. Stop any other
+   service using these ports after checking how the current API is hosted.
+2. Set `API_DOMAIN=13.53.40.37` (or your domain) and `FORWARDED_ALLOW_IPS=*` in
+   `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
+   and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
+   remains accessible only locally and through the proxy.
+3. Run `docker compose --profile https config --quiet`, then
+   `docker compose --profile https up --build -d`.
+4. Verify `https://13.53.40.37/` and `/contacts/` without authorization, using your
+   domain instead if configured. Check the certificate without bypassing TLS verification.
+
+The single `docker-compose.yml` includes an optional `https` profile. Without
+that profile, only the API starts. With it, Caddy exposes ports 80/443 and
+persists TLS certificates in Docker volumes; the API remains bound to localhost.
+Continue to use `--profile https` for updates, or set `COMPOSE_PROFILES=https` in
+the server `.env` to use plain `docker compose up --build -d`.
+Caddy 2.10.1+ obtains and renews short-lived Let's Encrypt certificates
+for public IPs and domains. The Caddyfile sets a default SNI for clients connecting
+by IP. Keep the certificate volumes and proxy running so renewal is automatic.
+See the [Caddy HTTPS guide](https://caddyserver.com/docs/quick-starts/https) and
+[Let's Encrypt IP certificates](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
+
+### Test catalogue and translations
+
+After migrations, explicitly add test catalogue data with:
+
+```bash
+docker compose exec api python seed_demo.py
+```
+
+Without Docker, run `python seed_demo.py` against the configured `DATABASE_URL`.
+This creates 20 entries in each of tours, hotels, transport, trekking, helicopter
+tours and FAQ (120 catalogue entries total), with
+`ТЕСТ` labels, placeholder prices/photos and ru/en/de/zh texts. Numbered variants
+use synthetic coordinates and prices. Re-running the
+command preserves existing entries and does not create duplicates. Data is
+never seeded automatically in production.
+
+Public catalogue GETs accept `?lang=ru|en|de|zh`; the default is Russian.
+Translations are generated on content changes through the API or SQLAdmin and
+stored in the database. If generation fails or a field has no translation, GET
+returns the original text. The SQLAdmin `translations` JSON field also supports
+manual translations, for example `{"en":{"question":"Question?","answer":"Answer."}}`.
+Existing records need to be saved with changed source text or supplied manual
+translations to populate their translations. Public GETs make no AI calls.
+
+### Manual Nginx alternative
+
 The API port binds to `127.0.0.1:8000` by default. Put a host Nginx instance
 in front of it, configure DNS and a valid TLS certificate for the API domain,
 and expose only the HTTPS proxy publicly. Set `FORWARDED_ALLOW_IPS=*` in the
