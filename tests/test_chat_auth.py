@@ -1,3 +1,9 @@
+import asyncio
+import threading
+import time
+
+import pytest
+
 from mysite.database.chat_models import ChatSession
 from mysite.database.db import SessionLocal
 
@@ -121,3 +127,130 @@ def test_websocket_authentication_accepts_owned_session(client):
             "type": "connected",
             "session_id": session_id,
         }
+
+
+@pytest.mark.parametrize('operation', ['authentication', 'message', 'confirmation'])
+def test_chat_database_wait_does_not_block_event_loop(client, monkeypatch, operation):
+    from fastapi import HTTPException, WebSocketDisconnect
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from mysite.api import chat_service, chat_ws
+    from mysite.database.db import engine
+
+    token = register(client, f'chat_pool_{operation}')
+    client_id = client.get('/chat/auth/me', headers=bearer(token)).json()['client_id']
+    session_id = client.post('/chat/session', headers=bearer(token)).json()['session_id']
+    limited_engine = create_engine(
+        engine.url, pool_size=1, max_overflow=0, pool_timeout=3,
+        connect_args={'check_same_thread': False},
+    )
+    sessions = sessionmaker(bind=limited_engine, autoflush=False)
+    monkeypatch.setattr(chat_service, 'SessionLocal', sessions)
+    monkeypatch.setattr(chat_ws, 'SessionLocal', sessions)
+
+    async def offline_reply(message, state, history, on_chunk=None):
+        return 'Test response', state, False
+
+    monkeypatch.setattr(chat_service, 'respond', offline_reply)
+
+    class Socket:
+        headers = {'origin': 'http://localhost:3000'}
+
+        def __init__(self):
+            self.received = False
+            self.sent = []
+
+        async def accept(self):
+            pass
+
+        async def receive_json(self):
+            if self.received:
+                raise WebSocketDisconnect()
+            self.received = True
+            return {'type': 'auth', 'token': token}
+
+        async def send_json(self, data):
+            self.sent.append(data)
+
+        async def close(self, code):
+            pass
+
+    socket = Socket()
+    held = limited_engine.connect()
+    release = threading.Timer(0.6, held.close)
+
+    async def run():
+        started = time.monotonic()
+
+        async def heartbeat():
+            await asyncio.sleep(0.05)
+            return time.monotonic() - started
+
+        if operation == 'authentication':
+            task = chat_ws.socket(socket, session_id)
+        elif operation == 'message':
+            task = chat_service.process_message(session_id, client_id, token, 'Hello')
+        else:
+            task = chat_service.confirm_booking_serialized(session_id, client_id, token, 0, False)
+        release.start()
+        result, delay = await asyncio.gather(task, heartbeat(), return_exceptions=True)
+        assert delay < 0.3, f'Database checkout blocked the event loop for {delay:.2f}s'
+        if operation == 'confirmation':
+            assert isinstance(result, HTTPException) and result.status_code == 400
+        elif operation == 'message':
+            assert result['answer'] == 'Test response'
+        else:
+            assert result is None
+            assert socket.sent[0]['type'] == 'connected'
+
+    try:
+        asyncio.run(run())
+    finally:
+        release.join()
+        held.close()
+        limited_engine.dispose()
+
+
+def test_cancelled_chat_write_keeps_session_serialized(client, monkeypatch):
+    from mysite.api import chat_service
+    from mysite.database.chat_models import ChatMessage
+
+    token = register(client, 'chat_cancelled_write')
+    client_id = client.get('/chat/auth/me', headers=bearer(token)).json()['client_id']
+    session_id = client.post('/chat/session', headers=bearer(token)).json()['session_id']
+    entered = threading.Event()
+    release = threading.Event()
+    save = chat_service._save_message_response
+
+    def paused_save(*args):
+        entered.set()
+        assert release.wait(timeout=3)
+        return save(*args)
+
+    async def offline_reply(message, state, history, on_chunk=None):
+        return 'Test response', state, False
+
+    monkeypatch.setattr(chat_service, '_save_message_response', paused_save)
+    monkeypatch.setattr(chat_service, 'respond', offline_reply)
+
+    async def run():
+        first = asyncio.create_task(chat_service.process_message(
+            session_id, client_id, token, 'First request'))
+        second = None
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            first.cancel()
+            second = asyncio.create_task(chat_service.process_message(
+                session_id, client_id, token, 'Second request'))
+            await asyncio.sleep(0.1)
+            with SessionLocal() as db:
+                assert not db.query(ChatMessage).filter_by(
+                    session_id=session_id, role='user', content='Second request').first(), (
+                    'Next message ran while cancelled database write was still active'
+                )
+        finally:
+            release.set()
+            tasks = [first] + ([second] if second else [])
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(run())

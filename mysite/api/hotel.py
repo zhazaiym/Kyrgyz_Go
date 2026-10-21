@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Hotel, Region, District
 from mysite.database.schema import (
     HotelInputSchema,
@@ -56,6 +57,7 @@ def create_hotel(
     hotel_db = Hotel(**hotel.model_dump())
 
     db.add(hotel_db)
+    update_translations(hotel_db)
     db.commit()
     db.refresh(hotel_db)
 
@@ -64,14 +66,16 @@ def create_hotel(
 
 @hotel_router.get("/", response_model=list[HotelOutSchema])
 def list_hotels(
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return db.query(Hotel).all()
+    return [localized(record, lang) for record in db.query(Hotel).all()]
 
 
 @hotel_router.get("/{hotel_id}/", response_model=HotelOutSchema)
 def detail_hotel(
     hotel_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     hotel_db = db.get(Hotel, hotel_id)
@@ -82,7 +86,7 @@ def detail_hotel(
             detail="Мейманкана табылган жок"
         )
 
-    return hotel_db
+    return localized(hotel_db, lang)
 
 
 @hotel_router.put("/{hotel_id}/", response_model=HotelOutSchema, dependencies=[Depends(get_current_admin)])
@@ -126,6 +130,7 @@ def update_hotel(
     for key, value in data.items():
         setattr(hotel_db, key, value)
 
+    update_translations(hotel_db)
     db.commit()
     db.refresh(hotel_db)
 

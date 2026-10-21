@@ -21,6 +21,14 @@ from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin
 
 
+@pytest.fixture(autouse=True)
+def offline_catalogue_translations(monkeypatch):
+    monkeypatch.setattr('mysite.translations.content.translate_fields', lambda source: {
+        lang: {key: f'{value} {lang}' if value else value for key, value in source.items()}
+        for lang in ('en', 'de', 'zh')
+    })
+
+
 @pytest.fixture(scope="session")
 def client():
     with TestClient(app) as test_client:

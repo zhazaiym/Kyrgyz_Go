@@ -14,6 +14,7 @@ from mysite.database.schema import (
     TourDetailSchema
 )
 from mysite.translations.translator import translate_tour
+from mysite.translations.content import localized
 
 
 tour_router = APIRouter(
@@ -89,6 +90,9 @@ def get_localized_tour(
     result = schema.model_validate(tour_db).model_dump(
         mode="json"
     )
+
+    if detail:
+        result['programs'] = [localized(program, lang) for program in tour_db.programs]
 
     if lang == "ru":
         return result

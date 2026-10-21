@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Trekking, TrekkingProgram
 from mysite.database.schema import (
     TrekkingProgramInputSchema,
@@ -34,6 +35,7 @@ def create_trekking_program(
     program_db = TrekkingProgram(**program.model_dump())
 
     db.add(program_db)
+    update_translations(program_db)
     db.commit()
     db.refresh(program_db)
 
@@ -41,16 +43,17 @@ def create_trekking_program(
 
 
 @trekking_program_router.get("/", response_model=list[TrekkingProgramOutSchema])
-def list_trekking_programs(db: Session = Depends(get_db)):
-    return db.query(TrekkingProgram).order_by(
+def list_trekking_programs(lang: Language = "ru", db: Session = Depends(get_db)):
+    return [localized(record, lang) for record in db.query(TrekkingProgram).order_by(
         TrekkingProgram.trekking_id,
         TrekkingProgram.day_number
-    ).all()
+    ).all()]
 
 
 @trekking_program_router.get("/{program_id}/", response_model=TrekkingProgramOutSchema)
 def detail_trekking_program(
     program_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     program_db = db.get(TrekkingProgram, program_id)
@@ -61,7 +64,7 @@ def detail_trekking_program(
             detail="Треккинг программасы табылган жок"
         )
 
-    return program_db
+    return localized(program_db, lang)
 
 
 @trekking_program_router.put("/{program_id}/", response_model=TrekkingProgramOutSchema, dependencies=[Depends(get_current_admin)])
@@ -105,6 +108,7 @@ def update_trekking_program(
     for key, value in data.items():
         setattr(program_db, key, value)
 
+    update_translations(program_db)
     db.commit()
     db.refresh(program_db)
 

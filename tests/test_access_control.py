@@ -17,10 +17,10 @@ def test_admin_can_write_catalogue(client, admin_headers):
     assert response.status_code == 200, response.text
 
 
-def test_contact_submission_is_public_but_listing_is_private(client):
+def test_contact_listing_is_public_and_detail_remains_private(client):
     response = client.post("/contacts/", json={"phone": "+996700000000"})
     assert response.status_code == 200, response.text
-    assert client.get("/contacts/").status_code == 401
+    assert client.get("/contacts/").status_code == 200
     assert client.get(f"/contacts/{response.json()['id']}/").status_code == 401
 
 
