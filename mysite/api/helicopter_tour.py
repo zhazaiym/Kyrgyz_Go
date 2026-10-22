@@ -12,6 +12,11 @@ from mysite.database.schema import (
     HelicopterTourOutSchema
 )
 
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import HelicopterTourFilter
+from mysite.api.filter_utils import Pagination, filtered_list
+
 
 helicopter_tour_router = APIRouter(
     prefix="/helicopter-tours",
@@ -111,3 +116,30 @@ def delete_helicopter_tour(
     return {
         "message": "Вертолёт туру өчүрүлдү"
     }
+
+
+
+@helicopter_tour_router.get(
+    "/",
+    response_model=list[HelicopterTourOutSchema],
+)
+def list_helicopter_tours(
+    lang: Language = "ru",
+    filters: HelicopterTourFilter = FilterDepends(
+        HelicopterTourFilter
+    ),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    helicopters = filtered_list(
+        db=db,
+        model=HelicopterTour,
+        filters=filters,
+        pagination=pagination,
+        active_only=True,
+    )
+
+    return [
+        localized(helicopter, lang)
+        for helicopter in helicopters
+    ]

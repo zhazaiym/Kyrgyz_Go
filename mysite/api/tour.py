@@ -1,4 +1,3 @@
-
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +14,11 @@ from mysite.database.schema import (
 )
 from mysite.translations.translator import translate_tour
 from mysite.translations.content import localized
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import TourFilter
+from mysite.api.filter_utils import Pagination, filtered_list
+from mysite.translations.content import Language
 
 
 tour_router = APIRouter(
@@ -324,3 +328,26 @@ def delete_tour(
             status_code=500,
             detail="Турду өчүрүү ишке ашкан жок"
         )
+
+
+
+@tour_router.get("/", response_model=list[TourOutSchema])
+def list_tours(
+    lang: Language = "ru",
+    filters: TourFilter = FilterDepends(TourFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    tours = filtered_list(
+        db=db,
+        model=Tour,
+        filters=filters,
+        pagination=pagination,
+        active_only=True,
+    )
+
+    return [
+        get_localized_tour(tour, db, lang)
+        for tour in tours
+    ]
+

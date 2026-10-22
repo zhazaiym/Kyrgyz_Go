@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +10,10 @@ from mysite.database.schema import (
     TrekkingUpdateSchema,
     TrekkingOutSchema
 )
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import TrekkingFilter
+from mysite.api.filter_utils import Pagination, filtered_list
 
 
 trekking_router = APIRouter(
@@ -106,3 +109,26 @@ def delete_trekking(
     db.commit()
 
     return {"message": "Треккинг өчүрүлдү"}
+
+
+@trekking_router.get("/", response_model=list[TrekkingOutSchema])
+def list_trekkings(
+    lang: Language = "ru",
+    filters: TrekkingFilter = FilterDepends(TrekkingFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    trekkings = filtered_list(
+        db=db,
+        model=Trekking,
+        filters=filters,
+        pagination=pagination,
+        active_only=True,
+    )
+
+    return [
+        localized(trekking, lang)
+        for trekking in trekkings
+    ]
+
+

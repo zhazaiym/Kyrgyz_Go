@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +10,10 @@ from mysite.database.schema import (
     HotelUpdateSchema,
     HotelOutSchema
 )
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import HotelFilter
+from mysite.api.filter_utils import Pagination, filtered_list
 
 
 hotel_router = APIRouter(
@@ -156,3 +159,21 @@ def delete_hotel(
     return {
         "message": "Мейманкана өчүрүлдү"
     }
+
+
+@hotel_router.get("/", response_model=list[HotelOutSchema])
+def list_hotels(
+    lang: Language = "ru",
+    filters: HotelFilter = FilterDepends(HotelFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    hotels = filtered_list(
+        db=db,
+        model=Hotel,
+        filters=filters,
+        pagination=pagination,
+        active_only=True,
+    )
+
+    return [localized(hotel, lang) for hotel in hotels]

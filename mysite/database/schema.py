@@ -130,6 +130,7 @@ class TourInputSchema(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool = True
+    country_id: int | None = Field(default=None, gt=0)
 
 
 class TourUpdateSchema(BaseModel):
@@ -149,6 +150,7 @@ class TourUpdateSchema(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool | None = None
+    country_id: int | None = Field(default=None, gt=0)
 
 
 class TourOutSchema(BaseModel):
@@ -173,6 +175,7 @@ class TourOutSchema(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    country_id: int | None = Field(default=None, gt=0)
 
 
 class TourImageInputSchema(BaseModel):

@@ -1,6 +1,13 @@
 import uvicorn
 import os
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(
+    dotenv_path=Path(__file__).resolve().parent / ".env.example"
+)
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

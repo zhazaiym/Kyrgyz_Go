@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +10,11 @@ from mysite.database.schema import (
     RegionUpdateSchema,
     RegionOutSchema
 )
+
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import RegionFilter
+from mysite.api.filter_utils import Pagination, filtered_list
 
 region_router = APIRouter(
     prefix="/regions",
@@ -155,3 +159,21 @@ def delete_region(
     db.commit()
 
     return {"message": "Область өчүрүлдү"}
+
+
+@region_router.get("/", response_model=list[RegionOutSchema])
+def list_regions(
+    lang: Language = "ru",
+    filters: RegionFilter = FilterDepends(RegionFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    regions = filtered_list(
+        db=db,
+        model=Region,
+        filters=filters,
+        pagination=pagination,
+    )
+
+    return [localized(region, lang) for region in regions]
+

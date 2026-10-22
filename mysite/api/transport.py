@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +10,12 @@ from mysite.database.schema import (
     TransportUpdateSchema,
     TransportOutSchema
 )
+
+
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import TransportFilter
+from mysite.api.filter_utils import Pagination, filtered_list
 
 
 transport_router = APIRouter(
@@ -111,3 +116,26 @@ def delete_transport(
     return {
         "message": "Транспорт өчүрүлдү"
     }
+
+
+
+@transport_router.get("/", response_model=list[TransportOutSchema])
+def list_transports(
+    lang: Language = "ru",
+    filters: TransportFilter = FilterDepends(TransportFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    transports = filtered_list(
+        db=db,
+        model=Transport,
+        filters=filters,
+        pagination=pagination,
+        active_only=True,
+    )
+
+    return [
+        localized(transport, lang)
+        for transport in transports
+    ]
+
