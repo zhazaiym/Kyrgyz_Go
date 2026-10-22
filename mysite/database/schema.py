@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from mysite.database.models import PriceUnitChoices, RequestStatusChoices, TourTypeChoices
 
 class AdminInputSchema(BaseModel):
@@ -126,6 +126,8 @@ class TourInputSchema(BaseModel):
     min_people: int = 1
     max_people: int | None = None
     tour_type: TourTypeChoices = TourTypeChoices.classic
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool = True
 
@@ -143,6 +145,8 @@ class TourUpdateSchema(BaseModel):
     min_people: int | None = None
     max_people: int | None = None
     tour_type: TourTypeChoices | None = None
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool | None = None
 
@@ -163,6 +167,8 @@ class TourOutSchema(BaseModel):
     min_people: int
     max_people: int | None
     tour_type: TourTypeChoices
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None
     is_active: bool
     created_at: datetime
@@ -219,14 +225,31 @@ class TourProgramOutSchema(BaseModel):
     end_time: str | None
 
 
+class CountryInputSchema(BaseModel):
+    name: str
+
+
+class CountryUpdateSchema(BaseModel):
+    name: str | None = None
+
+
+class CountryOutSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
 class RegionInputSchema(BaseModel):
     name: str
     image: str | None = None
+    country_id: int | None = None
 
 
 class RegionUpdateSchema(BaseModel):
     name: str | None = None
     image: str | None = None
+    country_id: int | None = None
 
 
 class RegionOutSchema(BaseModel):
@@ -235,6 +258,7 @@ class RegionOutSchema(BaseModel):
     id: int
     name: str
     image: str | None
+    country_id: int | None
 
 
 class DistrictInputSchema(BaseModel):
@@ -542,6 +566,36 @@ class TourDetailSchema(TourOutSchema):
     images: list[TourImageOutSchema] = []
     programs: list[TourProgramOutSchema] = []
 
+class HelicopterTourInputSchema(BaseModel):
+    title: str
+    description: str | None = None
+    destination: str | None = None
+    instruction: str | None = None
+    included: str | None = None
+    price: Decimal
+    price_unit: PriceUnitChoices = PriceUnitChoices.per_trip
+    duration_minutes: int | None = None
+    max_passengers: int | None = None
+    departure_location: str | None = None
+    main_image: str | None = None
+    is_active: bool = True
+
+
+class HelicopterTourUpdateSchema(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    destination: str | None = None
+    instruction: str | None = None
+    included: str | None = None
+    price: Decimal | None = None
+    price_unit: PriceUnitChoices | None = None
+    duration_minutes: int | None = None
+    max_passengers: int | None = None
+    departure_location: str | None = None
+    main_image: str | None = None
+    is_active: bool | None = None
+
+
 class HelicopterTourOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -549,22 +603,28 @@ class HelicopterTourOutSchema(BaseModel):
     title: str
     description: str | None = None
     price: Decimal
+    duration_minutes: int | None = None
+    max_passengers: int | None = None
+    departure_location: str | None = None
+    destination: str | None = None
+    main_image: str | None = None
 
 
-from pydantic import Field
+
 
 
 class TransportDetailSchema(TransportOutSchema):
     images: list[TransportImageOutSchema] = Field(default_factory=list)
 
 class HelicopterImageInputSchema(BaseModel):
-    helicopter_tour_id: int
+    helicopter_id: int
     image: str
     order: int = 0
 
 
+
 class HelicopterImageUpdateSchema(BaseModel):
-    helicopter_tour_id: int | None = None
+    helicopter_id: int | None = None
     image: str | None = None
     order: int | None = None
 
@@ -573,12 +633,13 @@ class HelicopterImageOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    helicopter_tour_id: int
+    helicopter_id: int
     image: str
     order: int
 
 class HelicopterTourDetailSchema(HelicopterTourOutSchema):
     images: list[HelicopterImageOutSchema] = Field(default_factory=list)
+
 
 class TrekkingInputSchema(BaseModel):
     title: str

@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Transport
 from mysite.database.schema import (
     TransportInputSchema,
@@ -17,7 +19,7 @@ transport_router = APIRouter(
 )
 
 
-@transport_router.post("/", response_model=TransportOutSchema)
+@transport_router.post("/", response_model=TransportOutSchema, dependencies=[Depends(get_current_admin)])
 def create_transport(
     transport: TransportInputSchema,
     db: Session = Depends(get_db)
@@ -25,6 +27,7 @@ def create_transport(
     transport_db = Transport(**transport.model_dump())
 
     db.add(transport_db)
+    update_translations(transport_db)
     db.commit()
     db.refresh(transport_db)
 
@@ -33,14 +36,16 @@ def create_transport(
 
 @transport_router.get("/", response_model=list[TransportOutSchema])
 def list_transports(
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return db.query(Transport).all()
+    return [localized(record, lang) for record in db.query(Transport).all()]
 
 
 @transport_router.get("/{transport_id}/", response_model=TransportOutSchema)
 def detail_transport(
     transport_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     transport_db = db.get(Transport, transport_id)
@@ -51,10 +56,10 @@ def detail_transport(
             detail="Транспорт табылган жок"
         )
 
-    return transport_db
+    return localized(transport_db, lang)
 
 
-@transport_router.put("/{transport_id}/", response_model=TransportOutSchema)
+@transport_router.put("/{transport_id}/", response_model=TransportOutSchema, dependencies=[Depends(get_current_admin)])
 def update_transport(
     transport_id: int,
     transport: TransportUpdateSchema,
@@ -80,13 +85,14 @@ def update_transport(
     for key, value in data.items():
         setattr(transport_db, key, value)
 
+    update_translations(transport_db)
     db.commit()
     db.refresh(transport_db)
 
     return transport_db
 
 
-@transport_router.delete("/{transport_id}/")
+@transport_router.delete("/{transport_id}/", dependencies=[Depends(get_current_admin)])
 def delete_transport(
     transport_id: int,
     db: Session = Depends(get_db)

@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from mysite.database.db import Base
@@ -35,6 +35,10 @@ class PriceUnitChoices(str, PyEnum):
     per_hour = "per_hour"
     per_trip = "per_trip"
 
+class LocalizedContent:
+    translations: Mapped[dict | None] = mapped_column(JSON)
+
+
 class Admin(Base):
     __tablename__ = "admins"
 
@@ -45,7 +49,7 @@ class Admin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
-class About(Base):
+class About(LocalizedContent, Base):
     __tablename__ = "abouts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -59,7 +63,7 @@ class About(Base):
     routes_count: Mapped[int] = mapped_column(Integer, default=100)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-class AboutSection(Base):
+class AboutSection(LocalizedContent, Base):
     __tablename__ = "about_sections"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -70,7 +74,7 @@ class AboutSection(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class TourCategory(Base):
+class TourCategory(LocalizedContent, Base):
     __tablename__ = "tour_categories"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -95,6 +99,8 @@ class Tour(Base):
     min_people: Mapped[int] = mapped_column(Integer, default=1)
     max_people: Mapped[int | None] = mapped_column(Integer)
     tour_type: Mapped[TourTypeChoices] = mapped_column(Enum(TourTypeChoices), default=TourTypeChoices.classic)
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     main_image: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -102,6 +108,22 @@ class Tour(Base):
     category: Mapped["TourCategory | None"] = relationship(back_populates="tours")
     images: Mapped[list["TourImage"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
     programs: Mapped[list["TourProgram"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
+    translations: Mapped[list["TourTranslation"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
+
+
+class TourTranslation(Base):
+    __tablename__ = "tour_translations"
+    __table_args__ = (UniqueConstraint("tour_id", "lang", name="uq_tour_translation"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id", ondelete="CASCADE"), nullable=False)
+    lang: Mapped[str] = mapped_column(String(2), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    included: Mapped[str | None] = mapped_column(Text)
+    excluded: Mapped[str | None] = mapped_column(Text)
+    tour: Mapped["Tour"] = relationship(back_populates="translations")
+
 
 class TourImage(Base):
     __tablename__ = "tour_images"
@@ -113,7 +135,7 @@ class TourImage(Base):
     tour: Mapped["Tour"] = relationship(back_populates="images")
 
 
-class TourProgram(Base):
+class TourProgram(LocalizedContent, Base):
     __tablename__ = "tour_programs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -125,18 +147,30 @@ class TourProgram(Base):
     end_time: Mapped[str | None] = mapped_column(String(10))
     tour: Mapped["Tour"] = relationship(back_populates="programs")
 
+class Country(LocalizedContent, Base):
+    __tablename__ = "countries"
 
-class Region(Base):
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    name: Mapped[str] = mapped_column(
+        String(150), nullable=False
+    )
+    regions: Mapped[list["Region"]] = relationship(back_populates="country")
+
+class Region(LocalizedContent, Base):
     __tablename__ = "regions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"))
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     image: Mapped[str | None] = mapped_column(String(500))
+    country: Mapped["Country | None"] = relationship(back_populates="regions")
     districts: Mapped[list["District"]] = relationship(back_populates="region")
     hotels: Mapped[list["Hotel"]] = relationship(back_populates="region")
 
 
-class District(Base):
+class District(LocalizedContent, Base):
     __tablename__ = "districts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -146,7 +180,7 @@ class District(Base):
     hotels: Mapped[list["Hotel"]] = relationship(back_populates="district")
 
 
-class Hotel(Base):
+class Hotel(LocalizedContent, Base):
     __tablename__ = "hotels"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -179,7 +213,7 @@ class HotelImage(Base):
     hotel: Mapped["Hotel"] = relationship(back_populates="images")
 
 
-class Transport(Base):
+class Transport(LocalizedContent, Base):
     __tablename__ = "transports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -209,7 +243,7 @@ class TransportImage(Base):
     transport: Mapped["Transport"] = relationship(back_populates="images")
 
 
-class HelicopterTour(Base):
+class HelicopterTour(LocalizedContent, Base):
     __tablename__ = "helicopter_tours"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -238,7 +272,7 @@ class HelicopterImage(Base):
     helicopter: Mapped["HelicopterTour"] = relationship(back_populates="images")
 
 
-class Trekking(Base):
+class Trekking(LocalizedContent, Base):
     __tablename__ = "trekkings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -273,7 +307,7 @@ class TrekkingImage(Base):
     trekking: Mapped["Trekking"] = relationship(back_populates="images")
 
 
-class TrekkingProgram(Base):
+class TrekkingProgram(LocalizedContent, Base):
     __tablename__ = "trekking_programs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -285,7 +319,7 @@ class TrekkingProgram(Base):
     description: Mapped[str | None] = mapped_column(Text)
     trekking: Mapped["Trekking"] = relationship(back_populates="programs")
 
-class Contact(Base):
+class Contact(LocalizedContent, Base):
     __tablename__ = "contacts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -302,7 +336,7 @@ class Contact(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class FAQ(Base):
+class FAQ(LocalizedContent, Base):
     __tablename__ = "faqs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -326,6 +360,4 @@ class TravelRequest(Base):
     message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[RequestStatusChoices] = mapped_column(Enum(RequestStatusChoices), default=RequestStatusChoices.new, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
-
-
 

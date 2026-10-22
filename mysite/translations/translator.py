@@ -1,5 +1,6 @@
 
 import json
+import os
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -8,9 +9,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 load_dotenv()
 
 model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
+    model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
     temperature=0,
-    max_retries=0
+    max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "1")),
 )
 
 LANGUAGES = {
@@ -45,6 +46,32 @@ def translate_text(text: str, lang: str):
     response = model.invoke(messages)
 
     return str(response.content)
+
+
+def translate_fields(source: dict):
+    if not any(source.values()):
+        return {}
+    response = model.invoke([
+        SystemMessage(content=(
+            'Translate the provided Russian tourism fields into English (en), '
+            'German (de), and Simplified Chinese (zh). Preserve names and numbers. '
+            'Return only a JSON object keyed by en, de, zh, each containing '
+            'exactly the supplied field names. Keep null and empty values unchanged.'
+        )),
+        HumanMessage(content=json.dumps(source, ensure_ascii=False)),
+    ])
+    content = str(response.content).strip()
+    if content.startswith('```'):
+        content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+    result = json.loads(content)
+    for lang in ('en', 'de', 'zh'):
+        for field, original in source.items():
+            value = result[lang][field]
+            if original is None or original == '':
+                result[lang][field] = original
+            elif not isinstance(value, str) or not value.strip():
+                raise ValueError(f'Invalid translation: {lang}.{field}')
+    return result
 
 
 def translate_tour(data: dict):

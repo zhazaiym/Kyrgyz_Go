@@ -13,6 +13,24 @@ _locks = {}
 _lock_users = {}
 
 
+async def _database_call(function, *args):
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # A worker cannot be cancelled; retain the session lock until it closes its DB session.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            task.exception()
+        raise
+
+
 def _is_confirmation_text(message):
     normalized = ' '.join(message.casefold().strip().rstrip('.! ').split())
     return normalized == CONFIRMATION_TEXT
@@ -56,79 +74,98 @@ async def process_message(session_id, client_id, token, message, on_chunk=None):
                 _locks.pop(session_id, None)
 
 
+def _prepare_message(session_id, client_id, token, message):
+    with SessionLocal() as db:
+        c = client_by_token(db, token)
+        if c.id != client_id:
+            raise HTTPException(401, 'Требуется повторный вход')
+        s = owned(db, session_id, client_id)
+        if confirmation_allowed(s.stage, message) or (
+            s.stage == 'submitted' and _is_confirmation_text(message)
+        ):
+            result = confirm_booking(db, s, client_id, s.revision, True)
+            answer = (
+                'Заявка №{} передана менеджеру KYRGYZGO. '.format(
+                    result['request_id']
+                )
+                + 'Менеджер свяжется с вами для проверки мест, стоимости '
+                + 'и окончательного подтверждения.'
+            )
+            db.add_all([
+                ChatMessage(session_id=s.id, role='user', content=message),
+                ChatMessage(session_id=s.id, role='assistant', content=answer),
+            ])
+            db.commit()
+            final = {'answer': answer, 'revision': s.revision,
+                     'booking_intent': True, 'stage': 'submitted',
+                     'booking_submitted': result}
+            return final, None, None
+        last = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
+                .order_by(ChatMessage.id.desc()).first())
+        if not last or last.role != 'user' or last.content != message:
+            db.add(ChatMessage(session_id=s.id, role='user', content=message))
+            db.commit()
+        previous = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
+                    .order_by(ChatMessage.id.desc()).limit(25).all())
+        previous.reverse()
+        if previous and previous[-1].role == 'user' and previous[-1].content == message:
+            previous = previous[:-1]
+        original = dict(s.state or {})
+
+    return None, original, previous
+
+
+def _save_message_response(session_id, client_id, token, answer, updated, original, intent):
+    summary = None
+    with SessionLocal() as db:
+        c = client_by_token(db, token)
+        if c.id != client_id:
+            raise HTTPException(401, 'Требуется повторный вход')
+        s = owned(db, session_id, client_id)
+        if updated != original:
+            s.state = updated
+            s.revision += 1
+        preview = build_preview(db, s)
+        preview_event = None
+        if intent or s.stage in ('collecting', 'awaiting_confirmation'):
+            if preview['can_confirm']:
+                s.stage = 'awaiting_confirmation'
+                preview_event = preview
+                summary = _preview_summary(db, preview)
+                answer += summary
+            else:
+                s.stage = 'collecting'
+        db.add(ChatMessage(session_id=s.id, role='assistant', content=answer))
+        db.commit()
+        return {'answer': answer, 'revision': s.revision,
+                'booking_intent': bool(intent), 'stage': s.stage,
+                'booking_preview': preview_event}, summary
+
+
+
 async def _process_message_locked(
     session_id, client_id, token, message, on_chunk=None
 ):
-    # Same-session messages are serialized within a single worker; multi-worker deployments need DB locks.
+    # Keep each synchronous database phase off the event loop.
     lock = _locks.setdefault(session_id, asyncio.Lock())
     async with lock:
-        with SessionLocal() as db:
-            c = client_by_token(db, token)
-            if c.id != client_id:
-                raise HTTPException(401, 'Требуется повторный вход')
-            s = owned(db, session_id, client_id)
-            if confirmation_allowed(s.stage, message) or (
-                s.stage == 'submitted' and _is_confirmation_text(message)
-            ):
-                result = confirm_booking(db, s, client_id, s.revision, True)
-                answer = (
-                    'Заявка №{} передана менеджеру KYRGYZGO. '.format(
-                        result['request_id']
-                    )
-                    + 'Менеджер свяжется с вами для проверки мест, стоимости '
-                    + 'и окончательного подтверждения.'
-                )
-                db.add_all([
-                    ChatMessage(session_id=s.id, role='user', content=message),
-                    ChatMessage(session_id=s.id, role='assistant', content=answer),
-                ])
-                db.commit()
-                final = {'answer': answer, 'revision': s.revision,
-                         'booking_intent': True, 'stage': 'submitted',
-                         'booking_submitted': result}
-                if on_chunk is not None:
-                    await on_chunk(answer)
-                return final
-            last = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
-                    .order_by(ChatMessage.id.desc()).first())
-            if not last or last.role != 'user' or last.content != message:
-                db.add(ChatMessage(session_id=s.id, role='user', content=message))
-                db.commit()
-            previous = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
-                        .order_by(ChatMessage.id.desc()).limit(25).all())
-            previous.reverse()
-            if previous and previous[-1].role == 'user' and previous[-1].content == message:
-                previous = previous[:-1]
-            original = dict(s.state or {})
-        # No database transaction/session held open during slow external AI calls.
+        final, original, previous = await _database_call(
+            _prepare_message, session_id, client_id, token, message
+        )
+        if final is not None:
+            if on_chunk is not None:
+                await on_chunk(final['answer'])
+            return final
         answer, updated, intent = await respond(
             message, original, previous, on_chunk=on_chunk
         )
-        with SessionLocal() as db:
-            c = client_by_token(db, token)
-            if c.id != client_id:
-                raise HTTPException(401, 'Требуется повторный вход')
-            s = owned(db, session_id, client_id)
-            if updated != original:
-                s.state = updated
-                s.revision += 1
-            preview = build_preview(db, s)
-            preview_event = None
-            if intent or s.stage in ('collecting', 'awaiting_confirmation'):
-                if preview['can_confirm']:
-                    s.stage = 'awaiting_confirmation'
-                    preview_event = preview
-                    summary = _preview_summary(db, preview)
-                    answer += summary
-                    if on_chunk is not None:
-                        await on_chunk(summary)
-                else:
-                    s.stage = 'collecting'
-            db.add(ChatMessage(session_id=s.id, role='assistant', content=answer))
-            db.commit()
-            return {'answer': answer, 'revision': s.revision,
-                    'booking_intent': bool(intent), 'stage': s.stage,
-                    'booking_preview': preview_event}
+        result, summary = await _database_call(
+            _save_message_response, session_id, client_id, token,
+            answer, updated, original, intent
+        )
+        if summary and on_chunk is not None:
+            await on_chunk(summary)
+        return result
 
 def build_preview(db, s):
     state = dict(s.state or {})
@@ -195,6 +232,17 @@ def confirm_booking(db, s, client_id, revision, confirmed):
     return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 
 
+def _confirm_booking_for_client(session_id, client_id, token, revision, confirmed):
+    with SessionLocal() as db:
+        client = client_by_token(db, token)
+        if client.id != client_id:
+            raise HTTPException(401, 'Требуется повторный вход')
+        session = owned(db, session_id, client_id)
+        return confirm_booking(
+            db, session, client_id, revision, confirmed
+        )
+
+
 async def confirm_booking_serialized(
     session_id, client_id, token, revision, confirmed
 ):
@@ -202,14 +250,9 @@ async def confirm_booking_serialized(
     lock = _locks.setdefault(session_id, asyncio.Lock())
     try:
         async with lock:
-            with SessionLocal() as db:
-                client = client_by_token(db, token)
-                if client.id != client_id:
-                    raise HTTPException(401, 'Требуется повторный вход')
-                session = owned(db, session_id, client_id)
-                return confirm_booking(
-                    db, session, client_id, revision, confirmed
-                )
+            return await _database_call(
+                _confirm_booking_for_client, session_id, client_id, token, revision, confirmed
+            )
     finally:
         users = _lock_users.get(session_id, 1) - 1
         if users > 0:

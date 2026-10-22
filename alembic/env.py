@@ -6,9 +6,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from mysite.database.db import Base
-from mysite.database import models
-from config import DATABASE_URL
+from mysite.database.db import Base, DATABASE_URL
+from mysite.database import chat_models, models
 
 
 config = context.config

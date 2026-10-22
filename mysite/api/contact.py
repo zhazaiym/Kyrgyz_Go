@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Contact
 from mysite.database.schema import (
     ContactInputSchema,
@@ -25,6 +27,7 @@ def create_contact(
     contact_db = Contact(**contact.model_dump())
 
     db.add(contact_db)
+    update_translations(contact_db)
     db.commit()
     db.refresh(contact_db)
 
@@ -32,13 +35,14 @@ def create_contact(
 
 
 @contact_router.get("/", response_model=list[ContactOutSchema])
-def list_contacts(db: Session = Depends(get_db)):
-    return db.query(Contact).all()
+def list_contacts(lang: Language = "ru", db: Session = Depends(get_db)):
+    return [localized(record, lang) for record in db.query(Contact).all()]
 
 
-@contact_router.get("/{contact_id}/", response_model=ContactOutSchema)
+@contact_router.get("/{contact_id}/", response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)])
 def detail_contact(
     contact_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     contact_db = db.get(Contact, contact_id)
@@ -49,10 +53,10 @@ def detail_contact(
             detail="Байланыш маалыматы табылган жок"
         )
 
-    return contact_db
+    return localized(contact_db, lang)
 
 
-@contact_router.put("/{contact_id}/", response_model=ContactOutSchema)
+@contact_router.put("/{contact_id}/", response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)])
 def update_contact(
     contact_id: int,
     contact: ContactUpdateSchema,
@@ -77,13 +81,14 @@ def update_contact(
     for key, value in data.items():
         setattr(contact_db, key, value)
 
+    update_translations(contact_db)
     db.commit()
     db.refresh(contact_db)
 
     return contact_db
 
 
-@contact_router.delete("/{contact_id}/")
+@contact_router.delete("/{contact_id}/", dependencies=[Depends(get_current_admin)])
 def delete_contact(
     contact_id: int,
     db: Session = Depends(get_db)

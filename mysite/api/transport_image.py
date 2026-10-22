@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Transport, TransportImage
 from mysite.database.schema import (
     TransportImageInputSchema,
@@ -17,7 +18,7 @@ transport_image_router = APIRouter(
 )
 
 
-@transport_image_router.post("/", response_model=TransportImageOutSchema)
+@transport_image_router.post("/", response_model=TransportImageOutSchema, dependencies=[Depends(get_current_admin)])
 def create_transport_image(
     transport_image: TransportImageInputSchema,
     db: Session = Depends(get_db)
@@ -65,7 +66,7 @@ def detail_transport_image(
     return image_db
 
 
-@transport_image_router.put("/{image_id}/", response_model=TransportImageOutSchema)
+@transport_image_router.put("/{image_id}/", response_model=TransportImageOutSchema, dependencies=[Depends(get_current_admin)])
 def update_transport_image(
     image_id: int,
     transport_image: TransportImageUpdateSchema,
@@ -117,7 +118,7 @@ def update_transport_image(
     return image_db
 
 
-@transport_image_router.delete("/{image_id}/")
+@transport_image_router.delete("/{image_id}/", dependencies=[Depends(get_current_admin)])
 def delete_transport_image(
     image_id: int,
     db: Session = Depends(get_db)

@@ -1,0 +1,12 @@
+alembic==1.18.5
+fastapi==0.141.1
+itsdangerous==2.2.0
+langchain-google-genai==4.4.0
+psycopg2-binary==2.9.11
+pwdlib[argon2]==0.3.1
+python-dotenv==1.0.1
+python-jose[cryptography]==3.5.0
+python-multipart>=0.0.20,<1
+sqladmin==0.29.0
+SQLAlchemy==2.0.51
+uvicorn[standard]==0.52.1

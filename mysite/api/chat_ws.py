@@ -25,6 +25,13 @@ def public_http_error(exc: HTTPException):
     return 'request_invalid', detail, False
 
 
+def authenticate_session(session_id, token):
+    with SessionLocal() as db:
+        client = client_by_token(db, token)
+        owned(db, session_id, client.id)
+        return client.id
+
+
 @router.websocket('/ws/chat/{session_id}')
 async def socket(websocket: WebSocket, session_id: str):
     allowed = {v.strip() for v in os.getenv('CHAT_ALLOWED_ORIGINS',
@@ -37,10 +44,7 @@ async def socket(websocket: WebSocket, session_id: str):
         first = await asyncio.wait_for(websocket.receive_json(), timeout=30)
         token = (first.get('token') if isinstance(first, dict)
                  and first.get('type') == 'auth' else None)
-        with SessionLocal() as db:
-            client = client_by_token(db, token)
-            owned(db, session_id, client.id)
-            client_id = client.id
+        client_id = await asyncio.to_thread(authenticate_session, session_id, token)
         await websocket.send_json({'type': 'connected', 'session_id': session_id})
     except HTTPException as exc:
         code, message, _ = public_http_error(exc)
