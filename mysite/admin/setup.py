@@ -4,15 +4,52 @@ from .views import (AdminAdmin, AboutAdmin, AboutSectionAdmin,
                     HotelAdmin, HotelImageAdmin, TransportAdmin,
                     TransportImageAdmin, HelicopterTourAdmin, HelicopterImageAdmin,
                     TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin,
-                    ContactAdmin, FAQAdmin, TravelRequestAdmin,
-                    ChatAdmin, ChatMessageAdmin)
+                    ContactAdmin, FAQAdmin, TravelRequestAdmin)
+                    # ChatAdmin, ChatMessageAdmin)
 
-from fastapi import FastAPI
-from sqladmin import Admin
-from mysite.database.db import engine
+from fastapi import FastAPI, Request
+from sqladmin import Admin as SQLAdmin
+from sqladmin.authentication import AuthenticationBackend
+
+from mysite.api.admin import SECRET_KEY, verify_password
+from mysite.database.db import SessionLocal, engine
+from mysite.database.models import Admin as AdminModel
+
+
+class AdminAuthBackend(AuthenticationBackend):
+    async def login(self, request: Request) -> bool:
+        form = await request.form()
+        username = str(form.get("username", "")).strip()
+        password = str(form.get("password", ""))
+
+        with SessionLocal() as db:
+            admin = db.query(AdminModel).filter(AdminModel.username == username).first()
+            if admin is None or not admin.is_active:
+                return False
+            if not verify_password(password, admin.hashed_password):
+                return False
+            request.session["admin_id"] = admin.id
+            return True
+
+    async def logout(self, request: Request) -> bool:
+        request.session.clear()
+        return True
+
+    async def authenticate(self, request: Request) -> bool:
+        admin_id = request.session.get("admin_id")
+        if admin_id is None:
+            return False
+
+        with SessionLocal() as db:
+            admin = db.get(AdminModel, admin_id)
+            return bool(admin and admin.is_active)
 
 def setup_admin(auth_app: FastAPI):
-    admin = Admin(auth_app, engine)
+    admin = SQLAdmin(
+        auth_app,
+        engine,
+        authentication_backend=AdminAuthBackend(secret_key=SECRET_KEY),
+    )
     admin.add_view(AdminAdmin)
     admin.add_view(AboutAdmin)
     admin.add_view(AboutSectionAdmin)
@@ -34,6 +71,6 @@ def setup_admin(auth_app: FastAPI):
     admin.add_view(ContactAdmin)
     admin.add_view(FAQAdmin)
     admin.add_view(TravelRequestAdmin)
-    admin.add_view(ChatAdmin)
-    admin.add_view(ChatMessageAdmin)
+    # admin.add_view(ChatAdmin)
+    # admin.add_view(ChatMessageAdmin)
 

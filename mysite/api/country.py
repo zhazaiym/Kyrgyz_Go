@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Country
 from mysite.database.schema import (
     CountryInputSchema,
@@ -16,7 +18,7 @@ country_router = APIRouter(
 )
 
 
-@country_router.post("/", response_model=CountryOutSchema)
+@country_router.post("/", response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)])
 def create_country(
     country: CountryInputSchema,
     db: Session = Depends(get_db)
@@ -26,6 +28,7 @@ def create_country(
     )
 
     db.add(country_db)
+    update_translations(country_db)
     db.commit()
     db.refresh(country_db)
 
@@ -34,14 +37,16 @@ def create_country(
 
 @country_router.get("/", response_model=list[CountryOutSchema])
 def list_countries(
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return db.query(Country).all()
+    return [localized(record, lang) for record in db.query(Country).all()]
 
 
 @country_router.get("/{country_id}/", response_model=CountryOutSchema)
 def detail_country(
     country_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     country_db = db.get(Country, country_id)
@@ -52,10 +57,10 @@ def detail_country(
             detail="Мамлекет табылган жок"
         )
 
-    return country_db
+    return localized(country_db, lang)
 
 
-@country_router.put("/{country_id}/", response_model=CountryOutSchema)
+@country_router.put("/{country_id}/", response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)])
 def update_country(
     country_id: int,
     country: CountryUpdateSchema,
@@ -80,13 +85,14 @@ def update_country(
 
         country_db.name = data["name"]
 
+    update_translations(country_db)
     db.commit()
     db.refresh(country_db)
 
     return country_db
 
 
-@country_router.delete("/{country_id}/")
+@country_router.delete("/{country_id}/", dependencies=[Depends(get_current_admin)])
 def delete_country(
     country_id: int,
     db: Session = Depends(get_db)

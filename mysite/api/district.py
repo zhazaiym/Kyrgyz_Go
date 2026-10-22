@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
+from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import District, Region
 from mysite.database.schema import (
     DistrictInputSchema,
@@ -17,7 +19,7 @@ district_router = APIRouter(
 )
 
 
-@district_router.post("/", response_model=DistrictOutSchema)
+@district_router.post("/", response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)])
 def create_district(
     district: DistrictInputSchema,
     db: Session = Depends(get_db)
@@ -33,6 +35,7 @@ def create_district(
     district_db = District(**district.model_dump())
 
     db.add(district_db)
+    update_translations(district_db)
     db.commit()
     db.refresh(district_db)
 
@@ -41,14 +44,16 @@ def create_district(
 
 @district_router.get("/", response_model=list[DistrictOutSchema])
 def list_districts(
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return db.query(District).all()
+    return [localized(record, lang) for record in db.query(District).all()]
 
 
 @district_router.get("/{district_id}/", response_model=DistrictOutSchema)
 def detail_district(
     district_id: int,
+    lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
     district_db = db.get(District, district_id)
@@ -59,10 +64,10 @@ def detail_district(
             detail="Район табылган жок"
         )
 
-    return district_db
+    return localized(district_db, lang)
 
 
-@district_router.put("/{district_id}/", response_model=DistrictOutSchema)
+@district_router.put("/{district_id}/", response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)])
 def update_district(
     district_id: int,
     district: DistrictUpdateSchema,
@@ -111,13 +116,14 @@ def update_district(
 
         setattr(district_db, key, value)
 
+    update_translations(district_db)
     db.commit()
     db.refresh(district_db)
 
     return district_db
 
 
-@district_router.delete("/{district_id}/")
+@district_router.delete("/{district_id}/", dependencies=[Depends(get_current_admin)])
 def delete_district(
     district_id: int,
     db: Session = Depends(get_db)

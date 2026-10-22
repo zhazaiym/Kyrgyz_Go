@@ -36,8 +36,10 @@ def detached_client_identity(
 @chat_router.post('/chat/session')
 def create_session(client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
     sid = str(uuid.uuid4())
-    db.add_all([ChatSession(id=sid, client_id=client.id, state={}, revision=0),
-                ChatMessage(session_id=sid, role='assistant', content=WELCOME_MESSAGE)])
+    db.add(ChatSession(id=sid, client_id=client.id, state={}, revision=0))
+    # Persist the parent first; the models have no ORM relationship to order inserts.
+    db.flush()
+    db.add(ChatMessage(session_id=sid, role='assistant', content=WELCOME_MESSAGE))
     db.commit()
     return {'session_id': sid, 'welcome': WELCOME_MESSAGE}
 

@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
+from mysite.api.admin import get_current_admin
 from mysite.database.models import Tour, TourImage
 from mysite.database.schema import (
     TourImageInputSchema,
@@ -12,7 +13,7 @@ from mysite.database.schema import (
 tour_image_router = APIRouter(prefix="/tour-images", tags=["Tour Images"])
 
 
-@tour_image_router.post("/", response_model=TourImageOutSchema)
+@tour_image_router.post("/", response_model=TourImageOutSchema, dependencies=[Depends(get_current_admin)])
 def create_tour_image(data: TourImageInputSchema, db: Session = Depends(get_db)):
     if not db.get(Tour, data.tour_id):
         raise HTTPException(status_code=404, detail="Тур табылган жок")
@@ -40,7 +41,7 @@ def detail_tour_image(image_id: int, db: Session = Depends(get_db)):
     return image_db
 
 
-@tour_image_router.put("/{image_id}/", response_model=TourImageOutSchema)
+@tour_image_router.put("/{image_id}/", response_model=TourImageOutSchema, dependencies=[Depends(get_current_admin)])
 def update_tour_image(image_id: int, data: TourImageUpdateSchema, db: Session = Depends(get_db)):
     image_db = db.get(TourImage, image_id)
     if not image_db:
@@ -59,7 +60,7 @@ def update_tour_image(image_id: int, data: TourImageUpdateSchema, db: Session = 
     return image_db
 
 
-@tour_image_router.delete("/{image_id}/")
+@tour_image_router.delete("/{image_id}/", dependencies=[Depends(get_current_admin)])
 def delete_tour_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TourImage, image_id)
     if not image_db:

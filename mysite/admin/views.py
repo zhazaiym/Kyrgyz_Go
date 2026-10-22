@@ -2,8 +2,26 @@ from mysite.database.models import (Admin, About, AboutSection, TourCategory, To
                                      TourImage,TourProgram, Region, District, Hotel, HotelImage,
                                      Transport, TransportImage, HelicopterTour, HelicopterImage,
                                     Trekking, TrekkingImage, TrekkingProgram, Contact, FAQ, TravelRequest,
-                                    Chat, ChatMessage)
+                                   )
 from sqladmin import ModelView
+from starlette.concurrency import run_in_threadpool
+
+from mysite.translations.content import CONTENT_FIELDS, generate_translations
+
+
+class LocalizedAdminMixin:
+    async def on_model_change(self, data, model, is_created, request):
+        fields = CONTENT_FIELDS[model.__tablename__]
+        source_changed = is_created or any(
+            field in data and data[field] != getattr(model, field, None)
+            for field in fields
+        )
+        manual_translation = bool(data.get('translations')) and (
+            is_created or data['translations'] != model.translations
+        )
+        if source_changed and not manual_translation:
+            source = {field: data.get(field, getattr(model, field, None)) for field in fields}
+            data['translations'] = await run_in_threadpool(generate_translations, source)
 
 
 
@@ -12,39 +30,66 @@ class AdminAdmin(ModelView, model= Admin):
     column_list = [Admin.username, Admin.is_active]
 
 
-class AboutAdmin(ModelView, model= About):
+class AboutAdmin(LocalizedAdminMixin, ModelView, model= About):
     column_list = [About.id, About.title]
 
 
-class AboutSectionAdmin(ModelView, model= AboutSection):
+class AboutSectionAdmin(LocalizedAdminMixin, ModelView, model= AboutSection):
     column_list = [AboutSection.id, AboutSection.title]
 
 
-class TourCategoryAdmin(ModelView, model= TourCategory):
+class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model= TourCategory):
     column_list = [TourCategory.id, TourCategory.name]
 
 
 class TourAdmin(ModelView, model=Tour):
     column_list = [Tour.id, Tour.title]
 
+    async def on_model_change(self, data, model, is_created, request):
+        from mysite.api.tour import TRANSLATED_FIELDS
+
+        request.state.tour_source_changed = is_created or any(
+            field in data and data[field] != getattr(model, field, None)
+            for field in TRANSLATED_FIELDS
+        )
+
+    async def after_model_change(self, data, model, is_created, request):
+        if request.state.tour_source_changed:
+            await run_in_threadpool(self._refresh_translations, model.id)
+
+    @staticmethod
+    def _refresh_translations(tour_id):
+        from mysite.api.tour import try_save_translations
+        from mysite.database.db import SessionLocal
+        from mysite.database.models import TourTranslation
+
+        with SessionLocal() as db:
+            tour = db.get(Tour, tour_id)
+            if tour is None:
+                return
+            db.query(TourTranslation).filter_by(tour_id=tour_id).delete(synchronize_session=False)
+            db.flush()
+            try_save_translations(tour, db)
+            db.commit()
+
 
 class TourImageAdmin(ModelView, model= TourImage):
     column_list = [TourImage.id, TourImage.image]
 
 
-class TourProgramAdmin(ModelView, model= TourProgram):
+class TourProgramAdmin(LocalizedAdminMixin, ModelView, model= TourProgram):
     column_list = [TourProgram.id, TourProgram.title]
 
 
-class RegionAdmin(ModelView, model=Region):
+class RegionAdmin(LocalizedAdminMixin, ModelView, model=Region):
     column_list = [Region.id, Region.image]
 
 
-class DistrictAdmin(ModelView, model= District):
+class DistrictAdmin(LocalizedAdminMixin, ModelView, model= District):
     column_list = [District.id, District.name]
 
 
-class HotelAdmin(ModelView, model= Hotel):
+class HotelAdmin(LocalizedAdminMixin, ModelView, model= Hotel):
     column_list = [Hotel.id, Hotel.name]
 
 
@@ -52,7 +97,7 @@ class HotelImageAdmin(ModelView, model= HotelImage):
     column_list = [HotelImage.id, HotelImage.image]
 
 
-class TransportAdmin(ModelView, model= Transport):
+class TransportAdmin(LocalizedAdminMixin, ModelView, model= Transport):
     column_list = [Transport.id, Transport.name]
 
 
@@ -60,7 +105,7 @@ class TransportImageAdmin(ModelView, model= TransportImage):
     column_list = [TransportImage.id, TransportImage.image]
 
 
-class HelicopterTourAdmin(ModelView, model= HelicopterTour):
+class HelicopterTourAdmin(LocalizedAdminMixin, ModelView, model= HelicopterTour):
     column_list = [HelicopterTour.id, HelicopterTour.title]
 
 
@@ -68,7 +113,7 @@ class HelicopterImageAdmin(ModelView, model= HelicopterImage):
     column_list = [HelicopterImage.id, HelicopterImage.image]
 
 
-class TrekkingAdmin(ModelView, model=Trekking):
+class TrekkingAdmin(LocalizedAdminMixin, ModelView, model=Trekking):
     column_list = [Trekking.id, Trekking.title]
 
 
@@ -76,25 +121,25 @@ class TrekkingImageAdmin(ModelView, model= TrekkingImage):
     column_list = [TrekkingImage.id, TrekkingImage.image]
 
 
-class TrekkingProgramAdmin(ModelView, model= TrekkingProgram):
+class TrekkingProgramAdmin(LocalizedAdminMixin, ModelView, model= TrekkingProgram):
     column_list = [TrekkingProgram.id, TrekkingProgram.title]
 
 
-class ContactAdmin(ModelView, model=Contact):
+class ContactAdmin(LocalizedAdminMixin, ModelView, model=Contact):
     column_list = [Contact.id, Contact.phone]
 
 
-class FAQAdmin(ModelView, model= FAQ):
+class FAQAdmin(LocalizedAdminMixin, ModelView, model= FAQ):
     column_list = [FAQ.id, FAQ.question, FAQ.answer, FAQ.is_active]
 
 
 class TravelRequestAdmin(ModelView, model= TravelRequest):
     column_list = [TravelRequest.id, TravelRequest.name]
 
-
-class ChatAdmin(ModelView, model= Chat):
-    column_list = [Chat.id, Chat.client_token]
-
-
-class ChatMessageAdmin(ModelView, model= ChatMessage):
-    column_list = [ChatMessage.id, ChatMessage.text]
+#
+# class ChatAdmin(ModelView, model= Chat):
+#     column_list = [Chat.id, Chat.client_token]
+#
+#
+# class ChatMessageAdmin(ModelView, model= ChatMessage):
+#     column_list = [ChatMessage.id, ChatMessage.text]
