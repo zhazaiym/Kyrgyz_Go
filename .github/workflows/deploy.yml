@@ -1,0 +1,70 @@
+
+name: KyrgyzGo CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kyrgyzgo-production
+  cancel-in-progress: false
+
+
+jobs:
+  test:
+    name: Check Python
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Python syntax
+        run: |
+          python -m compileall -q main.py mysite
+
+  deploy:
+    name: Deploy to AWS
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy project
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          git archive --format=tar.gz HEAD \
+            .dockerignore Dockerfile requirements.txt \
+            main.py create_admin.py seed_demo.py \
+            alembic.ini docker-compose.yml Caddyfile \
+            mysite alembic \
+            | ssh -i ~/.ssh/deploy_key \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes \
+                "$DEPLOY_USER@$DEPLOY_HOST" \
+                "deploy $GITHUB_SHA"
