@@ -39,6 +39,15 @@ def client():
 
 
 @pytest.fixture(scope="session")
+def customer_headers(client):
+    response = client.post('/auth/register', json={
+        'username': 'catalogue_customer', 'password': 'StrongCustomerPassword123!',
+    })
+    assert response.status_code == 201, response.text
+    return {'Authorization': 'Bearer ' + response.json()['access_token']}
+
+
+@pytest.fixture(scope="session")
 def admin_headers(client):
     password = "StrongAdminPassword123!"
     with SessionLocal() as db:

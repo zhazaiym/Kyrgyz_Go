@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.booking import require_chat_booking
 from mysite.database.models import TravelRequest
 from mysite.database.schema import (
-    TravelRequestInputSchema,
     TravelRequestUpdateSchema,
     TravelRequestOutSchema
 )
@@ -18,18 +18,9 @@ travel_request_router = APIRouter(
 )
 
 
-@travel_request_router.post("/", response_model=TravelRequestOutSchema)
-def create_travel_request(
-    request: TravelRequestInputSchema,
-    db: Session = Depends(get_db)
-):
-    request_db = TravelRequest(**request.model_dump())
-
-    db.add(request_db)
-    db.commit()
-    db.refresh(request_db)
-
-    return request_db
+@travel_request_router.post("/", include_in_schema=False)
+def create_travel_request():
+    require_chat_booking()
 
 
 @travel_request_router.get("/", response_model=list[TravelRequestOutSchema], dependencies=[Depends(get_current_admin)])

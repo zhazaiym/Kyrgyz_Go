@@ -1,0 +1,68 @@
+name: Test and deploy backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest httpx websockets ruff
+      - name: Check Python names and imports
+        run: python -m ruff check mysite main.py scripts tests --select F401,F811,F821,F841
+      - name: Run isolated tests
+        run: python -m pytest -q
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: kyrgyzgo-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify this is still the latest main commit
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+      - name: Configure pinned SSH connection
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/deploy_known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/deploy_known_hosts"
+      - name: Upload and deploy tested source
+        run: |
+          set -euo pipefail
+          tar --exclude=__pycache__ --exclude='*.pyc' -czf "$RUNNER_TEMP/release.tar.gz" \
+            .dockerignore Dockerfile requirements.txt main.py create_admin.py seed_demo.py alembic.ini \
+            mysite alembic scripts
+          ssh -T -i "$HOME/.ssh/deploy_key" -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/deploy_known_hosts" \
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=20 \
+            ubuntu@13.53.40.37 "deploy $GITHUB_SHA" < "$RUNNER_TEMP/release.tar.gz"
+      - name: Remove temporary SSH credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/deploy_known_hosts"

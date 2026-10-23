@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
+from mysite.database.catalogue_schema import HelicopterTourCardSchema, HelicopterCatalogueDetailSchema
 from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import HelicopterTour
 from mysite.database.schema import (
@@ -34,15 +36,15 @@ def create_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.get("/", response_model=list[HelicopterTourOutSchema])
+@helicopter_tour_router.get("/", response_model=list[HelicopterTourCardSchema])
 def list_helicopter_tours(
     lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return [localized(record, lang) for record in db.query(HelicopterTour).all()]
+    return [localized(record, lang) for record in db.query(HelicopterTour).filter(HelicopterTour.is_active.is_(True)).all()]
 
 
-@helicopter_tour_router.get("/{helicopter_id}/", response_model=HelicopterTourOutSchema)
+@helicopter_tour_router.get("/{helicopter_id}/", response_model=HelicopterCatalogueDetailSchema, dependencies=[Depends(current_client)])
 def detail_helicopter_tour(
     helicopter_id: int,
     lang: Language = "ru",
@@ -50,7 +52,7 @@ def detail_helicopter_tour(
 ):
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
-    if helicopter_db is None:
+    if helicopter_db is None or not helicopter_db.is_active:
         raise HTTPException(
             status_code=404,
             detail="Вертолёт туру табылган жок"
