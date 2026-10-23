@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+
 load_dotenv()
 
 # ADMIN
@@ -41,7 +43,10 @@ from mysite.api.about_section import about_section_router
 
 from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
-
+from mysite.api.manager_selection import manager_selection_router
+from mysite.api.travel_selection import selection_router
+from mysite.api.registration import router as registration_router
+from mysite.api.password_reset import router as password_reset_router
 # NEW AI CHAT
 from mysite.api.chat_auth import router as chat_auth_router
 from mysite.api.chat import chat_router
@@ -120,6 +125,10 @@ app.include_router(tour_program_router)
 app.include_router(chat_auth_router)
 app.include_router(chat_router)
 app.include_router(chat_ws_router)
+app.include_router(selection_router)
+app.include_router(manager_selection_router)
+app.include_router(registration_router)
+app.include_router(password_reset_router)
 
 
 # ADMIN PANEL

@@ -3,6 +3,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
@@ -63,11 +64,20 @@ def client_by_token(db: Session, token: str):
         raise HTTPException(401, 'Клиент не найден')
     return client
 
-def current_client(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    scheme, _, token = (authorization or '').partition(' ')
-    if scheme.lower() != 'bearer':
-        raise HTTPException(401, 'Требуется Bearer token')
-    return client_by_token(db, token)
+# def current_client(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+#     scheme, _, token = (authorization or '').partition(' ')
+#     if scheme.lower() != 'bearer':
+#         raise HTTPException(401, 'Требуется Bearer token')
+#     return client_by_token(db, token)
+
+security = HTTPBearer()
+
+
+def current_client(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    return client_by_token(db, credentials.credentials)
 
 @router.get('/me')
 def me(client: ChatClient = Depends(current_client)):
