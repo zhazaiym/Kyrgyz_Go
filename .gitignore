@@ -8,6 +8,10 @@ __pycache__/
 venv/
 .test_*.db
 .test_*.db-*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
 .ruff_cache/
 .pytest_cache/
 pytest-cache-files-*/

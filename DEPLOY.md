@@ -162,6 +162,14 @@ and certificate must be configured on the target server before public use.
 
 ### Frontend connection
 
+Customer registration and login use `/auth/register` and `/auth/login`.
+Keep one customer token for both catalogue details and chat. Catalogue lists
+return public summary cards; detailed objects, programs, galleries and chat
+require the customer token. On HTTP 401, show the shared registration/login
+screen and return to the requested page after login. See
+`docs/shared-client-auth.md` for the frontend contract. Administrative tokens
+remain separate and cannot be replaced with a customer token.
+
 Use `https://your-api.example` as the frontend API base URL and
 `wss://your-api.example/ws/chat/{session_id}` for chat WebSockets. OpenAPI is
 available at `/openapi.json` and interactive documentation at `/docs`.

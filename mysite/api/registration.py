@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from mysite.database.db import get_db
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
-from mysite.api.chat_auth import issue_token, current_client
+from mysite.api.client_auth import issue_token, current_client
 
 
 router = APIRouter(

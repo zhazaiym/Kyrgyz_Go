@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.database.models import Tour, TourImage
 from mysite.database.schema import (
     TourImageInputSchema,
@@ -25,18 +26,18 @@ def create_tour_image(data: TourImageInputSchema, db: Session = Depends(get_db))
     return image_db
 
 
-@tour_image_router.get("/", response_model=list[TourImageOutSchema])
+@tour_image_router.get("/", response_model=list[TourImageOutSchema], dependencies=[Depends(current_client)])
 def list_tour_images(tour_id: int | None = None, db: Session = Depends(get_db)):
-    query = db.query(TourImage)
+    query = db.query(TourImage).join(Tour).filter(Tour.is_active.is_(True))
     if tour_id is not None:
         query = query.filter(TourImage.tour_id == tour_id)
     return query.order_by(TourImage.order).all()
 
 
-@tour_image_router.get("/{image_id}/", response_model=TourImageOutSchema)
+@tour_image_router.get("/{image_id}/", response_model=TourImageOutSchema, dependencies=[Depends(current_client)])
 def detail_tour_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TourImage, image_id)
-    if not image_db:
+    if not image_db or not image_db.tour.is_active:
         raise HTTPException(status_code=404, detail="Сүрөт табылган жок")
     return image_db
 

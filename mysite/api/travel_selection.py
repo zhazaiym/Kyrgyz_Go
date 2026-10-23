@@ -13,7 +13,7 @@ from mysite.database.chat_models import (
     ChatSession,
     ChatMessage,
 )
-from mysite.api.chat_auth import current_client
+from mysite.api.client_auth import current_client
 
 
 selection_router = APIRouter(

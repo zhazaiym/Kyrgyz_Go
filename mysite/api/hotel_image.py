@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.database.models import Hotel, HotelImage
 from mysite.database.schema import (
     HotelImageInputSchema,
@@ -42,24 +43,24 @@ def create_hotel_image(
     return hotel_image_db
 
 
-@hotel_image_router.get("/", response_model=list[HotelImageOutSchema])
+@hotel_image_router.get("/", response_model=list[HotelImageOutSchema], dependencies=[Depends(current_client)])
 def list_hotel_images(
     db: Session = Depends(get_db)
 ):
-    return db.query(HotelImage).order_by(
+    return db.query(HotelImage).join(Hotel).filter(Hotel.is_active.is_(True)).order_by(
         HotelImage.order,
         HotelImage.id
     ).all()
 
 
-@hotel_image_router.get("/{image_id}/", response_model=HotelImageOutSchema)
+@hotel_image_router.get("/{image_id}/", response_model=HotelImageOutSchema, dependencies=[Depends(current_client)])
 def detail_hotel_image(
     image_id: int,
     db: Session = Depends(get_db)
 ):
     hotel_image_db = db.get(HotelImage, image_id)
 
-    if hotel_image_db is None:
+    if hotel_image_db is None or not hotel_image_db.hotel.is_active:
         raise HTTPException(
             status_code=404,
             detail="Сүрөт табылган жок"

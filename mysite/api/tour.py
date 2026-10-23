@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
+from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.models import Tour, TourCategory, TourTranslation
 from mysite.database.schema import (
     TourInputSchema,
@@ -85,7 +87,7 @@ def get_localized_tour(
     lang: str,
     detail: bool = False
 ):
-    schema = TourDetailSchema if detail else TourOutSchema
+    schema = TourDetailSchema if detail else TourCardSchema
 
     result = schema.model_validate(tour_db).model_dump(
         mode="json"
@@ -103,7 +105,7 @@ def get_localized_tour(
     ).first()
 
     if translation_db is not None:
-        for field in TRANSLATED_FIELDS:
+        for field in TRANSLATED_FIELDS if detail else ("title",):
             result[field] = getattr(translation_db, field)
 
     return result
@@ -146,7 +148,7 @@ def create_tour(
         )
 
 
-@tour_router.get("/", response_model=list[TourOutSchema])
+@tour_router.get("/", response_model=list[TourCardSchema])
 def list_tours(
     lang: str = Query(
         default="ru",
@@ -164,7 +166,7 @@ def list_tours(
     ]
 
 
-@tour_router.get("/{tour_id}/", response_model=TourDetailSchema)
+@tour_router.get("/{tour_id}/", response_model=TourDetailSchema, dependencies=[Depends(current_client)])
 def detail_tour(
     tour_id: int,
     lang: str = Query(

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.database.models import HelicopterTour, HelicopterImage
 from mysite.database.schema import (
     HelicopterImageInputSchema,
@@ -40,22 +41,22 @@ def create_helicopter_image(
     return image_db
 
 
-@helicopter_image_router.get("/", response_model=list[HelicopterImageOutSchema])
+@helicopter_image_router.get("/", response_model=list[HelicopterImageOutSchema], dependencies=[Depends(current_client)])
 def list_helicopter_images(db: Session = Depends(get_db)):
-    return db.query(HelicopterImage).order_by(
+    return db.query(HelicopterImage).join(HelicopterTour).filter(HelicopterTour.is_active.is_(True)).order_by(
         HelicopterImage.order,
         HelicopterImage.id
     ).all()
 
 
-@helicopter_image_router.get("/{image_id}/", response_model=HelicopterImageOutSchema)
+@helicopter_image_router.get("/{image_id}/", response_model=HelicopterImageOutSchema, dependencies=[Depends(current_client)])
 def detail_helicopter_image(
     image_id: int,
     db: Session = Depends(get_db)
 ):
     image_db = db.get(HelicopterImage, image_id)
 
-    if image_db is None:
+    if image_db is None or not image_db.helicopter.is_active:
         raise HTTPException(
             status_code=404,
             detail="Сүрөт табылган жок"

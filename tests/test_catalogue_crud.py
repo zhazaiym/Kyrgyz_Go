@@ -16,7 +16,7 @@ def fake_translations(data):
     }
 
 
-def test_location_hotel_and_tour_creation(client, admin_headers, monkeypatch):
+def test_location_hotel_and_tour_creation(client, admin_headers, customer_headers, monkeypatch):
     monkeypatch.setattr("mysite.api.tour.translate_tour", fake_translations)
 
     category = create(client, "/tour-categories/", {"name": "Adventure"}, admin_headers)
@@ -46,14 +46,14 @@ def test_location_hotel_and_tour_creation(client, admin_headers, monkeypatch):
         "tour_id": tour["id"], "day_number": 1, "title": "Arrival"
     }, admin_headers)
 
-    detail = client.get(f"/tours/{tour['id']}/?lang=en")
+    detail = client.get(f"/tours/{tour['id']}/?lang=en", headers=customer_headers)
     assert detail.status_code == 200, detail.text
     assert detail.json()["title"] == "Test Tour en"
     assert len(detail.json()["images"]) == 1
     assert len(detail.json()["programs"]) == 1
 
 
-def test_transport_helicopter_and_trekking_creation(client, admin_headers):
+def test_transport_helicopter_and_trekking_creation(client, admin_headers, customer_headers):
     transport = create(client, "/transports/", {
         "name": "Test Van", "seats": 8, "price": "80.00"
     }, admin_headers)
@@ -78,9 +78,9 @@ def test_transport_helicopter_and_trekking_creation(client, admin_headers):
         "trekking_id": trekking["id"], "day_number": 1, "title": "Start"
     }, admin_headers)
 
-    assert client.get(f"/transports/{transport['id']}/").status_code == 200
-    assert client.get(f"/helicopter-tours/{helicopter['id']}/").status_code == 200
-    assert client.get(f"/trekkings/{trekking['id']}/").status_code == 200
+    assert client.get(f"/transports/{transport['id']}/", headers=customer_headers).status_code == 200
+    assert client.get(f"/helicopter-tours/{helicopter['id']}/", headers=customer_headers).status_code == 200
+    assert client.get(f"/trekkings/{trekking['id']}/", headers=customer_headers).status_code == 200
 
 
 def test_content_records_can_be_managed_by_admin(client, admin_headers):
