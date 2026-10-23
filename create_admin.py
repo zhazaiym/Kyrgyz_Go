@@ -1,7 +1,6 @@
 from getpass import getpass
 
 from pwdlib import PasswordHash
-from sqlalchemy.orm import Session
 
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin

@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from datetime import date
 from typing import Literal
 from pydantic import BaseModel, Field
@@ -10,7 +11,9 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from mysite.chain.prompts import SYSTEM_PROMPT, EXTRACT_PROMPT
-from mysite.chain.tools import READ_TOOLS, list_active_tours
+from mysite.chain.tools import READ_TOOLS, _not_demo
+from mysite.database.db import SessionLocal
+from mysite.database.models import Tour
 
 load_dotenv()
 for _proxy_key in list(os.environ):
@@ -18,15 +21,42 @@ for _proxy_key in list(os.environ):
         os.environ.pop(_proxy_key, None)
 log = logging.getLogger(__name__)
 FIELDS = ('client_name', 'phone', 'email', 'tour_id', 'destination', 'travel_date',
-          'duration_days', 'people_count', 'budget', 'notes')
-CONFIRMATION_TEXT = 'РїРѕРґС‚РІРµСЂР¶РґР°СЋ Р·Р°СЏРІРєСѓ'
+          'duration_days', 'people_count', 'budget', 'notes', 'language')
+CONFIRMATION_TEXT = 'подтверждаю заявку'
+CONFIRMATION_REPLIES = {
+    'да подтверждаю', 'подтверждаю', CONFIRMATION_TEXT,
+    'я готова бронировать тур', 'я готов бронировать тур',
+    'я готова бронировать туры', 'я готов бронировать туры',
+    'я готова забронировать тур', 'я готов забронировать тур',
+    'yes confirm', 'i confirm', 'confirm', 'confirm request',
+    'ооба ырастайм', 'ырастайм', 'өтүнмөнү ырастайм',
+    'ich bestätige', 'ich bestätige die anfrage', '确认提交', '确认申请',
+}
+REJECTION_REPLIES = {
+    'нет', 'не подтверждаю', 'не отправляй', 'отмена',
+    'нет спасибо', 'не отправляйте', 'не отправляйте заявку', 'пока не отправляй', 'пока не отправляйте',
+    'не оформляй', 'не оформляйте', 'не хочу бронировать',
+    'я передумал', 'я передумала', 'я передумал бронировать', 'я передумала бронировать',
+    'no', 'no thanks', 'not now', 'do not submit', 'do not send yet',
+    'don t send yet', 'cancel', 'cancel request',
+    'жок', 'жок рахмат', 'ырастабайм', 'жөнөтпө', 'азыр жөнөтпө',
+    'nein', 'nicht absenden', '不发送', '取消',
+}
+
+
+def normalized_reply(message: str) -> str:
+    return ' '.join(re.sub(r'[^\w\s]', ' ', message.casefold()).split())
 
 
 def confirmation_allowed(stage: str, message: str) -> bool:
-    normalized = ' '.join(message.casefold().strip().rstrip('.! ').split())
-    return stage == 'awaiting_confirmation' and normalized == CONFIRMATION_TEXT
+    return stage == 'awaiting_confirmation' and normalized_reply(message) in CONFIRMATION_REPLIES
+
+
+def rejection_allowed(stage: str, message: str) -> bool:
+    return stage == 'awaiting_confirmation' and normalized_reply(message) in REJECTION_REPLIES
 
 class Changes(BaseModel):
+    language: Literal['ru', 'ky', 'en', 'de', 'zh'] | None = None
     client_name: str | None = None
     phone: str | None = None
     email: str | None = None
@@ -43,6 +73,10 @@ class Changes(BaseModel):
     ]] = Field(default_factory=list)
     booking_intent: bool = False
 
+
+def output_budget(name: str, default: int, maximum: int) -> int:
+    return max(256, min(maximum, int(os.getenv(name, str(default)))))
+
 model_name = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
 thinking_level = os.getenv('GEMINI_THINKING_LEVEL', 'LOW').upper()
 max_retries = int(os.getenv('GEMINI_MAX_RETRIES', '1'))
@@ -52,11 +86,14 @@ model_options = {
     'timeout': 120,
 }
 llm = ChatGoogleGenerativeAI(
-    model=model_name, **model_options
+    model=model_name, max_output_tokens=output_budget('CHAT_MAX_OUTPUT_TOKENS', 1536, 4096),
+    **model_options
 )
 extract_model_name = os.getenv('GEMINI_EXTRACT_MODEL', model_name)
 extract_llm = ChatGoogleGenerativeAI(
-    model=extract_model_name, **model_options
+    model=extract_model_name,
+    max_output_tokens=output_budget('CHAT_EXTRACT_MAX_OUTPUT_TOKENS', 512, 1024),
+    **model_options
 )
 extractor = extract_llm.with_structured_output(Changes, method='json_schema')
 agent_llm = llm.bind_tools(READ_TOOLS)
@@ -85,17 +122,51 @@ def stream_text(content):
     return ''
 
 
+def active_tour_ids():
+    with SessionLocal() as db:
+        return [row[0] for row in db.query(Tour.id).filter(
+            Tour.is_active.is_(True), _not_demo(Tour.title)
+        ).all()]
+
+
+def recent_messages(history):
+    message_limit = max(1, int(os.getenv('CHAT_HISTORY_MESSAGES', '12')))
+    character_limit = max(1, int(os.getenv('CHAT_HISTORY_CHARACTERS', '8000')))
+    selected = []
+    characters = 0
+    for item in reversed(history[-message_limit:]):
+        if item.role not in ('user', 'assistant') or not isinstance(item.content, str):
+            continue
+        if characters + len(item.content) > character_limit:
+            break
+        selected.append(item)
+        characters += len(item.content)
+    return list(reversed(selected))
+
+
+def extraction_context(history):
+    remaining = 2400
+    selected = []
+    for item in reversed(history[-4:]):
+        if item.role not in ('user', 'assistant') or not isinstance(item.content, str):
+            continue
+        content = item.content[-remaining:]
+        selected.append({'role': item.role, 'content': content})
+        remaining -= len(content)
+        if remaining <= 0:
+            break
+    return json.dumps(list(reversed(selected)), ensure_ascii=False)
+
+
 async def respond(message: str, state: dict, history: list, on_chunk=None):
     """Return answer, updated state, explicit booking intent. Tools read DB on demand."""
     current = dict(state or {})
-    # Read active IDs from company database for safe structured extraction.
-    tours = await asyncio.to_thread(list_active_tours.invoke, {})
-    ids = [t['id'] for t in tours]
     intent = False
     try:
+        ids = await asyncio.to_thread(active_tour_ids)
         changes = await asyncio.wait_for(extractor.ainvoke(EXTRACT_PROMPT.format(
             state=json.dumps(current, ensure_ascii=False), tour_ids=json.dumps(ids),
-            message=message)), timeout=45)
+            message=message, context=extraction_context(history))), timeout=45)
         if isinstance(changes, dict):
             changes = Changes.model_validate(changes)
         if not isinstance(changes, Changes):
@@ -124,14 +195,15 @@ async def respond(message: str, state: dict, history: list, on_chunk=None):
 
     msgs = [SystemMessage(content=SYSTEM_PROMPT.format(
         state=json.dumps(current, ensure_ascii=False), today=date.today().isoformat()))]
-    for item in history[-24:]:
+    for item in recent_messages(history):
         if item.role == 'user':
             msgs.append(HumanMessage(content=item.content))
         elif item.role == 'assistant':
             msgs.append(AIMessage(content=item.content))
     msgs.append(HumanMessage(content=message))
-    visible_parts = []
+    compact_retry = False
     for _ in range(5):
+        visible_parts = []
         async def stream_reply():
             complete = None
             async for chunk in agent_llm.astream(msgs):
@@ -139,19 +211,32 @@ async def respond(message: str, state: dict, history: list, on_chunk=None):
                 text = stream_text(chunk.content)
                 if text:
                     visible_parts.append(text)
-                    if on_chunk is not None:
-                        await on_chunk(text)
             if complete is None:
                 raise ValueError('Gemini returned empty stream')
             return complete
 
         reply = await asyncio.wait_for(stream_reply(), timeout=60)
+        finish_reason = str(reply.response_metadata.get('finish_reason', '')).upper()
+        if finish_reason.endswith('MAX_TOKENS') or finish_reason == 'LENGTH':
+            if compact_retry:
+                raise RuntimeError('Gemini response exceeded output budget')
+            compact_retry = True
+            msgs.append(SystemMessage(content=(
+                'Переформулируй ответ на языке клиента заметно компактнее, но законченным. '
+                'Сохрани главное предложение, существенные условия и нужный вопрос. '
+                'Используй только проверенные факты, не повторяй вступление. '
+                'Если вся программа не помещается, предложи продолжить её отдельно.'
+            )))
+            continue
         msgs.append(reply)
         calls = getattr(reply, 'tool_calls', []) or []
         if not calls:
             answer = ''.join(visible_parts).strip()
             if not answer:
                 raise ValueError('Gemini returned empty final response')
+            if on_chunk is not None:
+                for text in visible_parts:
+                    await on_chunk(text)
             return answer, current, intent
         for call in calls:
             name = call.get('name', '')

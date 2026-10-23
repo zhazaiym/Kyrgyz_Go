@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
+from mysite.database.catalogue_schema import HotelCardSchema
 from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Hotel, Region, District
 from mysite.database.schema import (
@@ -64,15 +66,15 @@ def create_hotel(
     return hotel_db
 
 
-@hotel_router.get("/", response_model=list[HotelOutSchema])
+@hotel_router.get("/", response_model=list[HotelCardSchema])
 def list_hotels(
     lang: Language = "ru",
     db: Session = Depends(get_db)
 ):
-    return [localized(record, lang) for record in db.query(Hotel).all()]
+    return [localized(record, lang) for record in db.query(Hotel).filter(Hotel.is_active.is_(True)).all()]
 
 
-@hotel_router.get("/{hotel_id}/", response_model=HotelOutSchema)
+@hotel_router.get("/{hotel_id}/", response_model=HotelOutSchema, dependencies=[Depends(current_client)])
 def detail_hotel(
     hotel_id: int,
     lang: Language = "ru",
@@ -80,7 +82,7 @@ def detail_hotel(
 ):
     hotel_db = db.get(Hotel, hotel_id)
 
-    if hotel_db is None:
+    if hotel_db is None or not hotel_db.is_active:
         raise HTTPException(
             status_code=404,
             detail="Мейманкана табылган жок"

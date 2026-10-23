@@ -10,20 +10,13 @@ PUBLIC_LIST_ROUTES = [
     "/regions/",
     "/districts/",
     "/hotels/",
-    "/hotel-images/",
     "/transports/",
-    "/transport-images/",
     "/helicopter-tours/",
-    "/helicopter-images/",
     "/trekkings/",
-    "/trekking-images/",
-    "/trekking-programs/",
     "/faqs/",
     "/contacts/",
     "/abouts/",
     "/about-sections/",
-    "/tour-images/",
-    "/tour-programs/",
 ]
 
 
@@ -31,6 +24,15 @@ PUBLIC_LIST_ROUTES = [
 def test_public_read_routes_respond(client, path):
     response = client.get(path)
     assert response.status_code == 200, f"{path}: {response.text}"
+
+
+@pytest.mark.parametrize("path", [
+    "/hotel-images/", "/transport-images/", "/helicopter-images/",
+    "/trekking-images/", "/tour-images/", "/tour-programs/", "/trekking-programs/",
+])
+def test_catalogue_detail_resources_require_customer(client, customer_headers, path):
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=customer_headers).status_code == 200
 
 
 PROTECTED_WRITES = [
@@ -72,12 +74,14 @@ def test_private_customer_routes_reject_anonymous_requests(client):
     assert client.delete("/travel-requests/1/").status_code == 401
 
 
-def test_openapi_contains_legacy_booking_route(client):
+def test_openapi_only_advertises_chat_booking_submission(client):
     paths = client.get("/openapi.json").json()["paths"]
-    assert "/bookings/" in paths
+    assert "/bookings/" not in paths
+    assert "post" not in paths['/travel-requests/']
+    assert '/booking/confirm' in paths
 
 
-def test_legacy_booking_submission_creates_request(
+def test_legacy_booking_submission_requires_chat(
     client, admin_headers, monkeypatch
 ):
     monkeypatch.setattr("mysite.api.tour.try_save_translations", lambda *args: None)
@@ -106,6 +110,5 @@ def test_legacy_booking_submission_creates_request(
         },
     )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["booking_id"] > 0
-    assert response.json()["status"] == "new"
+    assert response.status_code == 410, response.text
+    assert response.json()['detail']['code'] == 'booking_requires_chat'

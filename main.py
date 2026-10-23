@@ -48,7 +48,7 @@ from mysite.api.travel_selection import selection_router
 from mysite.api.registration import router as registration_router
 from mysite.api.password_reset import router as password_reset_router
 # NEW AI CHAT
-from mysite.api.chat_auth import router as chat_auth_router
+from mysite.api.client_auth import router as client_auth_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_ws import router as chat_ws_router
 
@@ -122,7 +122,8 @@ app.include_router(tour_program_router)
 
 
 # NEW AI CHAT ROUTERS
-app.include_router(chat_auth_router)
+app.include_router(client_auth_router, prefix='/auth')
+app.include_router(client_auth_router, prefix='/chat/auth', include_in_schema=False)
 app.include_router(chat_router)
 app.include_router(chat_ws_router)
 app.include_router(selection_router)

@@ -6,7 +6,7 @@ from mysite.database.db import SessionLocal
 from mysite.database import models
 
 
-def test_helicopter_fields_are_returned(client, admin_headers):
+def test_helicopter_fields_are_returned(client, admin_headers, customer_headers):
     fields = dict(duration_minutes=45, max_passengers=4,
                   departure_location="Bishkek", destination="Ala-Archa",
                   main_image="https://example.com/helicopter.jpg")
@@ -15,19 +15,19 @@ def test_helicopter_fields_are_returned(client, admin_headers):
     assert response.status_code == 200, response.text
     flight = response.json()
     for path in ['/helicopter-tours/', f"/helicopter-tours/{flight['id']}/"]:
-        data = client.get(path).json()
+        data = client.get(path, headers=customer_headers).json()
         item = next(x for x in data if x['id'] == flight['id']) if isinstance(data, list) else data
         assert {key: item.get(key) for key in fields} == fields
 
 
-def test_tour_coordinates_round_trip_and_validation(client, admin_headers, monkeypatch):
+def test_tour_coordinates_round_trip_and_validation(client, admin_headers, customer_headers, monkeypatch):
     monkeypatch.setattr('mysite.api.tour.translate_tour', lambda data: {
         lang: data for lang in ('en', 'de', 'zh')})
     response = client.post('/tours/', headers=admin_headers, json={
         'title': 'Map tour', 'price': '100', 'latitude': 42.64, 'longitude': 74.48})
     assert response.status_code == 200, response.text
     tour = response.json()
-    detail = client.get(f"/tours/{tour['id']}/").json()
+    detail = client.get(f"/tours/{tour['id']}/", headers=customer_headers).json()
     assert Decimal(str(detail.get('latitude'))) == Decimal('42.64')
     assert Decimal(str(detail.get('longitude'))) == Decimal('74.48')
     response = client.put(f"/tours/{tour['id']}/", headers=admin_headers,
@@ -55,7 +55,7 @@ def test_tour_coordinates_round_trip_and_validation(client, admin_headers, monke
     (models.TourProgram, '/tour-programs/', 'title', {'day_number': 1}),
     (models.TrekkingProgram, '/trekking-programs/', 'title', {'day_number': 1}),
 ])
-def test_language_on_list_and_detail(client, model, path, field, payload):
+def test_language_on_list_and_detail(client, customer_headers, model, path, field, payload):
     with SessionLocal() as db:
         country = models.Country(name='Language country')
         region = models.Region(name='Language region', country=country)
@@ -81,27 +81,58 @@ def test_language_on_list_and_detail(client, model, path, field, payload):
         db.commit()
         record_id = record.id
     for lang, expected in [('ru', 'Original'), ('en', 'English'), ('de', 'Deutsch'), ('zh', 'Chinese')]:
-        response = client.get(path, params={'lang': lang})
+        headers = customer_headers if model in (models.TourProgram, models.TrekkingProgram) else {}
+        response = client.get(path, params={'lang': lang}, headers=headers)
         assert response.status_code == 200, response.text
         assert next(x for x in response.json() if x['id'] == record_id)[field] == expected
         # Only the requested contacts list becomes public.
         if model is not models.Contact:
-            response = client.get(f'{path}{record_id}/', params={'lang': lang})
+            response = client.get(f'{path}{record_id}/', params={'lang': lang}, headers=customer_headers)
             assert response.status_code == 200, response.text
             assert response.json()[field] == expected
-    assert client.get(path, params={'lang': 'invalid'}).status_code == 422
+    assert client.get(path, params={'lang': 'invalid'}, headers=customer_headers).status_code == 422
 
 
-def test_translation_does_not_replace_non_text_fields(client):
+def test_translation_does_not_replace_non_text_fields(client, customer_headers):
     with SessionLocal() as db:
         record = models.Trekking(title='Original', price=10)
         record.translations = {'en': {'title': 'English', 'price': '999', 'id': 999}}
         db.add(record)
         db.commit()
         record_id = record.id
-    data = client.get(f'/trekkings/{record_id}/?lang=en').json()
+    data = client.get(f'/trekkings/{record_id}/?lang=en', headers=customer_headers).json()
     assert data['id'] == record_id
     assert Decimal(data['price']) == 10
+
+
+def test_inactive_catalogue_resources_are_hidden(client, customer_headers):
+    with SessionLocal() as db:
+        country = models.Country(name='Inactive country')
+        region = models.Region(name='Inactive region', country=country)
+        district = models.District(name='Inactive district', region=region)
+        tour = models.Tour(title='Inactive tour', price=10, is_active=False)
+        trek = models.Trekking(title='Inactive trek', price=10, is_active=False)
+        hotel = models.Hotel(name='Inactive hotel', price=10, region=region,
+                             district=district, is_active=False)
+        transport = models.Transport(name='Inactive transport', seats=4, price=10, is_active=False)
+        flight = models.HelicopterTour(title='Inactive flight', price=10, is_active=False)
+        entries = [('/tours/', tour), ('/trekkings/', trek), ('/hotels/', hotel),
+                   ('/transports/', transport), ('/helicopter-tours/', flight),
+                   ('/tour-programs/', models.TourProgram(tour=tour, day_number=1)),
+                   ('/trekking-programs/', models.TrekkingProgram(trekking=trek, day_number=1)),
+                   ('/tour-images/', models.TourImage(tour=tour, image='https://example.com/tour.jpg')),
+                   ('/hotel-images/', models.HotelImage(hotel=hotel, image='https://example.com/hotel.jpg')),
+                   ('/transport-images/', models.TransportImage(transport=transport, image='https://example.com/van.jpg')),
+                   ('/trekking-images/', models.TrekkingImage(trekking=trek, image='https://example.com/trek.jpg')),
+                   ('/helicopter-images/', models.HelicopterImage(helicopter=flight, image='https://example.com/flight.jpg'))]
+        db.add_all([country, region, district] + [record for _, record in entries])
+        db.commit()
+        identifiers = [(path, record.id) for path, record in entries]
+    for path, record_id in identifiers:
+        response = client.get(path, headers=customer_headers)
+        assert response.status_code == 200, response.text
+        assert all(record['id'] != record_id for record in response.json()), path
+        assert client.get(f'{path}{record_id}/', headers=customer_headers).status_code == 404
 
 
 def test_api_updates_translations_and_clears_stale_text_on_failure(client, admin_headers, monkeypatch):
@@ -137,7 +168,7 @@ def test_sqladmin_generates_translations(client, admin_headers):
     client.get('/admin/logout')
 
 
-def test_seed_demo_is_repeatable_and_preserves_edits(client):
+def test_seed_demo_is_repeatable_and_preserves_edits(client, customer_headers):
     from seed_demo import seed_demo
 
     with SessionLocal() as db:
@@ -156,7 +187,9 @@ def test_seed_demo_is_repeatable_and_preserves_edits(client):
         assert len(test_records) == 20, (path, len(test_records))
         assert len({row['id'] for row in test_records}) == 20
         if path == '/tours/':
-            assert len({(row['latitude'], row['longitude']) for row in test_records}) == 20
+            details = [client.get(f"/tours/{row['id']}/", headers=customer_headers).json()
+                       for row in test_records]
+            assert len({(row['latitude'], row['longitude']) for row in details}) == 20
         if path == '/helicopter-tours/':
             for row in test_records:
                 assert all(row[field] for field in (
@@ -175,7 +208,7 @@ def test_sqladmin_preserves_manual_translation(client, admin_headers):
     client.get('/admin/logout')
 
 
-def test_nested_tour_program_uses_requested_language(client):
+def test_nested_tour_program_uses_requested_language(client, customer_headers):
     with SessionLocal() as db:
         tour = models.Tour(title='Nested tour', price=10)
         program = models.TourProgram(tour=tour, day_number=1, title='Original program',
@@ -183,12 +216,12 @@ def test_nested_tour_program_uses_requested_language(client):
         db.add_all([tour, program])
         db.commit()
         tour_id = tour.id
-    response = client.get(f'/tours/{tour_id}/?lang=en')
+    response = client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers)
     assert response.status_code == 200
     assert response.json()['programs'][0]['title'] == 'English program'
 
 
-def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(client, monkeypatch):
+def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(client, customer_headers, monkeypatch):
     import asyncio
     from types import SimpleNamespace
     from mysite.admin.views import TourAdmin
@@ -208,7 +241,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(client, m
         monkeypatch.setattr('mysite.api.tour.translate_tour', lambda source: {
             lang: dict(source, title='Fresh English') for lang in ('en', 'de', 'zh')})
         asyncio.run(view.after_model_change({}, tour, False, request))
-    assert client.get(f'/tours/{tour_id}/?lang=en').json()['title'] == 'Fresh English'
+    assert client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers).json()['title'] == 'Fresh English'
 
     def fail(source):
         raise RuntimeError('Translation provider unavailable')
@@ -220,7 +253,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(client, m
         tour.title = 'New source'
         db.commit()
         asyncio.run(view.after_model_change({}, tour, False, request))
-    assert client.get(f'/tours/{tour_id}/?lang=en').json()['title'] == 'New source'
+    assert client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers).json()['title'] == 'New source'
 
 
 def test_seed_fills_all_content_sections_and_galleries(client):

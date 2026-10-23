@@ -4,7 +4,9 @@ from mysite.database.models import (Admin, About, AboutSection, TourCategory, To
                                     Trekking, TrekkingImage, TrekkingProgram, Contact, FAQ, TravelRequest,
                                    )
 from sqladmin import ModelView
+from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
+from mysite.database.chat_models import ChatBookingLink
 
 from mysite.translations.content import CONTENT_FIELDS, generate_translations
 
@@ -134,12 +136,43 @@ class FAQAdmin(LocalizedAdminMixin, ModelView, model= FAQ):
 
 
 class TravelRequestAdmin(ModelView, model= TravelRequest):
-    column_list = [TravelRequest.id, TravelRequest.name]
+    name = 'Заявка'
+    name_plural = 'Все заявки'
+    column_list = [TravelRequest.id, TravelRequest.name, TravelRequest.phone,
+                   TravelRequest.destination, TravelRequest.travel_date,
+                   TravelRequest.travelers_count, TravelRequest.status,
+                   TravelRequest.created_at]
+    column_searchable_list = [TravelRequest.name, TravelRequest.phone, TravelRequest.destination]
+    column_sortable_list = [TravelRequest.id, TravelRequest.travel_date,
+                            TravelRequest.status, TravelRequest.created_at]
+    column_default_sort = (TravelRequest.created_at, True)
+    can_view_details = True
 
-#
-# class ChatAdmin(ModelView, model= Chat):
-#     column_list = [Chat.id, Chat.client_token]
-#
-#
-# class ChatMessageAdmin(ModelView, model= ChatMessage):
-#     column_list = [ChatMessage.id, ChatMessage.text]
+
+class ChatRequestAdmin(TravelRequestAdmin):
+    identity = 'chat-request'
+    name = 'Заявка из чата'
+    name_plural = 'Заявки из чата'
+    can_create = False
+    can_delete = False
+    form_columns = [TravelRequest.status]
+
+    def list_query(self, request):
+        return super().list_query(request).where(
+            TravelRequest.id.in_(select(ChatBookingLink.request_id))
+        )
+
+    def count_query(self, request):
+        return super().count_query(request).where(
+            TravelRequest.id.in_(select(ChatBookingLink.request_id))
+        )
+
+    def form_details_query(self, request):
+        return super().form_details_query(request).where(
+            TravelRequest.id.in_(select(ChatBookingLink.request_id))
+        )
+
+    def form_edit_query(self, request):
+        return super().form_edit_query(request).where(
+            TravelRequest.id.in_(select(ChatBookingLink.request_id))
+        )
