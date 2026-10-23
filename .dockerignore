@@ -25,3 +25,10 @@ pytest-cache-files-*
 tests
 docs
 *.log
+.env
+.venv/
+__pycache__/
+*.pyc
+.idea/
+*.db
+*.sqlite3

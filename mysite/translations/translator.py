@@ -8,11 +8,26 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 load_dotenv()
 
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(BASE_DIR / ".env")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 model = ChatGoogleGenerativeAI(
-    model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
-    temperature=0,
-    max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "1")),
+    model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+    google_api_key=GEMINI_API_KEY,
+    temperature=0.3
 )
+# model = ChatGoogleGenerativeAI(
+#     model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
+#     temperature=0,
+#     max_retries=int(os.getenv("GEMINI_MAX_RETRIES", "1")),
+# )
 
 LANGUAGES = {
     "ru": "Russian",

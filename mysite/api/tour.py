@@ -324,3 +324,58 @@ def delete_tour(
             status_code=500,
             detail="Турду өчүрүү ишке ашкан жок"
         )
+@tour_router.get("/home/slides/")
+def home_tour_slides(
+    lang: str = Query(
+        default="ru",
+        pattern="^(ru|en|de|zh)$"
+    ),
+    db: Session = Depends(get_db)
+):
+    tours = db.query(Tour).filter(
+        Tour.is_active.is_(True),
+        Tour.main_image.isnot(None),
+        Tour.main_image != ""
+    ).order_by(Tour.id.asc()).all()
+
+    slides = []
+
+    for tour in tours:
+        data = get_localized_tour(tour, db, lang)
+
+        slides.append({
+            "id": tour.id,
+            "title": data["title"],
+            "description": data["description"],
+            "image": tour.main_image
+        })
+
+    return {
+        "total": len(slides),
+        "slides": slides
+    }
+
+
+@tour_router.get("/category/{category_id}/", response_model=list[TourOutSchema])
+def tours_by_category(
+    category_id: int,
+    lang: str = Query(default="ru", pattern="^(ru|en|de|zh)$"),
+    db: Session = Depends(get_db)
+):
+    category_db = db.get(TourCategory, category_id)
+
+    if category_db is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Категория табылган жок"
+        )
+
+    tours = db.query(Tour).filter(
+        Tour.category_id == category_id,
+        Tour.is_active.is_(True)
+    ).all()
+
+    return [
+        get_localized_tour(tour, db, lang)
+        for tour in tours
+    ]

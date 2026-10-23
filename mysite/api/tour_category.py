@@ -103,3 +103,42 @@ def delete_category(
     db.commit()
 
     return {"message": "Категория өчүрүлдү"}
+
+@category_router.post(
+    "/setup-directions/",
+    dependencies=[Depends(get_current_admin)]
+)
+def setup_directions(db: Session = Depends(get_db)):
+    directions = [
+        "Высокие горы",
+        "Бирюзовые озёра",
+        "Кочевая культура",
+        "Шёлковый путь",
+        "Бескрайние долины"
+    ]
+
+    for name in directions:
+        category_db = db.query(TourCategory).filter(
+            TourCategory.name == name
+        ).first()
+
+        if category_db is None:
+            category_db = TourCategory(name=name)
+            db.add(category_db)
+
+    db.commit()
+
+    categories = db.query(TourCategory).filter(
+        TourCategory.name.in_(directions)
+    ).all()
+
+    return {
+        "message": "5 багыт даяр",
+        "categories": [
+            {
+                "id": category.id,
+                "name": category.name
+            }
+            for category in categories
+        ]
+    }

@@ -7,6 +7,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from mysite.database.db import Base, DATABASE_URL
+from mysite.database import client_profile, password_reset_models
 from mysite.database import chat_models, models
 
 
@@ -21,6 +22,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
 
 
 def run_migrations_offline() -> None:
