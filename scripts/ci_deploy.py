@@ -50,6 +50,17 @@ def output(arguments):
     return subprocess.check_output(arguments, text=True).strip()
 
 
+def runtime_digest(contents):
+    return hashlib.sha256(contents.replace(b'\r\n', b'\n')).hexdigest()
+
+
+def deployed_runtime_digest(name):
+    probe = ('import hashlib; from pathlib import Path; '
+             + 'contents=Path(' + repr('/app/' + name) + ').read_bytes(); '
+             + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())")
+    return output(['sudo', '-n', 'docker', 'exec', 'kyrgyzgo_backend', 'python', '-c', probe])
+
+
 def compose(*arguments):
     return run(['sudo', '-n', 'docker', 'compose', '-p', 'kyrgyz_go',
                 '-f', str(ROOT / 'docker-compose.yml'), '-f', str(OVERRIDE), *arguments], cwd=ROOT)
@@ -89,8 +100,7 @@ def deploy(revision, source):
             raise RuntimeError('Current backend is unhealthy; manual intervention required')
         old_image = previous['Image']
         same_runtime = all(
-            output(['sudo', '-n', 'docker', 'exec', 'kyrgyzgo_backend', 'sha256sum', '/app/' + name]).split()[0]
-            == hashlib.sha256((release / name).read_bytes()).hexdigest()
+            deployed_runtime_digest(name) == runtime_digest((release / name).read_bytes())
             for name in ('requirements.txt', 'Dockerfile')
         )
         if not same_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
