@@ -4,8 +4,7 @@ from .views import (AdminAdmin, AboutAdmin, AboutSectionAdmin,
                     HotelAdmin, HotelImageAdmin, TransportAdmin,
                     TransportImageAdmin, HelicopterTourAdmin, HelicopterImageAdmin,
                     TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin,
-                    ContactAdmin, FAQAdmin, TravelRequestAdmin)
-                    # ChatAdmin, ChatMessageAdmin)
+                    ContactAdmin, FAQAdmin, ChatRequestAdmin)
 
 from fastapi import FastAPI, Request
 from sqladmin import Admin as SQLAdmin
@@ -70,7 +69,5 @@ def setup_admin(auth_app: FastAPI):
     admin.add_view(TrekkingProgramAdmin)
     admin.add_view(ContactAdmin)
     admin.add_view(FAQAdmin)
-    admin.add_view(TravelRequestAdmin)
-    # admin.add_view(ChatAdmin)
-    # admin.add_view(ChatMessageAdmin)
+    admin.add_view(ChatRequestAdmin)
 

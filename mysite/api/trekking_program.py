@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Trekking, TrekkingProgram
 from mysite.database.schema import (
@@ -42,15 +43,15 @@ def create_trekking_program(
     return program_db
 
 
-@trekking_program_router.get("/", response_model=list[TrekkingProgramOutSchema])
+@trekking_program_router.get("/", response_model=list[TrekkingProgramOutSchema], dependencies=[Depends(current_client)])
 def list_trekking_programs(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(TrekkingProgram).order_by(
+    return [localized(record, lang) for record in db.query(TrekkingProgram).join(Trekking).filter(Trekking.is_active.is_(True)).order_by(
         TrekkingProgram.trekking_id,
         TrekkingProgram.day_number
     ).all()]
 
 
-@trekking_program_router.get("/{program_id}/", response_model=TrekkingProgramOutSchema)
+@trekking_program_router.get("/{program_id}/", response_model=TrekkingProgramOutSchema, dependencies=[Depends(current_client)])
 def detail_trekking_program(
     program_id: int,
     lang: Language = "ru",
@@ -58,7 +59,7 @@ def detail_trekking_program(
 ):
     program_db = db.get(TrekkingProgram, program_id)
 
-    if program_db is None:
+    if program_db is None or not program_db.trekking.is_active:
         raise HTTPException(
             status_code=404,
             detail="Треккинг программасы табылган жок"

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.database.models import Trekking, TrekkingImage
 from mysite.database.schema import (
     TrekkingImageInputSchema,
@@ -40,22 +41,22 @@ def create_trekking_image(
     return image_db
 
 
-@trekking_image_router.get("/", response_model=list[TrekkingImageOutSchema])
+@trekking_image_router.get("/", response_model=list[TrekkingImageOutSchema], dependencies=[Depends(current_client)])
 def list_trekking_images(db: Session = Depends(get_db)):
-    return db.query(TrekkingImage).order_by(
+    return db.query(TrekkingImage).join(Trekking).filter(Trekking.is_active.is_(True)).order_by(
         TrekkingImage.order,
         TrekkingImage.id
     ).all()
 
 
-@trekking_image_router.get("/{image_id}/", response_model=TrekkingImageOutSchema)
+@trekking_image_router.get("/{image_id}/", response_model=TrekkingImageOutSchema, dependencies=[Depends(current_client)])
 def detail_trekking_image(
     image_id: int,
     db: Session = Depends(get_db)
 ):
     image_db = db.get(TrekkingImage, image_id)
 
-    if image_db is None:
+    if image_db is None or not image_db.trekking.is_active:
         raise HTTPException(
             status_code=404,
             detail="Сүрөт табылган жок"

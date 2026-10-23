@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
 from mysite.database.models import Transport, TransportImage
 from mysite.database.schema import (
     TransportImageInputSchema,
@@ -40,24 +41,24 @@ def create_transport_image(
     return image_db
 
 
-@transport_image_router.get("/", response_model=list[TransportImageOutSchema])
+@transport_image_router.get("/", response_model=list[TransportImageOutSchema], dependencies=[Depends(current_client)])
 def list_transport_images(
     db: Session = Depends(get_db)
 ):
-    return db.query(TransportImage).order_by(
+    return db.query(TransportImage).join(Transport).filter(Transport.is_active.is_(True)).order_by(
         TransportImage.order,
         TransportImage.id
     ).all()
 
 
-@transport_image_router.get("/{image_id}/", response_model=TransportImageOutSchema)
+@transport_image_router.get("/{image_id}/", response_model=TransportImageOutSchema, dependencies=[Depends(current_client)])
 def detail_transport_image(
     image_id: int,
     db: Session = Depends(get_db)
 ):
     image_db = db.get(TransportImage, image_id)
 
-    if image_db is None:
+    if image_db is None or not image_db.transport.is_active:
         raise HTTPException(
             status_code=404,
             detail="Сүрөт табылган жок"

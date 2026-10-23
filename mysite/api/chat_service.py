@@ -1,13 +1,15 @@
 """Chat persistence and preview/confirmation; LLM cannot call booking writes."""
 import asyncio
+import re
 from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from mysite.database.db import SessionLocal
 from mysite.database.chat_models import ChatSession, ChatMessage, ChatBookingLink
 from mysite.database.models import TravelRequest, RequestStatusChoices, Tour
-from mysite.api.chat_auth import client_by_token
-from mysite.chain.agent import respond, confirmation_allowed, CONFIRMATION_TEXT
+from mysite.api.client_auth import client_by_token
+from mysite.api.booking_text import booking_text, preview_text
+from mysite.chain.agent import respond, confirmation_allowed, rejection_allowed
 
 _locks = {}
 _lock_users = {}
@@ -32,24 +34,14 @@ async def _database_call(function, *args):
 
 
 def _is_confirmation_text(message):
-    normalized = ' '.join(message.casefold().strip().rstrip('.! ').split())
-    return normalized == CONFIRMATION_TEXT
+    return confirmation_allowed('awaiting_confirmation', message)
 
 
 def _preview_summary(db, preview):
     data = preview['data']
     tour = db.get(Tour, data['tour_id']) if data.get('tour_id') else None
     choice = tour.title if tour else data.get('destination')
-    return (
-        '\n\nПроверьте данные заявки:\n'
-        f'Тур или направление: {choice}\n'
-        + 'Дата поездки: {}\n'.format(data['travel_date'])
-        + 'Количество гостей: {}\n'.format(data['people_count'])
-        + 'Имя: {}\n'.format(data['client_name'])
-        + 'Телефон: {}\n\n'.format(data['phone'])
-        + 'Это заявка менеджеру, а не окончательная бронь. '
-        + 'Если всё верно, напишите: «Подтверждаю заявку».'
-    )
+    return preview_text(data, choice)
 
 def owned(db, session_id, client_id):
     session = db.get(ChatSession, session_id)
@@ -80,17 +72,23 @@ def _prepare_message(session_id, client_id, token, message):
         if c.id != client_id:
             raise HTTPException(401, 'Требуется повторный вход')
         s = owned(db, session_id, client_id)
+        if rejection_allowed(s.stage, message):
+            s.stage = 'collecting'
+            s.revision += 1
+            answer = booking_text(s.state or {})['declined']
+            db.add_all([
+                ChatMessage(session_id=s.id, role='user', content=message),
+                ChatMessage(session_id=s.id, role='assistant', content=answer),
+            ])
+            db.commit()
+            return {'answer': answer, 'revision': s.revision,
+                    'booking_intent': False, 'stage': s.stage,
+                    'booking_preview': None}, None, None
         if confirmation_allowed(s.stage, message) or (
             s.stage == 'submitted' and _is_confirmation_text(message)
         ):
             result = confirm_booking(db, s, client_id, s.revision, True)
-            answer = (
-                'Заявка №{} передана менеджеру KYRGYZGO. '.format(
-                    result['request_id']
-                )
-                + 'Менеджер свяжется с вами для проверки мест, стоимости '
-                + 'и окончательного подтверждения.'
-            )
+            answer = booking_text(s.state or {})['submitted'].format(request_id=result['request_id'])
             db.add_all([
                 ChatMessage(session_id=s.id, role='user', content=message),
                 ChatMessage(session_id=s.id, role='assistant', content=answer),
@@ -122,17 +120,19 @@ def _save_message_response(session_id, client_id, token, answer, updated, origin
         if c.id != client_id:
             raise HTTPException(401, 'Требуется повторный вход')
         s = owned(db, session_id, client_id)
-        if updated != original:
+        changed = updated != original
+        if changed:
             s.state = updated
             s.revision += 1
         preview = build_preview(db, s)
         preview_event = None
         if intent or s.stage in ('collecting', 'awaiting_confirmation'):
             if preview['can_confirm']:
+                if s.stage != 'awaiting_confirmation' or changed or intent:
+                    preview_event = preview
+                    summary = _preview_summary(db, preview)
+                    answer = summary
                 s.stage = 'awaiting_confirmation'
-                preview_event = preview
-                summary = _preview_summary(db, preview)
-                answer += summary
             else:
                 s.stage = 'collecting'
         db.add(ChatMessage(session_id=s.id, role='assistant', content=answer))
@@ -157,21 +157,39 @@ async def _process_message_locked(
                 await on_chunk(final['answer'])
             return final
         answer, updated, intent = await respond(
-            message, original, previous, on_chunk=on_chunk
+            message, original, previous, on_chunk=None
         )
         result, summary = await _database_call(
             _save_message_response, session_id, client_id, token,
             answer, updated, original, intent
         )
-        if summary and on_chunk is not None:
-            await on_chunk(summary)
+        if on_chunk is not None:
+            await on_chunk(summary or result['answer'])
         return result
 
 def build_preview(db, s):
     state = dict(s.state or {})
-    missing = [k for k in ('client_name', 'phone', 'people_count', 'travel_date')
-               if not state.get(k)]
-    if not state.get('tour_id') and not state.get('destination'):
+    name = state.get('client_name')
+    phone = state.get('phone')
+    people = state.get('people_count')
+    duration = state.get('duration_days')
+    missing = []
+    if not isinstance(name, str) or not name.strip() or len(name) > 255:
+        missing.append('client_name')
+    if (not isinstance(phone, str) or len(phone) > 50
+            or not re.fullmatch(r'\+?[0-9\s().-]+', phone.strip())
+            or not 7 <= len(re.sub(r'[^0-9]', '', phone)) <= 15):
+        missing.append('phone')
+    if type(people) is not int or not 1 <= people <= 2147483647:
+        missing.append('people_count')
+    if duration is not None and (type(duration) is not int or not 1 <= duration <= 2147483647):
+        missing.append('duration_days')
+    if not state.get('travel_date'):
+        missing.append('travel_date')
+    destination = state.get('destination')
+    if not state.get('tour_id') and (
+        not isinstance(destination, str) or not destination.strip() or len(destination) > 255
+    ):
         missing.append('tour_or_destination')
     if state.get('travel_date'):
         try:
@@ -183,6 +201,10 @@ def build_preview(db, s):
         tour = db.get(Tour, state['tour_id'])
         if not tour or not tour.is_active:
             missing.append('valid_tour')
+        elif 'people_count' not in missing and (
+            people < tour.min_people or (tour.max_people is not None and people > tour.max_people)
+        ):
+            missing.append('people_count')
     return {'status': 'draft', 'session_id': s.id, 'revision': s.revision,
             'data': state, 'missing_fields': missing, 'can_confirm': not missing}
 
@@ -205,15 +227,18 @@ def confirm_booking(db, s, client_id, revision, confirmed):
         raise HTTPException(422, detail={'missing_fields': preview['missing_fields']})
     st = preview['data']
     tour_note = ''
+    destination = st.get('destination')
     if st.get('tour_id'):
         t = db.get(Tour, st['tour_id'])
         tour_note = f'Тур #{t.id}: {t.title}. '
+        destination = t.title
     notes = (f'Chat Client: KG-{client_id:06d}; session: {s.id}. ' + tour_note
+             + f'Язык общения: {st.get("language") or "не указан"}. '
              + f'Бюджет: {st.get("budget") or "не указан"}. Пожелания: {st.get("notes") or "нет"}.')
     obj = TravelRequest(name=st['client_name'], phone=st['phone'], email=st.get('email'),
                         travel_date=date.fromisoformat(st['travel_date']) if st.get('travel_date') else None,
                         duration_days=st.get('duration_days'), travelers_count=st['people_count'],
-                        destination=st.get('destination'), message=notes,
+                        destination=destination, message=notes,
                         status=RequestStatusChoices.new)
     try:
         db.add(obj)

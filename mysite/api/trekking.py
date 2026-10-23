@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
+from mysite.api.client_auth import current_client
+from mysite.database.catalogue_schema import TrekkingCardSchema, TrekkingCatalogueDetailSchema
 from mysite.translations.content import Language, localized, update_translations
 from mysite.database.models import Trekking
 from mysite.database.schema import (
@@ -34,12 +36,12 @@ def create_trekking(
     return trekking_db
 
 
-@trekking_router.get("/", response_model=list[TrekkingOutSchema])
+@trekking_router.get("/", response_model=list[TrekkingCardSchema])
 def list_trekkings(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(Trekking).all()]
+    return [localized(record, lang) for record in db.query(Trekking).filter(Trekking.is_active.is_(True)).all()]
 
 
-@trekking_router.get("/{trekking_id}/", response_model=TrekkingOutSchema)
+@trekking_router.get("/{trekking_id}/", response_model=TrekkingCatalogueDetailSchema, dependencies=[Depends(current_client)])
 def detail_trekking(
     trekking_id: int,
     lang: Language = "ru",
@@ -47,7 +49,7 @@ def detail_trekking(
 ):
     trekking_db = db.get(Trekking, trekking_id)
 
-    if trekking_db is None:
+    if trekking_db is None or not trekking_db.is_active:
         raise HTTPException(
             status_code=404,
             detail="Треккинг табылган жок"

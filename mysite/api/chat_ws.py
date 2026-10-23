@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from mysite.api.chat_auth import client_by_token
+from mysite.api.client_auth import client_by_token
 from mysite.database.db import SessionLocal
 from mysite.api.chat_service import owned, process_message
 

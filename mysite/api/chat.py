@@ -1,12 +1,12 @@
 """HTTP chat and booking routes; WebSocket is registered separately in chat_ws.py."""
 import uuid
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from mysite.database import db as database
 from mysite.database.db import get_db
 from mysite.database.chat_models import ChatClient, ChatSession, ChatMessage
-from mysite.api.chat_auth import client_by_token, current_client
+from mysite.api.client_auth import client_by_token, current_client, login_required
 from mysite.api.chat_service import (
     build_preview,
     confirm_booking_serialized,
@@ -29,7 +29,7 @@ def detached_client_identity(
 ) -> tuple[int, str]:
     scheme, _, token = (authorization or '').partition(' ')
     if scheme.casefold() != 'bearer' or not token:
-        raise HTTPException(401, 'Требуется Bearer token')
+        raise login_required('Требуется вход')
     with database.SessionLocal() as db:
         return client_by_token(db, token).id, token
 
