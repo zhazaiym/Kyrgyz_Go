@@ -5,7 +5,9 @@ on:
   push:
     branches:
       - main
-
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,7 +16,6 @@ permissions:
 concurrency:
   group: kyrgyzgo-production
   cancel-in-progress: false
-
 
 jobs:
   test:
@@ -32,39 +33,64 @@ jobs:
 
       - name: Check Python syntax
         run: |
-          python -m compileall -q main.py mysite
+          python -m compileall -q main.py mysite scripts alembic
 
   deploy:
     name: Deploy to AWS
     needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - name: Download repository
         uses: actions/checkout@v4
+
+      - name: Verify latest main commit
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
 
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+
+      - name: Check SSH key fingerprint
+        run: |
+          ssh-keygen -y -f "$HOME/.ssh/deploy_key" | ssh-keygen -lf - -E sha256
+
       - name: Deploy project
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          git archive --format=tar.gz HEAD \
+          set -euo pipefail
+          tar --exclude=__pycache__ --exclude='*.pyc' \
+            -czf "$RUNNER_TEMP/release.tar.gz" \
             .dockerignore Dockerfile requirements.txt \
             main.py create_admin.py seed_demo.py \
-            alembic.ini docker-compose.yml Caddyfile \
-            mysite alembic \
-            | ssh -i ~/.ssh/deploy_key \
-                -o BatchMode=yes \
-                -o StrictHostKeyChecking=yes \
-                "$DEPLOY_USER@$DEPLOY_HOST" \
-                "deploy $GITHUB_SHA"
+            alembic.ini mysite alembic scripts
+
+          ssh -T -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "deploy $GITHUB_SHA" < "$RUNNER_TEMP/release.tar.gz"
+
+      - name: Remove temporary SSH credentials
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts
