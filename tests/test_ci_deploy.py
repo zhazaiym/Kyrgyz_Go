@@ -61,6 +61,11 @@ def test_ssh_gateway_accepts_exact_revision():
     assert load_deployment().revision_from_command('deploy ' + 'a' * 40) == 'a' * 40
 
 
+def test_runtime_digest_ignores_windows_line_endings():
+    module = load_deployment()
+    assert module.runtime_digest(b'package==1\r\n') == module.runtime_digest(b'package==1\n')
+
+
 def test_workflow_separates_tests_and_main_deployment():
     workflow = Path('.github/workflows/deploy.yml').read_text()
     assert 'pull_request:' in workflow
