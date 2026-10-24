@@ -20,14 +20,14 @@ concurrency:
 jobs:
   test:
     name: Check Python
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Download repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -66,12 +66,12 @@ jobs:
     name: Deploy to AWS
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
       - name: Download repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify latest main commit
         run: |
