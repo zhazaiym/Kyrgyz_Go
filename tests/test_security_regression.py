@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from mysite.api import chat_service
-from mysite.database.chat_models import ChatSession
+from mysite.database.chat_models import ChatMessage, ChatSession
 from mysite.database.db import SessionLocal
 
 
@@ -55,13 +55,13 @@ def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
     assert first[3] == stale[3]
 
     chat_service._save_message_response(
-        session_id, client_id, token, first[3],
+        session_id, client_id, token, first[3], first[4],
         "first response", {"client_name": "First"}, first[1], False,
     )
 
     with pytest.raises(HTTPException) as conflict:
         chat_service._save_message_response(
-            session_id, client_id, token, stale[3],
+            session_id, client_id, token, stale[3], stale[4],
             "stale response", {"client_name": "Stale"}, stale[1], False,
         )
 
@@ -70,3 +70,6 @@ def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
         session = db.get(ChatSession, session_id)
         assert session.state == {"client_name": "First"}
         assert session.message_version == first[3] + 1
+        stale_message = (db.query(ChatMessage)
+                         .filter_by(id=stale[4]).first())
+        assert stale_message is None
