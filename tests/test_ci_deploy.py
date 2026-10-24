@@ -102,6 +102,18 @@ def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
     assert command in source_only
 
 
+def test_compose_override_preserves_api_service_and_production_network():
+    module = load_deployment()
+    override = module.compose_override('kyrgyzgo-api:ci-123')
+
+    assert '  api:\n' in override
+    assert '    image: kyrgyzgo-api:ci-123\n' in override
+    assert '      - kyrgyzgo_network\n' in override
+    assert '    external: true\n' in override
+    assert '    name: kyrgyz_go_kyrgyzgo_network\n' in override
+    assert '  backend:\n' not in override
+
+
 def test_workflow_separates_tests_and_main_deployment():
     workflow = Path('.github/workflows/deploy.yml').read_text()
     assert 'pull_request:' in workflow

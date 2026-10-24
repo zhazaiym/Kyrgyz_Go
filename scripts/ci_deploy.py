@@ -15,6 +15,8 @@ ROOT = Path('/home/ubuntu/Kyrgyz_Go')
 OVERRIDE = Path('/home/ubuntu/kyrgyzgo-deploy.override.yml')
 RELEASES = Path('/home/ubuntu/releases')
 BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
+PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
+PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
 ALLOWED_FILES = {'.dockerignore', 'Dockerfile', 'requirements.txt', 'main.py',
                  'create_admin.py', 'seed_demo.py', 'alembic.ini'}
 
@@ -98,7 +100,7 @@ def runtime_dockerfile(base_image, command, *, install_requirements):
     return '\n'.join(lines)
 
 
-def deployed_runtime_digest(name):
+def deployed_runtime_digest(container, name):
     path = '/app/' + name
     if name == 'Dockerfile':
         probe = (
@@ -112,12 +114,31 @@ def deployed_runtime_digest(name):
         probe = ('import hashlib; from pathlib import Path; '
                  + 'contents=Path(' + repr(path) + ').read_bytes(); '
                  + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())")
-    return output(['sudo', '-n', 'docker', 'exec', 'kyrgyzgo_backend', 'python', '-c', probe])
+    return output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe])
+
+
+def compose_override(image):
+    return (
+        'services:\n'
+        '  api:\n'
+        f'    image: {image}\n'
+        f'    networks:\n'
+        f'      - {PRODUCTION_NETWORK_KEY}\n'
+        'networks:\n'
+        f'  {PRODUCTION_NETWORK_KEY}:\n'
+        '    external: true\n'
+        f'    name: {PRODUCTION_NETWORK}\n'
+    )
 
 
 def compose(*arguments):
     return run(['sudo', '-n', 'docker', 'compose', '-p', 'kyrgyz_go',
                 '-f', str(ROOT / 'docker-compose.yml'), '-f', str(OVERRIDE), *arguments], cwd=ROOT)
+
+
+def compose_output(*arguments):
+    return output(['sudo', '-n', 'docker', 'compose', '-p', 'kyrgyz_go',
+                   '-f', str(ROOT / 'docker-compose.yml'), '-f', str(OVERRIDE), *arguments])
 
 
 def deploy(revision, source):
@@ -149,19 +170,25 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        previous = json.loads(output(['sudo', '-n', 'docker', 'inspect', 'kyrgyzgo_backend']))[0]
+        compose_output('config', '--quiet')
+        run(['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK], stdout=subprocess.DEVNULL)
+        previous_container = compose_output('ps', '-q', 'api')
+        if not previous_container:
+            raise RuntimeError('The production api container was not found; refusing deployment')
+        previous = json.loads(output(['sudo', '-n', 'docker', 'inspect', previous_container]))[0]
         if previous['State']['Health']['Status'] != 'healthy':
-            raise RuntimeError('Current backend is unhealthy; manual intervention required')
-        old_image = previous['Image']
+            raise RuntimeError('Current api is unhealthy; manual intervention required')
+        old_image_id = previous['Image']
+        old_image = previous['Config']['Image']
         dockerfile_contents = (release / 'Dockerfile').read_bytes()
         dockerfile_cmd = dockerfile_command(dockerfile_contents)
         same_base_runtime = (
             dockerfile_cmd is not None
-            and deployed_runtime_digest('Dockerfile')
+            and deployed_runtime_digest(previous_container, 'Dockerfile')
             == dockerfile_runtime_digest(dockerfile_contents)
         )
         requirements_changed = (
-            deployed_runtime_digest('requirements.txt')
+            deployed_runtime_digest(previous_container, 'requirements.txt')
             != runtime_digest((release / 'requirements.txt').read_bytes())
         )
         if not same_base_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
@@ -179,7 +206,7 @@ def deploy(revision, source):
         if same_base_runtime:
             dockerfile = 'Dockerfile.runtime'
             (release / dockerfile).write_text(runtime_dockerfile(
-                previous['Config']['Image'],
+                old_image_id,
                 dockerfile_cmd,
                 install_requirements=requirements_changed,
             ))
@@ -192,21 +219,19 @@ def deploy(revision, source):
         state['status'] = 'activating'
         try:
             temporary = OVERRIDE.with_suffix('.pending')
-            temporary.write_text('services:\n  backend:\n    image: ' + image
-                                 + '\n    build:\n      context: ' + str(release)
-                                 + '\n      dockerfile: ' + dockerfile + '\n')
+            temporary.write_text(compose_override(image))
             temporary.replace(OVERRIDE)
             compose('config', '--quiet')
-            compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'backend')
+            compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
             with urllib.request.urlopen('https://13.53.40.37/', timeout=30) as response:
                 if response.status != 200:
                     raise RuntimeError('Public HTTPS health check failed')
             state['status'] = 'healthy'
         except BaseException:
-            shutil.copy2(backup / 'previous-deploy.override.yml', OVERRIDE)
+            OVERRIDE.write_text(compose_override(old_image))
             state['status'] = 'rolling_back'
             state_file.write_text(json.dumps(state, indent=2))
-            compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'backend')
+            compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
             state['status'] = 'rolled_back'
             raise
         finally:
