@@ -7,8 +7,8 @@ from sqlalchemy import pool
 from alembic import context
 
 from mysite.database.db import Base, DATABASE_URL
-from mysite.database import client_profile, password_reset_models
-from mysite.database import chat_models, models
+from mysite.database import client_profile, password_reset_models  # noqa: F401
+from mysite.database import chat_models, models  # noqa: F401
 
 
 config = context.config

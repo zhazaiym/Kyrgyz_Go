@@ -41,7 +41,7 @@ jobs:
           python -m compileall -q main.py mysite scripts alembic
 
       - name: Lint Python
-        run: ruff check --output-format=github .
+        run: ruff check --select=F,E4,E7,E9 --output-format=github .
 
       - name: Run test suite
         env:
