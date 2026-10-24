@@ -3,7 +3,6 @@ import logging
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from google.api_core.exceptions import GoogleAPICallError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -76,14 +75,8 @@ def try_save_translations(tour_db: Tour, db: Session):
 
         return True
 
-    except (
-        GoogleAPICallError,
-        SQLAlchemyError,
-        RuntimeError,
-        ValueError,
-        KeyError,
-        TypeError,
-    ):
+    # noinspection PyBroadException
+    except Exception:
         logger.exception(
             "Tour %s котормосу сакталган жок",
             tour_db.id
