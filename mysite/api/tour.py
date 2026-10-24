@@ -69,7 +69,7 @@ def try_save_translations(tour_db: Tour, db: Session):
     try:
         # Котормо иштебесе, негизги тур сакталат.
         # Savepoint котормодогу DB өзгөрүүлөрүн
-        # өзүнчө артка кайтарууга жардам берет.
+        # Өзүнчө артка кайтарууга жардам берет.
         with db.begin_nested():
             save_translations(tour_db, db)
 
@@ -238,7 +238,7 @@ def update_tour(
             for field in TRANSLATED_FIELDS
         ):
             # Эски котормо жаңы орусча текстке
-            # туура келбей калышы мүмкүн.
+            # Туура келбей калышы мүмкүн.
             db.query(TourTranslation).filter(
                 TourTranslation.tour_id == tour_db.id
             ).delete(synchronize_session=False)
