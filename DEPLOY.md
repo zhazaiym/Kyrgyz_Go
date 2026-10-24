@@ -49,7 +49,7 @@ Back up an existing database before deployment. Every API container start runs
 created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. The legacy SQLite procedure is
 documented below. Do not scale this service to multiple replicas without moving
-migrations to a separate deployment step and reviewing chat session locking.
+migrations to a separate deployment step.
 
 ### Start and verify
 
@@ -63,10 +63,17 @@ docker compose logs --tail=100 api
 curl --fail http://127.0.0.1:8000/
 ```
 
-The container runs as an unprivileged user, uses one Uvicorn worker, rotates
-logs, and restarts after process failures. The healthcheck verifies HTTP
+The container runs as an unprivileged user, uses one Uvicorn worker, limits
+WebSocket frames to 64 KiB, rotates logs, and restarts after process failures. The healthcheck verifies HTTP
 availability; it does not verify PostgreSQL or Gemini connectivity. An unhealthy
 status alone does not trigger Docker's restart policy.
+
+Database-backed rate limits are enabled by default and shared across workers:
+client registration is limited by IP/account, client and admin login by IP and
+identifier, password-reset requests by IP/email, WebSocket handshakes by IP,
+and AI messages by client account. The AI limit is 10 messages per minute and
+300 per day per client. Counters store hashed identifiers and old windows are
+cleaned automatically. Keep `RATE_LIMIT_ENABLED=true` in production.
 
 Create an administrator interactively after the API starts:
 
@@ -247,7 +254,7 @@ The same administrator can use the bearer-token API and the SQLAdmin login.
 ## 4. Run
 
 ```bash
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --ws-max-size 65536
 ```
 
 Run one worker when using SQLite. Put the service behind an HTTPS reverse proxy

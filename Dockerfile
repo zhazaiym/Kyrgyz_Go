@@ -17,4 +17,4 @@ COPY --chown=app:app alembic ./alembic
 USER app
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
+CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --ws-max-size 65536"]

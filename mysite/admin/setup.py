@@ -6,11 +6,12 @@ from .views import (AdminAdmin, AboutAdmin, AboutSectionAdmin,
                     TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin,
                     ContactAdmin, FAQAdmin, ChatRequestAdmin)
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from sqladmin import Admin as SQLAdmin
 from sqladmin.authentication import AuthenticationBackend
 
 from mysite.api.admin import SECRET_KEY, verify_password
+from mysite.api.rate_limit import enforce_request_limits
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin as AdminModel
 
@@ -20,6 +21,15 @@ class AdminAuthBackend(AuthenticationBackend):
         form = await request.form()
         username = str(form.get("username", "")).strip()
         password = str(form.get("password", ""))
+        try:
+            enforce_request_limits(
+                "admin-login", request, username,
+                ip_limit=20, identity_limit=5, window_seconds=60,
+            )
+        except HTTPException as exc:
+            if exc.status_code == 429:
+                return False
+            raise
 
         with SessionLocal() as db:
             admin = db.query(AdminModel).filter(AdminModel.username == username).first()

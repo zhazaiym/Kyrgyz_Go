@@ -3,7 +3,7 @@ import re
 import secrets
 
 from email_validator import validate_email, EmailNotValidError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from pwdlib import PasswordHash
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,7 @@ from mysite.database.db import get_db
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.api.client_auth import issue_token, current_client
+from mysite.api.rate_limit import enforce_request_limits
 
 
 router = APIRouter(
@@ -53,10 +54,15 @@ def normalize_email(value: str):
 @router.post("/register", status_code=201)
 def register(
     data: RegisterInput,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     name = data.name.strip()
     email = normalize_email(data.email)
+    enforce_request_limits(
+        "client-register", request, email,
+        ip_limit=10, identity_limit=3, window_seconds=3600,
+    )
 
     phone = re.sub(
         r"[\s()\-]",
@@ -128,9 +134,14 @@ def register(
 @router.post("/login")
 def login(
     data: LoginInput,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     email = normalize_email(data.email)
+    enforce_request_limits(
+        "client-login", request, email,
+        ip_limit=30, identity_limit=8, window_seconds=60,
+    )
 
     profile = db.query(ClientProfile).filter(
         ClientProfile.email == email

@@ -63,7 +63,10 @@ def test_empty_database_upgrades_to_alembic_head():
             tables = set(inspect(engine).get_table_names())
         finally:
             engine.dispose()
-        assert {"alembic_version", "admins", "regions", "chat_sessions"} <= tables
+        assert {
+            "alembic_version", "admins", "regions", "chat_sessions",
+            "rate_limit_counters",
+        } <= tables
     finally:
         database_path.unlink(missing_ok=True)
 

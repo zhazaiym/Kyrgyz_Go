@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -15,27 +15,28 @@ from mysite.database.models import Admin, TravelRequest, RequestStatusChoices
 from mysite.database.schema import (
     AdminLoginSchema, AdminOutSchema, TokenSchema, TravelRequestOutSchema
 )
+from mysite.api.rate_limit import enforce_request_limits
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY")
-
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY должен быть указан в .env")
-
+if (
+    not SECRET_KEY
+    or len(SECRET_KEY.encode("utf-8")) < 32
+    or SECRET_KEY.casefold().startswith("replace-with-")
+):
+    raise RuntimeError(
+        "SECRET_KEY must be a non-placeholder random value of at least 32 bytes"
+    )
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 
 oauth2_schema = OAuth2PasswordBearer(tokenUrl="/admin/login/")
 password_hash = PasswordHash.recommended()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY .env файлында көрсөтүлүшү керек")
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
@@ -65,7 +66,15 @@ def get_current_admin(token: str = Depends(oauth2_schema), db: Session = Depends
 
 
 @admin_router.post("/login/", response_model=TokenSchema)
-def login_admin(admin: AdminLoginSchema, db: Session = Depends(get_db)):
+def login_admin(
+    admin: AdminLoginSchema,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_request_limits(
+        "admin-login", request, admin.username,
+        ip_limit=20, identity_limit=5, window_seconds=60,
+    )
     admin_db = db.query(Admin).filter(Admin.username == admin.username).first()
 
     if admin_db is None or not verify_password(admin.password, admin_db.hashed_password):
