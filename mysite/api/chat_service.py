@@ -23,11 +23,9 @@ async def _database_call(function, *args):
         # A worker cannot be cancelled; retain the session lock until it closes its DB session.
         while not task.done():
             try:
-                await asyncio.shield(task)
+                await asyncio.wait({task})
             except asyncio.CancelledError:
                 continue
-            except Exception:
-                break
         if not task.cancelled():
             task.exception()
         raise

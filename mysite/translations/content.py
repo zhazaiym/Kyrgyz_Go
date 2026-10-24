@@ -3,6 +3,8 @@ import logging
 from typing import Annotated
 
 from fastapi import Query
+from langchain_core.exceptions import ModelError
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from sqlalchemy import inspect
 
 from mysite.translations.translator import translate_fields
@@ -45,7 +47,14 @@ def localized(record, lang='ru'):
 def generate_translations(source):
     try:
         return translate_fields(source)
-    except Exception:
+    except (
+        ModelError,
+        ChatGoogleGenerativeAIError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+    ):
         logger.exception('Catalogue translation failed; keeping original text')
         return {}
 
