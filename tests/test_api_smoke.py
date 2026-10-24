@@ -54,7 +54,7 @@ PROTECTED_WRITES = [
     ("post", "/trekking-images/"), ("put", "/trekking-images/1/"), ("delete", "/trekking-images/1/"),
     ("post", "/trekking-programs/"), ("put", "/trekking-programs/1/"), ("delete", "/trekking-programs/1/"),
     ("post", "/faqs/"), ("put", "/faqs/1/"), ("delete", "/faqs/1/"),
-    ("put", "/contacts/1/"), ("delete", "/contacts/1/"),
+    ("post", "/contacts/"), ("put", "/contacts/1/"), ("delete", "/contacts/1/"),
     ("post", "/tour-images/"), ("put", "/tour-images/1/"), ("delete", "/tour-images/1/"),
     ("post", "/tour-programs/"), ("put", "/tour-programs/1/"), ("delete", "/tour-programs/1/"),
 ]

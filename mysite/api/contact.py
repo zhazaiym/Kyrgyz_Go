@@ -19,7 +19,11 @@ contact_router = APIRouter(
 )
 
 
-@contact_router.post("/", response_model=ContactOutSchema)
+@contact_router.post(
+    "/",
+    response_model=ContactOutSchema,
+    dependencies=[Depends(get_current_admin)],
+)
 def create_contact(
     contact: ContactInputSchema,
     db: Session = Depends(get_db)
@@ -36,7 +40,8 @@ def create_contact(
 
 @contact_router.get("/", response_model=list[ContactOutSchema])
 def list_contacts(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(Contact).all()]
+    records = db.query(Contact).filter(Contact.is_active.is_(True)).all()
+    return [localized(record, lang) for record in records]
 
 
 @contact_router.get("/{contact_id}/", response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)])

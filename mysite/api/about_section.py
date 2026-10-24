@@ -28,13 +28,17 @@ def create_about_section(data: AboutSectionInputSchema, db: Session = Depends(ge
 
 @about_section_router.get("/", response_model=list[AboutSectionOutSchema])
 def list_about_sections(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(AboutSection).order_by(AboutSection.order).all()]
+    records = (db.query(AboutSection)
+               .filter(AboutSection.is_active.is_(True))
+               .order_by(AboutSection.order)
+               .all())
+    return [localized(record, lang) for record in records]
 
 
 @about_section_router.get("/{section_id}/", response_model=AboutSectionOutSchema)
 def detail_about_section(section_id: int, lang: Language = "ru", db: Session = Depends(get_db)):
     section_db = db.get(AboutSection, section_id)
-    if not section_db:
+    if not section_db or not section_db.is_active:
         raise HTTPException(status_code=404, detail="Бөлүм табылган жок")
     return localized(section_db, lang)
 

@@ -26,13 +26,14 @@ def create_about(data: AboutInputSchema, db: Session = Depends(get_db)):
 
 @about_router.get("/", response_model=list[AboutOutSchema])
 def list_about(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(About).all()]
+    records = db.query(About).filter(About.is_active.is_(True)).all()
+    return [localized(record, lang) for record in records]
 
 
 @about_router.get("/{about_id}/", response_model=AboutOutSchema)
 def detail_about(about_id: int, lang: Language = "ru", db: Session = Depends(get_db)):
     about_db = db.get(About, about_id)
-    if not about_db:
+    if not about_db or not about_db.is_active:
         raise HTTPException(status_code=404, detail="Маалымат табылган жок")
     return localized(about_db, lang)
 

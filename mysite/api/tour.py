@@ -85,9 +85,14 @@ def get_localized_tour(
     tour_db: Tour,
     db: Session,
     lang: str,
-    detail: bool = False
+    detail: bool = False,
+    include_description: bool = False,
 ):
-    schema = TourDetailSchema if detail else TourCardSchema
+    schema = (
+        TourDetailSchema if detail
+        else TourOutSchema if include_description
+        else TourCardSchema
+    )
 
     result = schema.model_validate(tour_db).model_dump(
         mode="json"
@@ -105,7 +110,7 @@ def get_localized_tour(
     ).first()
 
     if translation_db is not None:
-        for field in TRANSLATED_FIELDS if detail else ("title",):
+        for field in TRANSLATED_FIELDS if detail or include_description else ("title",):
             result[field] = getattr(translation_db, field)
 
     return result
@@ -343,7 +348,7 @@ def home_tour_slides(
     slides = []
 
     for tour in tours:
-        data = get_localized_tour(tour, db, lang)
+        data = get_localized_tour(tour, db, lang, include_description=True)
 
         slides.append({
             "id": tour.id,
@@ -378,6 +383,6 @@ def tours_by_category(
     ).all()
 
     return [
-        get_localized_tour(tour, db, lang)
+        get_localized_tour(tour, db, lang, include_description=True)
         for tour in tours
     ]
