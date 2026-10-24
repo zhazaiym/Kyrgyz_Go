@@ -24,7 +24,9 @@ def create_category(
     category: TourCategoryInputSchema,
     db: Session = Depends(get_db)
 ):
-    category_db = TourCategory(**category.model_dump())
+    category_db = TourCategory()
+    category_db.name = category.name
+    category_db.image = category.image
 
     db.add(category_db)
     update_translations(category_db)
@@ -123,7 +125,8 @@ def setup_directions(db: Session = Depends(get_db)):
         ).first()
 
         if category_db is None:
-            category_db = TourCategory(name=name)
+            category_db = TourCategory()
+            category_db.name = name
             db.add(category_db)
 
     db.commit()
