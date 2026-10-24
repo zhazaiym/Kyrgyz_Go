@@ -20,7 +20,7 @@ async def _database_call(function, *args):
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
-        # A worker cannot be cancelled; retain the session lock until it closes its DB session.
+        # A worker cannot be ccancelled; retain the session lock until it closes its DB session.
         while not task.done():
             try:
                 await asyncio.wait({task})
@@ -47,6 +47,27 @@ def owned(db, session_id, client_id):
         raise HTTPException(404, 'Беседа не найдена')
     return session
 
+
+def advance_message_version(db, session):
+    current_version = session.message_version
+    updated = (db.query(ChatSession)
+               .filter(
+                   ChatSession.id == session.id,
+                   ChatSession.message_version == current_version,
+               )
+               .update(
+                   {ChatSession.message_version: current_version + 1},
+                   synchronize_session=False,
+               ))
+    if updated != 1:
+        db.rollback()
+        raise HTTPException(
+            409,
+            'Чат изменился в другом запросе. Обновите историю и повторите сообщение.',
+        )
+    session.message_version = current_version + 1
+
+
 async def process_message(session_id, client_id, token, message, on_chunk=None):
     _lock_users[session_id] = _lock_users.get(session_id, 0) + 1
     try:
@@ -71,6 +92,7 @@ def _prepare_message(session_id, client_id, token, message):
             raise HTTPException(401, 'Требуется повторный вход')
         s = owned(db, session_id, client_id)
         if rejection_allowed(s.stage, message):
+            advance_message_version(db, s)
             s.stage = 'collecting'
             s.revision += 1
             answer = booking_text(s.state or {})['declined']
@@ -81,7 +103,7 @@ def _prepare_message(session_id, client_id, token, message):
             db.commit()
             return {'answer': answer, 'revision': s.revision,
                     'booking_intent': False, 'stage': s.stage,
-                    'booking_preview': None}, None, None
+                    'booking_preview': None}, None, None, None
         if confirmation_allowed(s.stage, message) or (
             s.stage == 'submitted' and _is_confirmation_text(message)
         ):
@@ -95,7 +117,7 @@ def _prepare_message(session_id, client_id, token, message):
             final = {'answer': answer, 'revision': s.revision,
                      'booking_intent': True, 'stage': 'submitted',
                      'booking_submitted': result}
-            return final, None, None
+            return final, None, None, None
         last = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
                 .order_by(ChatMessage.id.desc()).first())
         if not last or last.role != 'user' or last.content != message:
@@ -107,17 +129,27 @@ def _prepare_message(session_id, client_id, token, message):
         if previous and previous[-1].role == 'user' and previous[-1].content == message:
             previous = previous[:-1]
         original = dict(s.state or {})
+        message_version = s.message_version
 
-    return None, original, previous
+    return None, original, previous, message_version
 
 
-def _save_message_response(session_id, client_id, token, answer, updated, original, intent):
+def _save_message_response(
+    session_id, client_id, token, expected_message_version,
+    answer, updated, original, intent,
+):
     summary = None
     with SessionLocal() as db:
         c = client_by_token(db, token)
         if c.id != client_id:
             raise HTTPException(401, 'Требуется повторный вход')
         s = owned(db, session_id, client_id)
+        if s.message_version != expected_message_version:
+            raise HTTPException(
+                409,
+                'Чат изменился в другом запросе. Обновите историю и повторите сообщение.',
+            )
+        advance_message_version(db, s)
         changed = updated != original
         if changed:
             s.state = updated
@@ -147,7 +179,7 @@ async def _process_message_locked(
     # Keep each synchronous database phase off the event loop.
     lock = _locks.setdefault(session_id, asyncio.Lock())
     async with lock:
-        final, original, previous = await _database_call(
+        final, original, previous, message_version = await _database_call(
             _prepare_message, session_id, client_id, token, message
         )
         if final is not None:
@@ -158,7 +190,7 @@ async def _process_message_locked(
             message, original, previous, on_chunk=None
         )
         result, summary = await _database_call(
-            _save_message_response, session_id, client_id, token,
+            _save_message_response, session_id, client_id, token, message_version,
             answer, updated, original, intent
         )
         if on_chunk is not None:
@@ -224,6 +256,24 @@ def confirm_booking(db, s, client_id, revision, confirmed):
     if preview['missing_fields']:
         raise HTTPException(422, detail={'missing_fields': preview['missing_fields']})
     st = preview['data']
+    try:
+        advance_message_version(db, s)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        existing = (db.query(ChatBookingLink)
+                    .filter(
+                        ChatBookingLink.session_id == s.id,
+                        ChatBookingLink.revision == revision,
+                    )
+                    .first())
+        if existing:
+            return {
+                'status': 'already_submitted',
+                'request_id': existing.request_id,
+                'client_code': f'KG-{client_id:06d}',
+            }
+        raise
     tour_note = ''
     destination = st.get('destination')
     if st.get('tour_id'):

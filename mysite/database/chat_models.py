@@ -28,6 +28,9 @@ class ChatSession(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey('chat_clients.id'), index=True, nullable=False)
     state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    message_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default='0', nullable=False
+    )
     stage: Mapped[str] = mapped_column(String(30), default='consultation', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
