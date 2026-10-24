@@ -2,8 +2,10 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from langchain_core.exceptions import ModelAPIError
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langchain_google_genai.chat_models import (
+    ChatGoogleGenerativeAIError,
+    GoogleAPIError,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -78,7 +80,7 @@ def try_save_translations(tour_db: Tour, db: Session):
 
     except (
         ChatGoogleGenerativeAIError,
-        ModelAPIError,
+        GoogleAPIError,
         SQLAlchemyError,
         RuntimeError,
         ValueError,
@@ -191,7 +193,9 @@ def detail_tour(
     ),
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = db.scalars(
+        select(Tour).where(Tour.id == tour_id)
+    ).first()
 
     if tour_db is None or not tour_db.is_active:
         raise HTTPException(
@@ -213,7 +217,9 @@ def update_tour(
     tour: TourUpdateSchema,
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = db.scalars(
+        select(Tour).where(Tour.id == tour_id)
+    ).first()
 
     if tour_db is None:
         raise HTTPException(
@@ -273,7 +279,9 @@ def retry_tour_translation(
     tour_id: int,
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = db.scalars(
+        select(Tour).where(Tour.id == tour_id)
+    ).first()
 
     if tour_db is None:
         raise HTTPException(
