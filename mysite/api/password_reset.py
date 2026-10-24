@@ -128,7 +128,7 @@ def forgot_password(
 
     try:
         send_reset_email(email, raw_token)
-    except Exception:
+    except (smtplib.SMTPException, OSError, RuntimeError, ValueError):
         db.rollback()
         logger.exception("Ошибка отправки письма")
         raise HTTPException(

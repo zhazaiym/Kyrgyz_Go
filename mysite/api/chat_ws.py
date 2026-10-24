@@ -4,6 +4,9 @@ import logging
 import os
 import uuid
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from langchain_core.exceptions import ModelError
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from sqlalchemy.exc import SQLAlchemyError
 from mysite.api.client_auth import client_by_token
 from mysite.database.db import SessionLocal
 from mysite.api.chat_service import owned, process_message
@@ -60,7 +63,7 @@ async def socket(websocket: WebSocket, session_id: str):
         return
     except WebSocketDisconnect:
         return
-    except Exception:
+    except (SQLAlchemyError, ValueError, TypeError, KeyError, RuntimeError, OSError):
         log.exception('WebSocket authentication failure')
         await websocket.close(code=1011)
         return
@@ -128,7 +131,16 @@ async def socket(websocket: WebSocket, session_id: str):
                 'type': 'error', 'code': 'ai_timeout',
                 'message': 'Ответ занимает слишком много времени. Попробуйте ещё раз.'
             })
-        except Exception as exc:
+        except (
+            ModelError,
+            ChatGoogleGenerativeAIError,
+            SQLAlchemyError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            OSError,
+        ) as exc:
             log.exception('Chat processing failed for session %s', session_id)
             error_name = type(exc).__name__
             error_text = str(exc)

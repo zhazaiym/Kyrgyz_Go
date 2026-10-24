@@ -9,7 +9,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langchain_core.exceptions import ModelError
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from sqlalchemy.exc import SQLAlchemyError
 from mysite.chain.prompts import SYSTEM_PROMPT, EXTRACT_PROMPT
 from mysite.chain.tools import READ_TOOLS, _not_demo
 from mysite.database.db import SessionLocal
@@ -189,7 +192,15 @@ async def respond(message: str, state: dict, history: list, on_chunk=None):
                 continue
             current[k] = v
         intent = changes.booking_intent
-    except Exception:
+    except (
+        ModelError,
+        ChatGoogleGenerativeAIError,
+        asyncio.TimeoutError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+    ):
         # Conversation remains usable; never modify booking state after failed extraction.
         log.exception('Structured extraction failed; continuing without state changes')
 
@@ -243,7 +254,14 @@ async def respond(message: str, state: dict, history: list, on_chunk=None):
             tool = tool_map.get(name)
             try:
                 result = await asyncio.to_thread(tool.invoke, call.get('args', {})) if tool else {'error': 'Unknown tool'}
-            except Exception:
+            except (
+                SQLAlchemyError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                OSError,
+            ):
                 log.exception('Read-only tool failed: %s', name)
                 result = {'error': 'Данные компании сейчас не удалось проверить'}
             msgs.append(ToolMessage(content=json.dumps(result, ensure_ascii=False, default=str),
