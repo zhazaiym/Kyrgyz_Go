@@ -130,11 +130,9 @@ def forgot_password(
         send_reset_email(email, raw_token)
     except (smtplib.SMTPException, OSError, RuntimeError, ValueError):
         db.rollback()
-        logger.exception("Ошибка отправки письма")
-        raise HTTPException(
-            503,
-            "Сервис отправки писем временно недоступен"
-        )
+        logger.exception("Reset email delivery failed")
+        # Keep the response indistinguishable from an unknown email address.
+        return response
 
     db.commit()
     return response
