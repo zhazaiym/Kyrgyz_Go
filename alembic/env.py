@@ -8,6 +8,7 @@ from alembic import context
 
 from mysite.database.db import Base, DATABASE_URL
 from mysite.database import client_profile, password_reset_models  # noqa: F401
+from mysite.database import rate_limit_models  # noqa: F401
 from mysite.database import chat_models, models  # noqa: F401
 
 

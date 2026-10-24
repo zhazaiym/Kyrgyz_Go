@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.client_profile import ClientProfile
 from mysite.database.password_reset_models import PasswordResetToken
 from mysite.api.registration import normalize_email
+from mysite.api.rate_limit import enforce_request_limits
 
 
 router = APIRouter(
@@ -97,9 +98,14 @@ def send_reset_email(email: str, token: str):
 @router.post("/forgot-password")
 def forgot_password(
     data: ForgotPasswordInput,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     email = normalize_email(data.email)
+    enforce_request_limits(
+        "password-reset", request, email,
+        ip_limit=10, identity_limit=5, window_seconds=3600,
+    )
 
     response = {
         "message": (

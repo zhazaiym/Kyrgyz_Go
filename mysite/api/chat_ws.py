@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from mysite.api.client_auth import client_by_token
 from mysite.database.db import SessionLocal
 from mysite.api.chat_service import owned, process_message
+from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limit
 
 router = APIRouter(tags=['KYRGYZGO AI WebSocket'])
 log = logging.getLogger(__name__)
@@ -40,6 +41,19 @@ async def socket(websocket: WebSocket, session_id: str):
     allowed = {v.strip() for v in os.getenv('CHAT_ALLOWED_ORIGINS',
               'http://127.0.0.1:3000;http://localhost:3000').split(';') if v.strip()}
     if websocket.headers.get('origin') not in allowed:
+        await websocket.close(code=1008)
+        return
+    client_address = getattr(websocket, 'client', None)
+    remote_address = client_address.host if client_address else 'unknown'
+    try:
+        await asyncio.to_thread(
+            enforce_rate_limit,
+            'websocket-handshake',
+            f'ip:{remote_address}',
+            max_requests=30,
+            window_seconds=60,
+        )
+    except HTTPException:
         await websocket.close(code=1008)
         return
     await websocket.accept()
@@ -85,6 +99,17 @@ async def socket(websocket: WebSocket, session_id: str):
             await websocket.send_json({
                 'type': 'error', 'code': 'invalid_message',
                 'message': 'Введите сообщение (1–2000 символов).'
+            })
+            continue
+        try:
+            await asyncio.to_thread(enforce_chat_message_limits, client_id)
+        except HTTPException as exc:
+            retry_after = int(exc.headers.get('Retry-After', '60'))
+            await websocket.send_json({
+                'type': 'error',
+                'code': 'rate_limited',
+                'message': 'Слишком много сообщений. Повторите позже.',
+                'retry_after': retry_after,
             })
             continue
         await websocket.send_json({'type': 'typing', 'status': True})

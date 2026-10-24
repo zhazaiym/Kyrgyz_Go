@@ -2,7 +2,7 @@ import hashlib
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from pwdlib import PasswordHash
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from mysite.database.db import get_db
 from mysite.database.chat_models import ChatClient, ChatLoginToken
+from mysite.api.rate_limit import enforce_request_limits
 
 router = APIRouter(tags=['Client authentication'])
 passwords = PasswordHash.recommended()
@@ -58,8 +59,16 @@ def issue_token(db: Session, client: ChatClient):
             'email': client.email}
 
 @router.post('/register', status_code=201)
-def register(data: RegistrationCredentials, db: Session = Depends(get_db)):
+def register(
+    data: RegistrationCredentials,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     username = data.username.strip().lower()
+    enforce_request_limits(
+        "client-register", request, username,
+        ip_limit=10, identity_limit=3, window_seconds=3600,
+    )
     if not re.fullmatch(r'[a-z0-9_]{3,50}', username):
         raise HTTPException(422, 'Логин: латинские буквы, цифры и _ (3–50 символов)')
     client = ChatClient(username=username, email=data.email,
@@ -74,8 +83,16 @@ def register(data: RegistrationCredentials, db: Session = Depends(get_db)):
     return issue_token(db, client)
 
 @router.post('/login')
-def login(data: LoginCredentials, db: Session = Depends(get_db)):
+def login(
+    data: LoginCredentials,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     identifier = (data.email if data.email is not None else data.username).strip().lower()
+    enforce_request_limits(
+        "client-login", request, identifier,
+        ip_limit=30, identity_limit=8, window_seconds=60,
+    )
     field = ChatClient.email if data.email is not None or '@' in identifier else ChatClient.username
     client = db.query(ChatClient).filter(field == identifier).first()
     valid_password = passwords.verify(data.password, client.password_hash if client else dummy_password_hash)
