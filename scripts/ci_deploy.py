@@ -75,6 +75,29 @@ def dockerfile_command(contents):
     return commands[0].decode('utf-8')
 
 
+def runtime_dockerfile(base_image, command, *, install_requirements):
+    lines = [
+        'FROM ' + base_image,
+        'USER root',
+    ]
+    if install_requirements:
+        lines.extend([
+            'COPY requirements.txt /tmp/kyrgyzgo-requirements.txt',
+            'RUN python -m pip install --no-cache-dir '
+            '-r /tmp/kyrgyzgo-requirements.txt '
+            '&& rm /tmp/kyrgyzgo-requirements.txt',
+        ])
+    lines.extend([
+        'RUN rm -rf /app && mkdir /app && chown app:app /app',
+        'COPY --chown=app:app . /app/',
+        'WORKDIR /app',
+        'USER app',
+        command,
+        '',
+    ])
+    return '\n'.join(lines)
+
+
 def deployed_runtime_digest(name):
     path = '/app/' + name
     if name == 'Dockerfile':
@@ -132,15 +155,17 @@ def deploy(revision, source):
         old_image = previous['Image']
         dockerfile_contents = (release / 'Dockerfile').read_bytes()
         dockerfile_cmd = dockerfile_command(dockerfile_contents)
-        same_runtime = (
+        same_base_runtime = (
             dockerfile_cmd is not None
-            and deployed_runtime_digest('requirements.txt')
-            == runtime_digest((release / 'requirements.txt').read_bytes())
             and deployed_runtime_digest('Dockerfile')
             == dockerfile_runtime_digest(dockerfile_contents)
         )
-        if not same_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
-            raise RuntimeError('Dependencies or Dockerfile changed: a full build needs at least 2 GiB free')
+        requirements_changed = (
+            deployed_runtime_digest('requirements.txt')
+            != runtime_digest((release / 'requirements.txt').read_bytes())
+        )
+        if not same_base_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
+            raise RuntimeError('Dockerfile runtime changed: a full build needs at least 2 GiB free')
         for name in ('docker-compose.yml', 'Caddyfile', '.env'):
             shutil.copy2(ROOT / name, backup / name)
         shutil.copy2(OVERRIDE, backup / 'previous-deploy.override.yml')
@@ -151,14 +176,13 @@ def deploy(revision, source):
             if database.read(5) != b'PGDMP':
                 raise RuntimeError('Invalid database backup')
         dockerfile = 'Dockerfile'
-        if same_runtime:
+        if same_base_runtime:
             dockerfile = 'Dockerfile.runtime'
-            (release / dockerfile).write_text('\n'.join([
-                'FROM ' + previous['Config']['Image'], 'USER root',
-                'RUN rm -rf /app && mkdir /app && chown app:app /app',
-                'COPY --chown=app:app . /app/', 'WORKDIR /app', 'USER app',
-                dockerfile_cmd, '',
-            ]))
+            (release / dockerfile).write_text(runtime_dockerfile(
+                previous['Config']['Image'],
+                dockerfile_cmd,
+                install_requirements=requirements_changed,
+            ))
         image = 'kyrgyzgo-api:' + stamp
         state = {'revision': revision, 'image': image, 'previous_image': old_image,
                  'source_directory': str(release), 'backup': str(backup), 'status': 'building'}
