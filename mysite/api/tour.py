@@ -1,7 +1,10 @@
 
 import logging
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from google.api_core.exceptions import GoogleAPICallError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from mysite.database.db import get_db
@@ -66,14 +69,21 @@ def save_translations(tour_db: Tour, db: Session):
 def try_save_translations(tour_db: Tour, db: Session):
     try:
         # Котормо иштебесе, негизги тур сакталат.
-        # savepoint котормодогу DB өзгөрүүлөрүн
+        # Savepoint котормодогу DB өзгөрүүлөрүн
         # өзүнчө артка кайтарууга жардам берет.
         with db.begin_nested():
             save_translations(tour_db, db)
 
         return True
 
-    except Exception:
+    except (
+        GoogleAPICallError,
+        SQLAlchemyError,
+        RuntimeError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):
         logger.exception(
             "Tour %s котормосу сакталган жок",
             tour_db.id
@@ -143,7 +153,7 @@ def create_tour(
 
         return tour_db
 
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Турду сактоо катасы")
 
@@ -161,9 +171,9 @@ def list_tours(
     ),
     db: Session = Depends(get_db)
 ):
-    tours = db.query(Tour).filter(
+    tours = cast(list[Tour], db.query(Tour).filter(
         Tour.is_active.is_(True)
-    ).all()
+    ).all())
 
     return [
         get_localized_tour(tour, db, lang)
@@ -180,7 +190,7 @@ def detail_tour(
     ),
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = cast(Tour | None, db.get(Tour, tour_id))
 
     if tour_db is None or not tour_db.is_active:
         raise HTTPException(
@@ -202,7 +212,7 @@ def update_tour(
     tour: TourUpdateSchema,
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = cast(Tour | None, db.get(Tour, tour_id))
 
     if tour_db is None:
         raise HTTPException(
@@ -248,7 +258,7 @@ def update_tour(
 
         return tour_db
 
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Турду жаңыртуу катасы")
 
@@ -263,7 +273,7 @@ def retry_tour_translation(
     tour_id: int,
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = cast(Tour | None, db.get(Tour, tour_id))
 
     if tour_db is None:
         raise HTTPException(
@@ -290,7 +300,7 @@ def retry_tour_translation(
     except HTTPException:
         raise
 
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Котормону сактоо катасы")
 
@@ -305,7 +315,7 @@ def delete_tour(
     tour_id: int,
     db: Session = Depends(get_db)
 ):
-    tour_db = db.get(Tour, tour_id)
+    tour_db = cast(Tour | None, db.get(Tour, tour_id))
 
     if tour_db is None:
         raise HTTPException(
@@ -323,7 +333,7 @@ def delete_tour(
 
         return {"message": "Тур өчүрүлдү"}
 
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Турду өчүрүү катасы")
 
@@ -339,11 +349,11 @@ def home_tour_slides(
     ),
     db: Session = Depends(get_db)
 ):
-    tours = db.query(Tour).filter(
+    tours = cast(list[Tour], db.query(Tour).filter(
         Tour.is_active.is_(True),
         Tour.main_image.isnot(None),
         Tour.main_image != ""
-    ).order_by(Tour.id.asc()).all()
+    ).order_by(Tour.id.asc()).all())
 
     slides = []
 
@@ -377,10 +387,10 @@ def tours_by_category(
             detail="Категория табылган жок"
         )
 
-    tours = db.query(Tour).filter(
+    tours = cast(list[Tour], db.query(Tour).filter(
         Tour.category_id == category_id,
         Tour.is_active.is_(True)
-    ).all()
+    ).all())
 
     return [
         get_localized_tour(tour, db, lang, include_description=True)
