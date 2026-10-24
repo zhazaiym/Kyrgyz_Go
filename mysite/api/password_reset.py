@@ -124,17 +124,17 @@ def forgot_password(
     )
 
     db.add(reset)
-    db.flush()
+    db.commit()
 
     try:
         send_reset_email(email, raw_token)
     except (smtplib.SMTPException, OSError, RuntimeError, ValueError):
-        db.rollback()
+        reset.used_at = now()
+        db.commit()
         logger.exception("Reset email delivery failed")
         # Keep the response indistinguishable from an unknown email address.
         return response
 
-    db.commit()
     return response
 
 
