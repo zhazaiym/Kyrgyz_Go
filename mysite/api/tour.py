@@ -2,10 +2,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from langchain_google_genai.chat_models import (
-    ChatGoogleGenerativeAIError,
-    GoogleAPIError,
-)
+from langchain_google_genai.chat_models import (ChatGoogleGenerativeAIError, GoogleAPIError)
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
