@@ -83,6 +83,25 @@ def test_dockerfile_command_extracts_only_a_single_line_command():
     assert module.dockerfile_command(b'FROM python:3.12-slim\nCMD \\\n  ["python", "main.py"]\n') is None
 
 
+def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
+    module = load_deployment()
+    command = 'CMD ["python", "main.py"]'
+
+    incremental = module.runtime_dockerfile(
+        'kyrgyzgo-api:current', command, install_requirements=True,
+    )
+    source_only = module.runtime_dockerfile(
+        'kyrgyzgo-api:current', command, install_requirements=False,
+    )
+
+    assert 'FROM kyrgyzgo-api:current' in incremental
+    assert 'COPY requirements.txt /tmp/kyrgyzgo-requirements.txt' in incremental
+    assert 'pip install --no-cache-dir -r /tmp/kyrgyzgo-requirements.txt' in incremental
+    assert command in incremental
+    assert 'pip install' not in source_only
+    assert command in source_only
+
+
 def test_workflow_separates_tests_and_main_deployment():
     workflow = Path('.github/workflows/deploy.yml').read_text()
     assert 'pull_request:' in workflow
