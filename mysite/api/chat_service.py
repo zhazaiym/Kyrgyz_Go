@@ -68,6 +68,19 @@ def advance_message_version(db, session):
     session.message_version = current_version + 1
 
 
+def discard_pending_message(db, session_id, message_id):
+    if message_id is None:
+        return
+    (db.query(ChatMessage)
+     .filter(
+         ChatMessage.id == message_id,
+         ChatMessage.session_id == session_id,
+         ChatMessage.role == 'user',
+     )
+     .delete(synchronize_session=False))
+    db.commit()
+
+
 async def process_message(session_id, client_id, token, message, on_chunk=None):
     _lock_users[session_id] = _lock_users.get(session_id, 0) + 1
     try:
@@ -103,7 +116,7 @@ def _prepare_message(session_id, client_id, token, message):
             db.commit()
             return {'answer': answer, 'revision': s.revision,
                     'booking_intent': False, 'stage': s.stage,
-                    'booking_preview': None}, None, None, None
+                    'booking_preview': None}, None, None, None, None
         if confirmation_allowed(s.stage, message) or (
             s.stage == 'submitted' and _is_confirmation_text(message)
         ):
@@ -117,12 +130,17 @@ def _prepare_message(session_id, client_id, token, message):
             final = {'answer': answer, 'revision': s.revision,
                      'booking_intent': True, 'stage': 'submitted',
                      'booking_submitted': result}
-            return final, None, None, None
+            return final, None, None, None, None
         last = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
                 .order_by(ChatMessage.id.desc()).first())
+        user_message_id = None
         if not last or last.role != 'user' or last.content != message:
-            db.add(ChatMessage(session_id=s.id, role='user', content=message))
+            user_message = ChatMessage(
+                session_id=s.id, role='user', content=message
+            )
+            db.add(user_message)
             db.commit()
+            user_message_id = user_message.id
         previous = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
                     .order_by(ChatMessage.id.desc()).limit(25).all())
         previous.reverse()
@@ -131,11 +149,11 @@ def _prepare_message(session_id, client_id, token, message):
         original = dict(s.state or {})
         message_version = s.message_version
 
-    return None, original, previous, message_version
+    return None, original, previous, message_version, user_message_id
 
 
 def _save_message_response(
-    session_id, client_id, token, expected_message_version,
+    session_id, client_id, token, expected_message_version, user_message_id,
     answer, updated, original, intent,
 ):
     summary = None
@@ -145,11 +163,16 @@ def _save_message_response(
             raise HTTPException(401, 'Требуется повторный вход')
         s = owned(db, session_id, client_id)
         if s.message_version != expected_message_version:
+            discard_pending_message(db, s.id, user_message_id)
             raise HTTPException(
                 409,
                 'Чат изменился в другом запросе. Обновите историю и повторите сообщение.',
             )
-        advance_message_version(db, s)
+        try:
+            advance_message_version(db, s)
+        except HTTPException:
+            discard_pending_message(db, session_id, user_message_id)
+            raise
         changed = updated != original
         if changed:
             s.state = updated
@@ -179,7 +202,7 @@ async def _process_message_locked(
     # Keep each synchronous database phase off the event loop.
     lock = _locks.setdefault(session_id, asyncio.Lock())
     async with lock:
-        final, original, previous, message_version = await _database_call(
+        final, original, previous, message_version, user_message_id = await _database_call(
             _prepare_message, session_id, client_id, token, message
         )
         if final is not None:
@@ -190,7 +213,8 @@ async def _process_message_locked(
             message, original, previous, on_chunk=None
         )
         result, summary = await _database_call(
-            _save_message_response, session_id, client_id, token, message_version,
+            _save_message_response, session_id, client_id, token,
+            message_version, user_message_id,
             answer, updated, original, intent
         )
         if on_chunk is not None:
