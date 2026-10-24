@@ -66,6 +66,23 @@ def test_runtime_digest_ignores_windows_line_endings():
     assert module.runtime_digest(b'package==1\r\n') == module.runtime_digest(b'package==1\n')
 
 
+def test_dockerfile_runtime_digest_ignores_only_command_changes():
+    module = load_deployment()
+    original = b'FROM python:3.12-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+    changed_command = b'FROM python:3.12-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py", "--safe"]\n'
+    changed_runtime = b'FROM python:3.13-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+
+    assert module.dockerfile_runtime_digest(original) == module.dockerfile_runtime_digest(changed_command)
+    assert module.dockerfile_runtime_digest(original) != module.dockerfile_runtime_digest(changed_runtime)
+
+
+def test_dockerfile_command_extracts_only_a_single_line_command():
+    module = load_deployment()
+    assert module.dockerfile_command(b'FROM python:3.12-slim\nCMD ["python", "main.py"]\n') == 'CMD ["python", "main.py"]'
+    assert module.dockerfile_command(b'FROM python:3.12-slim\n') is None
+    assert module.dockerfile_command(b'FROM python:3.12-slim\nCMD \\\n  ["python", "main.py"]\n') is None
+
+
 def test_workflow_separates_tests_and_main_deployment():
     workflow = Path('.github/workflows/deploy.yml').read_text()
     assert 'pull_request:' in workflow

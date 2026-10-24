@@ -54,10 +54,41 @@ def runtime_digest(contents):
     return hashlib.sha256(contents.replace(b'\r\n', b'\n')).hexdigest()
 
 
+def dockerfile_runtime_digest(contents):
+    """Hash all Dockerfile instructions except CMD, which can be overridden cheaply."""
+    normalized = contents.replace(b'\r\n', b'\n')
+    runtime_instructions = b'\n'.join(
+        line for line in normalized.splitlines()
+        if not re.match(rb'^\s*CMD\s+', line, re.IGNORECASE)
+    )
+    return runtime_digest(runtime_instructions)
+
+
+def dockerfile_command(contents):
+    commands = [
+        line.strip()
+        for line in contents.replace(b'\r\n', b'\n').splitlines()
+        if re.match(rb'^\s*CMD\s+', line, re.IGNORECASE)
+    ]
+    if len(commands) != 1 or commands[0].endswith(b'\\'):
+        return None
+    return commands[0].decode('utf-8')
+
+
 def deployed_runtime_digest(name):
-    probe = ('import hashlib; from pathlib import Path; '
-             + 'contents=Path(' + repr('/app/' + name) + ').read_bytes(); '
-             + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())")
+    path = '/app/' + name
+    if name == 'Dockerfile':
+        probe = (
+            'import hashlib,re; from pathlib import Path; '
+            + 'contents=Path(' + repr(path) + ').read_bytes().replace(b"\\r\\n",b"\\n"); '
+            + 'contents=b"\\n".join(line for line in contents.splitlines() '
+            + 'if not re.match(rb"^\\s*CMD\\s+",line,re.IGNORECASE)); '
+            + 'print(hashlib.sha256(contents).hexdigest())'
+        )
+    else:
+        probe = ('import hashlib; from pathlib import Path; '
+                 + 'contents=Path(' + repr(path) + ').read_bytes(); '
+                 + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())")
     return output(['sudo', '-n', 'docker', 'exec', 'kyrgyzgo_backend', 'python', '-c', probe])
 
 
@@ -99,9 +130,14 @@ def deploy(revision, source):
         if previous['State']['Health']['Status'] != 'healthy':
             raise RuntimeError('Current backend is unhealthy; manual intervention required')
         old_image = previous['Image']
-        same_runtime = all(
-            deployed_runtime_digest(name) == runtime_digest((release / name).read_bytes())
-            for name in ('requirements.txt', 'Dockerfile')
+        dockerfile_contents = (release / 'Dockerfile').read_bytes()
+        dockerfile_cmd = dockerfile_command(dockerfile_contents)
+        same_runtime = (
+            dockerfile_cmd is not None
+            and deployed_runtime_digest('requirements.txt')
+            == runtime_digest((release / 'requirements.txt').read_bytes())
+            and deployed_runtime_digest('Dockerfile')
+            == dockerfile_runtime_digest(dockerfile_contents)
         )
         if not same_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
             raise RuntimeError('Dependencies or Dockerfile changed: a full build needs at least 2 GiB free')
@@ -120,7 +156,8 @@ def deploy(revision, source):
             (release / dockerfile).write_text('\n'.join([
                 'FROM ' + previous['Config']['Image'], 'USER root',
                 'RUN rm -rf /app && mkdir /app && chown app:app /app',
-                'COPY --chown=app:app . /app/', 'WORKDIR /app', 'USER app', '',
+                'COPY --chown=app:app . /app/', 'WORKDIR /app', 'USER app',
+                dockerfile_cmd, '',
             ]))
         image = 'kyrgyzgo-api:' + stamp
         state = {'revision': revision, 'image': image, 'previous_image': old_image,
