@@ -43,7 +43,24 @@ jobs:
       - name: Run test suite
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: python -m pytest -q
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          result = subprocess.run(
+              [sys.executable, "-m", "pytest", "-q"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+          )
+          print(result.stdout, end="")
+          if result.returncode:
+              detail = " | ".join(result.stdout.strip().splitlines()[-8:])
+              detail = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=pytest diagnostics::{detail[:3500]}")
+          sys.exit(result.returncode)
+          PY
 
   deploy:
     name: Deploy to AWS
