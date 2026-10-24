@@ -36,10 +36,11 @@ def create_faq(
 
 @faq_router.get("/", response_model=list[FAQOutSchema])
 def list_faqs(lang: Language = "ru", db: Session = Depends(get_db)):
-    return [localized(record, lang) for record in db.query(FAQ).order_by(
-        FAQ.order,
-        FAQ.id
-    ).all()]
+    records = (db.query(FAQ)
+               .filter(FAQ.is_active.is_(True))
+               .order_by(FAQ.order, FAQ.id)
+               .all())
+    return [localized(record, lang) for record in records]
 
 
 @faq_router.get("/{faq_id}/", response_model=FAQOutSchema)
@@ -50,7 +51,7 @@ def detail_faq(
 ):
     faq_db = db.get(FAQ, faq_id)
 
-    if faq_db is None:
+    if faq_db is None or not faq_db.is_active:
         raise HTTPException(
             status_code=404,
             detail="Суроо-жооп табылган жок"

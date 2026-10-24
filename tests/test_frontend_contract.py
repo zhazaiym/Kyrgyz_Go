@@ -39,6 +39,29 @@ def test_tour_coordinates_round_trip_and_validation(client, admin_headers, custo
     assert response.json()['latitude'] is None
 
 
+def test_tour_category_and_home_slides_return_descriptions(client, admin_headers, monkeypatch):
+    monkeypatch.setattr('mysite.api.tour.translate_tour', lambda data: {
+        lang: dict(data, title=f"{data['title']} {lang}", description=f"{data['description']} {lang}")
+        for lang in ('en', 'de', 'zh')
+    })
+    category = client.post('/tour-categories/', json={'name': 'Visible category'},
+                           headers=admin_headers).json()
+    tour = client.post('/tours/', headers=admin_headers, json={
+        'category_id': category['id'], 'title': 'Visible tour',
+        'description': 'Description', 'price': '10',
+        'main_image': 'https://example.com/tour.jpg',
+    }).json()
+
+    by_category = client.get(f"/tours/category/{category['id']}/?lang=en")
+    assert by_category.status_code == 200, by_category.text
+    assert by_category.json()[0]['description'] == 'Description en'
+
+    slides = client.get('/tours/home/slides/?lang=en')
+    assert slides.status_code == 200, slides.text
+    slide = next(item for item in slides.json()['slides'] if item['id'] == tour['id'])
+    assert slide['description'] == 'Description en'
+
+
 @pytest.mark.parametrize('model,path,field,payload', [
     (models.Hotel, '/hotels/', 'name', {}),
     (models.FAQ, '/faqs/', 'question', {'answer': 'Answer'}),
@@ -133,6 +156,23 @@ def test_inactive_catalogue_resources_are_hidden(client, customer_headers):
         assert response.status_code == 200, response.text
         assert all(record['id'] != record_id for record in response.json()), path
         assert client.get(f'{path}{record_id}/', headers=customer_headers).status_code == 404
+
+
+def test_inactive_public_content_is_hidden(client, admin_headers):
+    for path, payload in (
+        ('/abouts/', {'title': 'Hidden about', 'is_active': False}),
+        ('/about-sections/', {'title': 'Hidden section', 'is_active': False}),
+        ('/faqs/', {'question': 'Hidden question', 'answer': 'Hidden answer', 'is_active': False}),
+        ('/contacts/', {'city': 'Hidden contact', 'is_active': False}),
+    ):
+        created = client.post(path, json=payload, headers=admin_headers)
+        assert created.status_code == 200, created.text
+        item_id = created.json()['id']
+        assert all(item['id'] != item_id for item in client.get(path).json())
+        if path == '/contacts/':
+            assert client.get(f'{path}{item_id}/', headers=admin_headers).status_code == 200
+        else:
+            assert client.get(f'{path}{item_id}/').status_code == 404
 
 
 def test_api_updates_translations_and_clears_stale_text_on_failure(client, admin_headers, monkeypatch):
