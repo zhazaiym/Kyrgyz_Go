@@ -1,8 +1,10 @@
 
 import logging
-from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from langchain_core.exceptions import ModelAPIError
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -67,16 +69,22 @@ def save_translations(tour_db: Tour, db: Session):
 
 def try_save_translations(tour_db: Tour, db: Session):
     try:
-        # Котормо иштебесе, негизги тур сакталат.
-        # Savepoint котормодогу DB өзгөрүүлөрүн
-        # Өзүнчө артка кайтарууга жардам берет.
+        # Keep the tour even when translation fails.
+        # The savepoint rolls back translation changes only.
         with db.begin_nested():
             save_translations(tour_db, db)
 
         return True
 
-    # noinspection PyBroadException
-    except Exception:
+    except (
+        ChatGoogleGenerativeAIError,
+        ModelAPIError,
+        SQLAlchemyError,
+        RuntimeError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):
         logger.exception(
             "Tour %s котормосу сакталган жок",
             tour_db.id
@@ -164,9 +172,9 @@ def list_tours(
     ),
     db: Session = Depends(get_db)
 ):
-    tours = cast(list[Tour], db.query(Tour).filter(
-        Tour.is_active.is_(True)
-    ).all())
+    tours = db.scalars(
+        select(Tour).where(Tour.is_active.is_(True))
+    ).all()
 
     return [
         get_localized_tour(tour, db, lang)
@@ -183,7 +191,7 @@ def detail_tour(
     ),
     db: Session = Depends(get_db)
 ):
-    tour_db = cast(Tour | None, db.get(Tour, tour_id))
+    tour_db = db.get(Tour, tour_id)
 
     if tour_db is None or not tour_db.is_active:
         raise HTTPException(
@@ -205,7 +213,7 @@ def update_tour(
     tour: TourUpdateSchema,
     db: Session = Depends(get_db)
 ):
-    tour_db = cast(Tour | None, db.get(Tour, tour_id))
+    tour_db = db.get(Tour, tour_id)
 
     if tour_db is None:
         raise HTTPException(
@@ -237,8 +245,7 @@ def update_tour(
             field in data
             for field in TRANSLATED_FIELDS
         ):
-            # Эски котормо жаңы орусча текстке
-            # Туура келбей калышы мүмкүн.
+            # Existing translations may not match the updated Russian text.
             db.query(TourTranslation).filter(
                 TourTranslation.tour_id == tour_db.id
             ).delete(synchronize_session=False)
@@ -266,7 +273,7 @@ def retry_tour_translation(
     tour_id: int,
     db: Session = Depends(get_db)
 ):
-    tour_db = cast(Tour | None, db.get(Tour, tour_id))
+    tour_db = db.get(Tour, tour_id)
 
     if tour_db is None:
         raise HTTPException(
@@ -308,7 +315,7 @@ def delete_tour(
     tour_id: int,
     db: Session = Depends(get_db)
 ):
-    tour_db = cast(Tour | None, db.get(Tour, tour_id))
+    tour_db = db.get(Tour, tour_id)
 
     if tour_db is None:
         raise HTTPException(
@@ -342,16 +349,23 @@ def home_tour_slides(
     ),
     db: Session = Depends(get_db)
 ):
-    tours = cast(list[Tour], db.query(Tour).filter(
-        Tour.is_active.is_(True),
-        Tour.main_image.isnot(None),
-        Tour.main_image != ""
-    ).order_by(Tour.id.asc()).all())
+    tours = db.scalars(
+        select(Tour)
+        .where(
+            Tour.is_active.is_(True),
+            Tour.main_image.isnot(None),
+            Tour.main_image != "",
+        )
+        .order_by(Tour.id.asc())
+    ).all()
 
     slides = []
 
     for tour in tours:
         data = get_localized_tour(tour, db, lang, include_description=True)
+
+
+
 
         slides.append({
             "id": tour.id,
@@ -380,10 +394,12 @@ def tours_by_category(
             detail="Категория табылган жок"
         )
 
-    tours = cast(list[Tour], db.query(Tour).filter(
-        Tour.category_id == category_id,
-        Tour.is_active.is_(True)
-    ).all())
+    tours = db.scalars(
+        select(Tour).where(
+            Tour.category_id == category_id,
+            Tour.is_active.is_(True),
+        )
+    ).all()
 
     return [
         get_localized_tour(tour, db, lang, include_description=True)
