@@ -1,16 +1,10 @@
 
 import json
 import os
-
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import SystemMessage, HumanMessage
-
-load_dotenv()
-
-import os
 from pathlib import Path
+
 from dotenv import load_dotenv
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 BASE_DIR = Path(__file__).resolve().parents[2]

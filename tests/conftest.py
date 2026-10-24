@@ -1,3 +1,4 @@
+# ruff: noqa: E402 -- configure the isolated test database before importing the app.
 import os
 from pathlib import Path
 

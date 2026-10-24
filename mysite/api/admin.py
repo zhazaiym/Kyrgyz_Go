@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,9 +15,6 @@ from mysite.database.models import Admin, TravelRequest, RequestStatusChoices
 from mysite.database.schema import (
     AdminLoginSchema, AdminOutSchema, TokenSchema, TravelRequestOutSchema
 )
-import os
-from pathlib import Path
-from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -26,8 +24,6 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY должен быть указан в .env")
-
-load_dotenv()
 
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 
