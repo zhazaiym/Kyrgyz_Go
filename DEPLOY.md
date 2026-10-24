@@ -63,8 +63,8 @@ docker compose logs --tail=100 api
 curl --fail http://127.0.0.1:8000/
 ```
 
-The container runs as an unprivileged user, uses one Uvicorn worker, limits
-WebSocket frames to 64 KiB, rotates logs, and restarts after process failures. The healthcheck verifies HTTP
+The container runs as an unprivileged user, uses one Uvicorn worker, rotates
+logs, and restarts after process failures. The healthcheck verifies HTTP
 availability; it does not verify PostgreSQL or Gemini connectivity. An unhealthy
 status alone does not trigger Docker's restart policy.
 
@@ -254,7 +254,7 @@ The same administrator can use the bearer-token API and the SQLAdmin login.
 ## 4. Run
 
 ```bash
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --ws-max-size 65536
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 Run one worker when using SQLite. Put the service behind an HTTPS reverse proxy
