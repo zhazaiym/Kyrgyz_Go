@@ -12,6 +12,12 @@ from mysite.database.schema import (
     DistrictOutSchema
 )
 
+from fastapi_filter import FilterDepends
+
+from mysite.filters.filter import DistrictFilter
+from mysite.api.filter_utils import Pagination, filtered_list
+
+
 
 district_router = APIRouter(
     prefix="/districts",
@@ -146,3 +152,23 @@ def delete_district(
     db.commit()
 
     return {"message": "Район өчүрүлдү"}
+
+
+@district_router.get("/", response_model=list[DistrictOutSchema])
+def list_districts(
+    lang: Language = "ru",
+    filters: DistrictFilter = FilterDepends(DistrictFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    districts = filtered_list(
+        db=db,
+        model=District,
+        filters=filters,
+        pagination=pagination,
+    )
+
+    return [
+        localized(district, lang)
+        for district in districts
+    ]

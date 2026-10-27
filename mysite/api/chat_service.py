@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 from mysite.database.db import SessionLocal
 from mysite.database.chat_models import ChatSession, ChatMessage, ChatBookingLink
-from mysite.database.models import TravelRequest, RequestStatusChoices, Tour
+from mysite.database.models import TravelRequest, RequestStatusChoices, Tour, Hotel, Transport
 from mysite.api.client_auth import client_by_token
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.chain.agent import respond, confirmation_allowed, rejection_allowed
@@ -42,6 +42,16 @@ def _preview_summary(db, preview):
     tour = db.get(Tour, data['tour_id']) if data.get('tour_id') else None
     choice = tour.title if tour else data.get('destination')
     return preview_text(data, choice)
+
+
+def public_preview(preview):
+    """The client reviews contacts; full trip state stays on the server."""
+    return {**preview, 'data': {
+        field: preview['data'][field]
+        for field in ('client_name', 'phone', 'email')
+        if preview['data'].get(field)
+    }}
+
 
 def owned(db, session_id, client_id):
     session = db.get(ChatSession, session_id)
@@ -129,7 +139,7 @@ def _save_message_response(session_id, client_id, token, answer, updated, origin
         if intent or s.stage in ('collecting', 'awaiting_confirmation'):
             if preview['can_confirm']:
                 if s.stage != 'awaiting_confirmation' or changed or intent:
-                    preview_event = preview
+                    preview_event = public_preview(preview)
                     summary = _preview_summary(db, preview)
                     answer = summary
                 s.stage = 'awaiting_confirmation'
@@ -232,7 +242,15 @@ def confirm_booking(db, s, client_id, revision, confirmed):
         t = db.get(Tour, st['tour_id'])
         tour_note = f'Тур #{t.id}: {t.title}. '
         destination = t.title
+    selected_notes = []
+    for field, model, label in (
+        ('hotel_id', Hotel, 'Отель'), ('transport_id', Transport, 'Транспорт')
+    ):
+        item = db.get(model, st[field]) if st.get(field) else None
+        if item:
+            selected_notes.append(f'{label}: {item.name}. ')
     notes = (f'Chat Client: KG-{client_id:06d}; session: {s.id}. ' + tour_note
+             + ''.join(selected_notes)
              + f'Язык общения: {st.get("language") or "не указан"}. '
              + f'Бюджет: {st.get("budget") or "не указан"}. Пожелания: {st.get("notes") or "нет"}.')
     obj = TravelRequest(name=st['client_name'], phone=st['phone'], email=st.get('email'),

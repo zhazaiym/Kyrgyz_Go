@@ -109,6 +109,8 @@ class Tour(Base):
     images: Mapped[list["TourImage"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
     programs: Mapped[list["TourProgram"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
     translations: Mapped[list["TourTranslation"]] = relationship(back_populates="tour", cascade="all, delete-orphan")
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"), nullable=True, index=True)
+    country: Mapped["Country | None"] = relationship(back_populates="tours")
 
 
 class TourTranslation(Base):
@@ -150,13 +152,10 @@ class TourProgram(LocalizedContent, Base):
 class Country(LocalizedContent, Base):
     __tablename__ = "countries"
 
-    id: Mapped[int] = mapped_column(
-        Integer, primary_key=True, autoincrement=True
-    )
-    name: Mapped[str] = mapped_column(
-        String(150), nullable=False
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
     regions: Mapped[list["Region"]] = relationship(back_populates="country")
+    tours: Mapped[list["Tour"]] = relationship(back_populates="country")
 
 class Region(LocalizedContent, Base):
     __tablename__ = "regions"

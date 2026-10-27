@@ -42,6 +42,33 @@ def _tour(t, brief=False):
     return result
 
 
+def selected_service_details(db, state):
+    """Read selected entries by exact ID, without the general catalogue limits."""
+    result = {}
+    for key, model, field in (
+        ('tour', Tour, 'tour_id'), ('hotel', Hotel, 'hotel_id'),
+        ('transport', Transport, 'transport_id'),
+    ):
+        item_id = state.get(field)
+        if not item_id:
+            continue
+        item = db.get(model, item_id)
+        if not item or not item.is_active:
+            result[key] = {'error': 'Выбранная услуга сейчас недоступна'}
+            continue
+        if key == 'tour':
+            result[key] = _tour(item)
+            continue
+        fields = ('name', 'description', 'address', 'stars', 'amenities') if key == 'hotel' else (
+            'name', 'description', 'brand', 'model', 'seats', 'has_driver', 'has_air_conditioner'
+        )
+        result[key] = {field: getattr(item, field) for field in fields}
+        result[key].update(price=str(item.price),
+                           price_unit=getattr(item.price_unit, 'value', None),
+                           currency='Уточнить у менеджера')
+    return result
+
+
 @tool
 def list_active_tours() -> list[dict]:
     """Read brief active tours (up to 30): price, duration, group limits, short description. Use for initial recommendations, then get_tour_details for program/inclusions. Not live availability."""

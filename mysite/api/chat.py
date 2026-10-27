@@ -9,6 +9,7 @@ from mysite.database.chat_models import ChatClient, ChatSession, ChatMessage
 from mysite.api.client_auth import client_by_token, current_client, login_required
 from mysite.api.chat_service import (
     build_preview,
+    public_preview,
     confirm_booking_serialized,
     owned,
 )
@@ -57,7 +58,7 @@ def history(session_id: str, client: ChatClient = Depends(current_client), db: S
 
 @chat_router.post('/booking/preview')
 def preview(data: BookingAction, client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
-    return build_preview(db, owned(db, data.session_id, client.id))
+    return public_preview(build_preview(db, owned(db, data.session_id, client.id)))
 
 @chat_router.post('/booking/confirm')
 async def confirm(

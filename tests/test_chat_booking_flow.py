@@ -43,8 +43,9 @@ def test_complete_chat_requires_approval_and_shows_in_admin(client, admin_header
     monkeypatch.setattr(chat_service, 'respond', reply)
     result = asyncio.run(chat_service.process_message(session_id, identity, token, 'Давай забронировать'))
     assert result['stage'] == 'awaiting_confirmation'
-    assert 'Подтверждаете' in result['answer']
-    assert 'Quiet accommodation' in result['answer']
+    assert 'Проверьте заявку' in result['answer']
+    assert 'Approval Guest' in result['answer']
+    assert 'Quiet accommodation' not in result['answer']
     with SessionLocal() as db:
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
 
@@ -54,8 +55,8 @@ def test_complete_chat_requires_approval_and_shows_in_admin(client, admin_header
     monkeypatch.setattr(chat_service, 'respond', unexpected)
     submitted = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
     repeated = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
-    assert 'Ваши данные переданы менеджеру KYRGYZGO' in submitted['answer']
-    assert 'скоро свяжется с вами' in submitted['answer']
+    assert 'Заявка отправлена менеджеру KYRGYZGO' in submitted['answer']
+    assert 'свяжется с вами' in submitted['answer']
     assert submitted['booking_submitted']['request_id'] == repeated['booking_submitted']['request_id']
     request_id = submitted['booking_submitted']['request_id']
     with SessionLocal() as db:
@@ -168,7 +169,9 @@ def test_correction_replaces_preview_and_rejects_old_confirmation(client, monkey
     original = asyncio.run(chat_service.process_message(session_id, identity, token, 'Book this trip'))
     corrected = asyncio.run(chat_service.process_message(session_id, identity, token, 'Actually three guests'))
     assert corrected['revision'] > original['revision']
-    assert corrected['booking_preview']['data']['people_count'] == 3
+    assert corrected['booking_preview']['data']['client_name'] == 'Approval Guest'
+    with SessionLocal() as db:
+        assert db.get(ChatSession, session_id).state['people_count'] == 3
     headers = {'Authorization': f'Bearer {token}'}
     assert client.post('/booking/confirm', headers=headers, json={
         'session_id': session_id, 'revision': original['revision'], 'confirmed': True,
@@ -319,8 +322,8 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(cli
     preview = results[-1]['booking_preview']
     assert preview['can_confirm']
     assert preview['data']['client_name'] == 'Анна'
-    assert preview['data']['people_count'] == 2
-    assert 'Я готова бронировать тур' in results[-1]['answer']
+    assert set(preview['data']) == {'client_name', 'phone'}
+    assert 'Проверьте заявку' in results[-1]['answer']
 
     submitted = asyncio.run(chat_service.process_message(session_id, identity, token,
                                                         'Я готова бронировать тур'))
@@ -378,7 +381,7 @@ def test_server_shows_one_authoritative_preview_and_keeps_followup_answers(clien
     monkeypatch.setattr(chat_service, 'respond', reply)
     preview = asyncio.run(chat_service.process_message(session_id, identity, token, 'Оформить', on_chunk=emit))
     assert 'Модельная сводка' not in preview['answer']
-    assert preview['answer'].count('Подтверждаете отправку') == 1
+    assert preview['answer'].count('Проверьте заявку') == 1
     assert ''.join(emitted) == preview['answer']
     assert preview['booking_preview']['can_confirm']
     followup = asyncio.run(chat_service.process_message(session_id, identity, token, 'Уточните маршрут'))

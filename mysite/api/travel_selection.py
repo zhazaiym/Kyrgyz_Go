@@ -14,6 +14,8 @@ from mysite.database.chat_models import (
     ChatMessage,
 )
 from mysite.api.client_auth import current_client
+from mysite.chain.agent import selection_welcome
+from mysite.chain.tools import selected_service_details
 
 
 selection_router = APIRouter(
@@ -239,7 +241,7 @@ def update_selection(
 # START AI CHAT
 
 @selection_router.post("/{selection_id}/start-chat/")
-def start_selection_chat(
+async def start_selection_chat(
     selection_id: int,
     client: ChatClient = Depends(current_client),
     db: Session = Depends(get_db)
@@ -308,24 +310,20 @@ def start_selection_chat(
         + "\n".join(choices)
     )
 
-    # AI саламдашуусу
-    welcome = (
-        "Здравствуйте! 👋 Добро пожаловать в KyrgyzGo!\n"
-        "Я вижу ваши выбранные услуги.\n"
-        "На какую дату планируете поездку "
-        "и сколько человек будет путешествовать?"
-    )
+    state = {
+        "tour_id": selection.tour_id,
+        "hotel_id": selection.hotel_id,
+        "transport_id": selection.transport_id,
+    }
+    details = selected_service_details(db, state)
+    welcome = await selection_welcome(state, details)
 
     session_id = str(uuid.uuid4())
 
     session = ChatSession(
         id=session_id,
         client_id=client.id,
-        state={
-            "tour_id": selection.tour_id,
-            "hotel_id": selection.hotel_id,
-            "transport_id": selection.transport_id,
-        },
+        state=state,
         revision=0,
         stage="consultation"
     )
@@ -351,7 +349,30 @@ def start_selection_chat(
         )
     )
 
-    selection.session_id = session_id
+    # The model call yielded control. Only bind if no other request started the
+    # chat or changed the selected services in the meantime.
+    claimed = db.query(TravelSelection).filter(
+        TravelSelection.id == selection_id,
+        TravelSelection.client_id == client.id,
+        TravelSelection.session_id.is_(None),
+        TravelSelection.status == 'draft',
+        TravelSelection.tour_id == state['tour_id'],
+        TravelSelection.hotel_id == state['hotel_id'],
+        TravelSelection.transport_id == state['transport_id'],
+    ).update({'session_id': session_id}, synchronize_session=False)
+    if not claimed:
+        db.rollback()
+        current = get_selection(db, selection_id, client.id)
+        if current.session_id:
+            existing = db.get(ChatSession, current.session_id)
+            if existing and existing.client_id == client.id:
+                return {
+                    'selection_id': current.id,
+                    'session_id': existing.id,
+                    'existing': True,
+                    'stage': existing.stage,
+                }
+        raise HTTPException(409, 'Выбор услуг изменился. Откройте чат заново')
 
     db.commit()
 
