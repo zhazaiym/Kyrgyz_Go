@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
-from mysite.api.selection_status import linked_request, processing_status
+from mysite.api.selection_status import linked_request, processing_status, require_status_transition
 from mysite.api.travel_selection import selection_context, selection_data
 from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
@@ -90,8 +90,7 @@ def update_selection_status(
 
     request = linked_request(db, selection, for_update=True)
     current_status = processing_status(selection, request)
-    if current_status == 'completed' and data.status != current_status:
-        raise HTTPException(409, 'Завершённую поездку нельзя изменить')
+    require_status_transition(current_status, data.status)
 
     if data.status == 'draft' and selection.session_id:
         raise HTTPException(409, 'Нельзя вернуть поездку с чатом в черновик')

@@ -1,7 +1,17 @@
 """After submission, the linked request is the source of processing status."""
 
+from fastapi import HTTPException
+
 from mysite.database.chat_models import ChatBookingLink
 from mysite.database.models import TravelRequest
+from mysite.database.request_status import validate_status_transition
+
+
+def require_status_transition(current, proposed):
+    try:
+        validate_status_transition(current, proposed)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 def requests_for_selections(db, selections):

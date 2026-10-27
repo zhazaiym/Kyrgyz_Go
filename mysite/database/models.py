@@ -3,12 +3,13 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
-                        Text, UniqueConstraint, event)
+                        Text, UniqueConstraint, event, inspect, select)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
+from mysite.database.request_status import validate_status_transition
 
 
 def now_utc():
@@ -429,3 +430,13 @@ def assign_content_order(mapper, connection, target):
     )
 
     set_committed_value(target, 'order', target.id)
+
+
+@event.listens_for(TravelRequest, 'before_update')
+def protect_completed_request(mapper, connection, target):
+    if not inspect(target).attrs.status.history.has_changes():
+        return
+    current = connection.execute(
+        select(TravelRequest.status).where(TravelRequest.id == target.id).with_for_update()
+    ).scalar_one()
+    validate_status_transition(current, target.status)

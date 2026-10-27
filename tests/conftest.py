@@ -34,6 +34,9 @@ from mysite.database.models import Admin
 
 @pytest.fixture(autouse=True)
 def offline_catalogue_translations(monkeypatch):
+    from mysite.api.resource_limits import setting
+
+    setting.cache_clear()
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'false')
     monkeypatch.setattr(
         'mysite.translations.content.translate_fields',
@@ -42,6 +45,8 @@ def offline_catalogue_translations(monkeypatch):
             for lang in ('en', 'de', 'zh')
         },
     )
+    yield
+    setting.cache_clear()
 
 
 @pytest.fixture(scope='session')

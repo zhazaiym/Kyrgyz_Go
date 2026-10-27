@@ -134,6 +134,16 @@ def booking_text(data):
     return TEXT.get(language, TEXT['en'])
 
 
+def invalid_preview_text(state):
+    return {
+        'ru': 'Данные заявки изменились или больше недействительны. Проверьте услуги, дату поездки и контакты. Заявка не отправлена; уточните данные, чтобы получить новую сводку.',
+        'ky': 'Өтүнмөнүн маалыматы өзгөрдү же жараксыз болуп калды. Кызматтарды, сапардын күнүн жана байланыштарды текшериңиз. Өтүнмө жөнөтүлгөн жок.',
+        'en': 'Your request details have changed or are no longer valid. Check the services, travel date and contact details. Nothing has been sent; update the details to get a new summary.',
+        'de': 'Die Angaben sind geändert oder nicht mehr gültig. Prüfen Sie Leistungen, Reisedatum und Kontaktdaten. Die Anfrage wurde nicht gesendet.',
+        'zh': '申请信息已更改或失效。请核对服务、旅行日期和联系方式。申请尚未发送，请更新信息以获取新的摘要。',
+    }.get(state.get('language', 'ru'), 'Your request was not sent. Please update the details.')
+
+
 def preview_text(data, choice):
     text = booking_text(data)
     values = [

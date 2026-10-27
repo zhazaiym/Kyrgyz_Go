@@ -2,20 +2,42 @@
 
 import asyncio
 import os
+import time
+from collections import OrderedDict
 from contextlib import contextmanager
+from functools import lru_cache
 from threading import Lock
 
 from fastapi import HTTPException
-from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
-from mysite.api.rate_limit import enforce_rate_limit
 
-
+@lru_cache(maxsize=32)
 def setting(name, default, maximum):
-    return max(1, min(maximum, int(os.getenv(name, str(default)))))
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise RuntimeError(f'{name} must be an integer') from exc
+    if not 1 <= value <= maximum:
+        raise RuntimeError(f'{name} must be between 1 and {maximum}')
+    return value
+
+
+def validate_resource_settings():
+    for name, default, maximum in (
+        ('AI_MAX_CONCURRENT', 4, 32),
+        ('AUTH_MAX_CONCURRENT', 4, 16),
+        ('HTTP_MAX_CONCURRENT', 64, 512),
+        ('HTTP_REQUESTS_PER_MINUTE', 120, 100_000),
+        ('HTTP_IP_BUCKETS', 8192, 65_536),
+        ('MAX_REQUEST_BODY_BYTES', 1_048_576, 16_777_216),
+        ('REQUEST_BODY_TIMEOUT', 10, 60),
+        ('WS_MAX_CONNECTIONS', 64, 512),
+        ('WS_MAX_PER_IP', 8, 64),
+    ):
+        setting(name, default, maximum)
 
 
 _ai_lock = Lock()
@@ -38,11 +60,39 @@ def ai_capacity():
 
 class ResourceLimitsMiddleware:
     def __init__(self, app):
+        validate_resource_settings()
         self.app = app
         self.lock = Lock()
         self.http_active = 0
         self.ws_active = 0
         self.ws_clients = {}
+        self.http_counters = OrderedDict()
+
+    def http_quota(self, address):
+        if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
+            return
+        instant = time.monotonic()
+        window = int(instant // 60)
+        with self.lock:
+            while self.http_counters:
+                first = next(iter(self.http_counters))
+                if self.http_counters[first][0] == window:
+                    break
+                self.http_counters.popitem(last=False)
+            if address not in self.http_counters:
+                if len(self.http_counters) >= setting('HTTP_IP_BUCKETS', 8192, 65_536):
+                    raise HTTPException(503, 'Rate limiter is busy', headers={'Retry-After': '60'})
+                self.http_counters[address] = (window, 0)
+            _, count = self.http_counters[address]
+            maximum = setting('HTTP_REQUESTS_PER_MINUTE', 120, 100_000)
+            self.http_counters[address] = (window, min(count + 1, maximum + 1))
+        if count >= maximum:
+            retry = max(1, int((window + 1) * 60 - instant) + 1)
+            raise HTTPException(
+                429,
+                {'code': 'rate_limited', 'retry_after': retry},
+                headers={'Retry-After': str(retry)},
+            )
 
     async def __call__(self, scope, receive, send):
         kind = scope['type']
@@ -119,17 +169,14 @@ class ResourceLimitsMiddleware:
                 ) == 'cross-site':
                     return await reject(403, 'Cross-site admin request rejected')
             try:
-                await asyncio.to_thread(
-                    enforce_rate_limit,
-                    'http-requests',
-                    f'ip:{address}',
-                    max_requests=setting('HTTP_REQUESTS_PER_MINUTE', 120, 100_000),
-                    window_seconds=60,
+                path = scope.get('path', '')
+                cheap_read = scope.get('method') in {'GET', 'HEAD'} and (
+                    path == '/' or path.startswith('/admin/statics/')
                 )
+                if not cheap_read:
+                    self.http_quota(address)
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail, exc.headers)
-            except SQLAlchemyError:
-                return await reject(503, 'Service is temporarily unavailable', {'Retry-After': '1'})
             chunks, size = [], 0
             try:
                 async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT', 10, 60)):

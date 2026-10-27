@@ -32,14 +32,6 @@ class AdminAdmin(ModelView, model=Admin):
     column_details_exclude_list = [Admin.hashed_password]
 
 
-# class AboutAdmin(LocalizedAdminMixin, ModelView, model= About):
-#     column_list = [About.id, About.title]
-#
-#
-# class AboutSectionAdmin(LocalizedAdminMixin, ModelView, model= AboutSection):
-#     column_list = [AboutSection.id, AboutSection.title]
-
-
 class AboutAdmin(LocalizedAdminMixin, ModelView, model=About):
     column_list = [About.id, About.title]
 
@@ -62,37 +54,6 @@ class AboutSectionAdmin(LocalizedAdminMixin, ModelView, model=AboutSection):
 
 class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model=TourCategory):
     column_list = [TourCategory.id, TourCategory.name]
-
-
-# class TourAdmin(ModelView, model=Tour):
-#     column_list = [Tour.id, Tour.title]
-#
-#     async def on_model_change(self, data, model, is_created, request):
-#         from mysite.api.tour import TRANSLATED_FIELDS
-#
-#         request.state.tour_source_changed = is_created or any(
-#             field in data and data[field] != getattr(model, field, None)
-#             for field in TRANSLATED_FIELDS
-#         )
-#
-#     async def after_model_change(self, data, model, is_created, request):
-#         if request.state.tour_source_changed:
-#             await run_in_threadpool(self._refresh_translations, model.id)
-#
-#     @staticmethod
-#     def _refresh_translations(tour_id):
-#         from mysite.api.tour import try_save_translations
-#         from mysite.database.db import SessionLocal
-#         from mysite.database.models import TourTranslation
-#
-#         with SessionLocal() as db:
-#             tour = db.get(Tour, tour_id)
-#             if tour is None:
-#                 return
-#             db.query(TourTranslation).filter_by(tour_id=tour_id).delete(synchronize_session=False)
-#             db.flush()
-#             try_save_translations(tour, db)
-#             db.commit()
 
 
 class TourAdmin(ModelView, model=Tour):
@@ -164,10 +125,6 @@ class HotelImageAdmin(ModelView, model=HotelImage):
     column_list = [HotelImage.id, HotelImage.image]
 
 
-# class TransportAdmin(LocalizedAdminMixin, ModelView, model= Transport):
-#     column_list = [Transport.id, Transport.name]
-
-
 class TransportAdmin(LocalizedAdminMixin, ModelView, model=Transport):
     column_list = [Transport.id, Transport.name]
 
@@ -196,14 +153,6 @@ class TrekkingImageAdmin(ModelView, model=TrekkingImage):
 
 class TrekkingProgramAdmin(LocalizedAdminMixin, ModelView, model=TrekkingProgram):
     column_list = [TrekkingProgram.id, TrekkingProgram.title]
-
-
-# class ContactAdmin(LocalizedAdminMixin, ModelView, model=Contact):
-#     column_list = [Contact.id, Contact.phone]
-#
-#
-# class FAQAdmin(LocalizedAdminMixin, ModelView, model= FAQ):
-#     column_list = [FAQ.id, FAQ.question, FAQ.answer, FAQ.is_active]
 
 
 class ContactAdmin(LocalizedAdminMixin, ModelView, model=Contact):

@@ -25,7 +25,9 @@ class TravelSelection(Base):
 
     transport_id: Mapped[int | None] = mapped_column(ForeignKey('transports.id'), nullable=True)
 
-    session_id: Mapped[str | None] = mapped_column(ForeignKey('chat_sessions.id'), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey('chat_sessions.id'), nullable=True, unique=True
+    )
 
     status: Mapped[str] = mapped_column(String(30), default='draft', nullable=False)
 

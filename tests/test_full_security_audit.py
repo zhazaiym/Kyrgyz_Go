@@ -110,11 +110,11 @@ def test_http_quota_cannot_be_bypassed_with_untrusted_forwarded_headers(monkeypa
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_950_000_000)
     with TestClient(app, client=('198.51.100.111', 50001)) as browser:
         statuses = [
-            browser.get('/', headers={'X-Forwarded-For': f'203.0.113.{n}'}).status_code
+            browser.get('/openapi.json', headers={'X-Forwarded-For': f'203.0.113.{n}'}).status_code
             for n in range(4)
         ]
         assert statuses == [200, 200, 200, 429]
-        assert int(browser.get('/').headers['retry-after']) > 0
+        assert int(browser.get('/openapi.json').headers['retry-after']) > 0
 
 
 def test_blocked_rate_limit_uses_bounded_cache_instead_of_hitting_database(monkeypatch):

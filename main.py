@@ -31,7 +31,7 @@ from mysite.api.manager_selection import manager_selection_router
 from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
-from mysite.api.resource_limits import ResourceLimitsMiddleware
+from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
 from mysite.api.tour import tour_router
 # OLD KYRGYZGO API
 from mysite.api.tour_category import category_router
@@ -46,6 +46,7 @@ from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 
 # FASTAPI
+validate_resource_settings()
 app = FastAPI(
     title='KYRGYZGO', description='KYRGYZGO Tourism API + AI Travel Assistant', version='1.0.0'
 )

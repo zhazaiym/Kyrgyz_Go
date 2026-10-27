@@ -28,7 +28,7 @@ Database addressing:
   private IP or DNS name. The database must accept connections from the Docker
   host. Configure PostgreSQL `listen_addresses`, `pg_hba.conf`, and the firewall
   for the actual client network; keep port 5432 restricted to trusted clients.
-- Without Docker: the current `127.0.0.1` URL is correct for a local PostgreSQL
+- Without Docker: use the commented `127.0.0.1` URL for a local PostgreSQL
   server. URL-encode special characters in database credentials.
 
 Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
@@ -74,6 +74,13 @@ and AI messages by client account. The AI limit is 10 messages per minute and
 300 per day per client. Counters store hashed identifiers and old windows are
 cleaned automatically. Keep `RATE_LIMIT_ENABLED=true` in production.
 
+The coarse HTTP/IP limit uses a bounded in-memory counter per worker, with no
+PostgreSQL writes. GET/HEAD health checks and SQLAdmin static assets bypass
+this counter; admission, header and body limits still apply. With N workers,
+the coarse allowance can reach N times the configured value. Use the proxy
+or an upstream service for network-level and cross-worker traffic limits.
+Numeric resource settings are validated at startup; restart after changing them.
+
 Create an administrator interactively after the API starts:
 
 ```bash
@@ -92,10 +99,14 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
 1. Use your public IP (currently `13.53.40.37`), or point a domain's DNS A/AAAA
    records to the server. Allow inbound TCP ports 80 and 443. Stop any other
    service using these ports after checking how the current API is hosted.
-2. Set `API_DOMAIN=13.53.40.37` (or your domain) and `FORWARDED_ALLOW_IPS=*` in
-   `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
+2. Set `API_DOMAIN=13.53.40.37` (or your domain) and keep
+   `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
+   Compose gives Caddy this fixed address on a dedicated proxy network. If
+   `172.30.240.0/28` overlaps an existing network, change `PROXY_SUBNET`,
+   `CADDY_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`
+   merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.
 4. Verify `https://13.53.40.37/` and `/contacts/` without authorization, using your
@@ -140,10 +151,12 @@ translations to populate their translations. Public GETs make no AI calls.
 
 The API port binds to `127.0.0.1:8000` by default. Put a host Nginx instance
 in front of it, configure DNS and a valid TLS certificate for the API domain,
-and expose only the HTTPS proxy publicly. Set `FORWARDED_ALLOW_IPS=*` in the
-server `.env` only while the API is reachable exclusively through your trusted
-proxy; this allows Uvicorn to recognize the forwarded HTTPS scheme over Docker
-networking. Do not combine that setting with a publicly accessible API port.
+and expose only the HTTPS proxy publicly. Set `FORWARDED_ALLOW_IPS` in the
+server `.env` to the actual peer address of that proxy as seen by Uvicorn
+(for a host proxy this may be a Docker bridge gateway). Determine that address
+for your network rather than trusting `*` or every private address. The default
+fixed Caddy address is intended for the included Compose proxy, not arbitrary
+host Nginx setups.
 
 Example Nginx configuration inside an existing TLS `server` block:
 

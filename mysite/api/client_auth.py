@@ -82,16 +82,17 @@ def issue_token(db: Session, client: ChatClient):
 
 def authenticate_client(db: Session, identifier: str, password: str, *, email_only=False):
     field = ChatClient.email if email_only or '@' in identifier else ChatClient.username
-    # Keep password verification and token issuance ordered with password resets.
-    client = (
-        db.query(ChatClient)
-        .filter(field == identifier)
-        .populate_existing()
-        .with_for_update()
-        .first()
-    )
-    valid = passwords.verify(password, client.password_hash if client else dummy_password_hash)
-    if not client or not valid:
+    client = db.query(ChatClient).filter(field == identifier).first()
+    client_id = client.id if client else None
+    verified_hash = client.password_hash if client else dummy_password_hash
+    # Argon2 must not hold a row lock or a pooled connection. Recheck the hash
+    # under the short token-issuance lock so a concurrent reset still wins.
+    db.rollback()
+    valid = passwords.verify(password, verified_hash)
+    if client_id is None or not valid:
+        raise login_required('Неверный email или пароль')
+    client = db.get(ChatClient, client_id, with_for_update=True, populate_existing=True)
+    if client is None or client.password_hash != verified_hash:
         raise login_required('Неверный email или пароль')
     return client
 

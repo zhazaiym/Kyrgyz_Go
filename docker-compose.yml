@@ -4,6 +4,11 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.30.240.2}
+    networks:
+      - default
+      - proxy
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
     extra_hosts:
@@ -31,6 +36,9 @@ services:
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:-13.53.40.37}
+    networks:
+      proxy:
+        ipv4_address: ${CADDY_PROXY_IP:-172.30.240.2}
     ports:
       - "80:80"
       - "443:443"
@@ -41,6 +49,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+networks:
+  default: {}
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.30.240.0/28}
 
 volumes:
   caddy_data:

@@ -129,9 +129,12 @@ def update_travel_request_status(
     current_admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    request = db.get(TravelRequest, request_id)
+    from mysite.api.selection_status import require_status_transition
+
+    request = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
     if request is None:
         raise HTTPException(404, 'Заявка не найдена')
+    require_status_transition(request.status, data.status)
     request.status = data.status
     db.commit()
     db.refresh(request)

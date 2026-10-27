@@ -3,12 +3,13 @@
 import asyncio
 import json
 import re
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from mysite.api.booking_text import booking_text, preview_text
+from mysite.api.booking_text import booking_text, invalid_preview_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
@@ -29,7 +30,7 @@ async def _database_call(function, *args):
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
-        # A worker cannot be ccancelled; retain the session lock until it closes its DB session.
+        # A worker cannot be cancelled; retain the session lock until it closes its DB session.
         while not task.done():
             try:
                 await asyncio.wait({task})
@@ -108,21 +109,26 @@ def _discard_failed_message(session_id, message_id):
         discard_pending_message(db, session_id, message_id)
 
 
-async def process_message(session_id, client_id, token, message, on_chunk=None):
+@asynccontextmanager
+async def session_lock(session_id):
     _lock_users[session_id] = _lock_users.get(session_id, 0) + 1
+    lock = _locks.setdefault(session_id, asyncio.Lock())
     try:
-        return await _process_message_locked(
-            session_id, client_id, token, message, on_chunk=on_chunk
-        )
+        async with lock:
+            yield
     finally:
         users = _lock_users.get(session_id, 1) - 1
         if users > 0:
             _lock_users[session_id] = users
         else:
             _lock_users.pop(session_id, None)
-            lock = _locks.get(session_id)
-            if lock is not None and not lock.locked():
+            if not lock.locked():
                 _locks.pop(session_id, None)
+
+
+async def process_message(session_id, client_id, token, message, on_chunk=None):
+    async with session_lock(session_id):
+        return await _respond_and_save(session_id, client_id, token, message, on_chunk)
 
 
 def _prepare_message(session_id, client_id, token, message):
@@ -159,7 +165,36 @@ def _prepare_message(session_id, client_id, token, message):
         if confirmation_allowed(s.stage, message) or (
             s.stage == 'submitted' and _is_confirmation_text(message)
         ):
-            result = confirm_booking(db, s, client_id, s.revision, True)
+            try:
+                result = confirm_booking(db, s, client_id, s.revision, True)
+            except HTTPException as exc:
+                if exc.status_code != 422 or not isinstance(exc.detail, dict):
+                    raise
+                advance_message_version(db, s)
+                s.stage = 'collecting'
+                s.revision += 1
+                preview = build_preview(db, s)
+                answer = invalid_preview_text(s.state or {})
+                db.add_all(
+                    [
+                        ChatMessage(session_id=s.id, role='user', content=message),
+                        ChatMessage(session_id=s.id, role='assistant', content=answer),
+                    ]
+                )
+                db.commit()
+                return (
+                    {
+                        'answer': answer,
+                        'revision': s.revision,
+                        'booking_intent': False,
+                        'stage': s.stage,
+                        'booking_preview': preview,
+                    },
+                    None,
+                    None,
+                    None,
+                    None,
+                )
             answer = booking_text(s.state or {})['submitted'].format(
                 request_id=result['request_id']
             )
@@ -275,51 +310,49 @@ def _save_message_response(
         }, summary
 
 
-async def _process_message_locked(session_id, client_id, token, message, on_chunk=None):
+async def _respond_and_save(session_id, client_id, token, message, on_chunk=None):
     # Keep each synchronous database phase off the event loop.
-    lock = _locks.setdefault(session_id, asyncio.Lock())
-    async with lock:
-        (final, original, previous, message_version, user_message_id) = await _database_call(
-            _prepare_message, session_id, client_id, token, message
-        )
-        if final is not None:
-            if on_chunk is not None:
-                await on_chunk(final['answer'])
-            return final
-        try:
-            with ai_capacity():
-                answer, updated, intent = await respond(message, original, previous, on_chunk=None)
-                if (
-                    not isinstance(answer, str)
-                    or len(answer) > 65_536
-                    or not isinstance(updated, dict)
-                    or type(intent) is not bool
-                ):
-                    raise HTTPException(502, 'AI returned invalid response data')
-                try:
-                    state_bytes = json.dumps(updated, allow_nan=False).encode('utf-8')
-                except (ValueError, TypeError) as exc:
-                    raise HTTPException(502, 'AI returned invalid state data') from exc
-                if len(state_bytes) > 32_768:
-                    raise HTTPException(502, 'AI state exceeds the supported size')
-            result, summary = await _database_call(
-                _save_message_response,
-                session_id,
-                client_id,
-                token,
-                message_version,
-                user_message_id,
-                answer,
-                updated,
-                original,
-                intent,
-            )
-        except (Exception, asyncio.CancelledError):
-            await _database_call(_discard_failed_message, session_id, user_message_id)
-            raise
+    (final, original, previous, message_version, user_message_id) = await _database_call(
+        _prepare_message, session_id, client_id, token, message
+    )
+    if final is not None:
         if on_chunk is not None:
-            await on_chunk(summary or result['answer'])
-        return result
+            await on_chunk(final['answer'])
+        return final
+    try:
+        with ai_capacity():
+            answer, updated, intent = await respond(message, original, previous, on_chunk=None)
+            if (
+                not isinstance(answer, str)
+                or len(answer) > 65_536
+                or not isinstance(updated, dict)
+                or type(intent) is not bool
+            ):
+                raise HTTPException(502, 'AI returned invalid response data')
+            try:
+                state_bytes = json.dumps(updated, allow_nan=False).encode('utf-8')
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(502, 'AI returned invalid state data') from exc
+            if len(state_bytes) > 32_768:
+                raise HTTPException(502, 'AI state exceeds the supported size')
+        result, summary = await _database_call(
+            _save_message_response,
+            session_id,
+            client_id,
+            token,
+            message_version,
+            user_message_id,
+            answer,
+            updated,
+            original,
+            intent,
+        )
+    except (Exception, asyncio.CancelledError):
+        await _database_call(_discard_failed_message, session_id, user_message_id)
+        raise
+    if on_chunk is not None:
+        await on_chunk(summary or result['answer'])
+    return result
 
 
 def build_preview(db, s):
@@ -383,6 +416,14 @@ def build_preview(db, s):
     }
 
 
+def already_submitted(request_id, client_id):
+    return {
+        'status': 'already_submitted',
+        'request_id': request_id,
+        'client_code': f'KG-{client_id:06d}',
+    }
+
+
 def confirm_booking(db, s, client_id, revision, confirmed):
     if not confirmed:
         raise HTTPException(400, 'Необходимо явное подтверждение')
@@ -392,11 +433,7 @@ def confirm_booking(db, s, client_id, revision, confirmed):
         .first()
     )
     if existing:
-        return {
-            'status': 'already_submitted',
-            'request_id': existing.request_id,
-            'client_code': f'KG-{client_id:06d}',
-        }
+        return already_submitted(existing.request_id, client_id)
     if s.stage != 'awaiting_confirmation':
         raise HTTPException(409, 'Сначала получите полную сводку заявки в чате')
     preview = build_preview(db, s)
@@ -405,13 +442,17 @@ def confirm_booking(db, s, client_id, revision, confirmed):
     if preview['missing_fields']:
         raise HTTPException(422, detail={'missing_fields': preview['missing_fields']})
     st = preview['data']
-    selection = (
+    selections = (
         db.query(TravelSelection)
         .filter(TravelSelection.session_id == s.id)
         .populate_existing()
         .with_for_update()
-        .one_or_none()
+        .limit(2)
+        .all()
     )
+    if len(selections) > 1:
+        raise HTTPException(409, 'Chat is linked to conflicting selections; contact the manager')
+    selection = selections[0] if selections else None
     if selection and processing_status(selection, linked_request(db, selection)) in (
         'cancelled',
         'completed',
@@ -428,11 +469,7 @@ def confirm_booking(db, s, client_id, revision, confirmed):
             .first()
         )
         if existing:
-            return {
-                'status': 'already_submitted',
-                'request_id': existing.request_id,
-                'client_code': f'KG-{client_id:06d}',
-            }
+            return already_submitted(existing.request_id, client_id)
         raise
     tour_note = ''
     destination = st.get('destination')
@@ -482,11 +519,7 @@ def confirm_booking(db, s, client_id, revision, confirmed):
             .first()
         )
         if existing:
-            return {
-                'status': 'already_submitted',
-                'request_id': existing.request_id,
-                'client_code': f'KG-{client_id:06d}',
-            }
+            return already_submitted(existing.request_id, client_id)
         raise HTTPException(409, 'Конфликт подтверждения заявки')
     return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 
@@ -501,18 +534,7 @@ def _confirm_booking_for_client(session_id, client_id, token, revision, confirme
 
 
 async def confirm_booking_serialized(session_id, client_id, token, revision, confirmed):
-    _lock_users[session_id] = _lock_users.get(session_id, 0) + 1
-    lock = _locks.setdefault(session_id, asyncio.Lock())
-    try:
-        async with lock:
-            return await _database_call(
-                _confirm_booking_for_client, session_id, client_id, token, revision, confirmed
-            )
-    finally:
-        users = _lock_users.get(session_id, 1) - 1
-        if users > 0:
-            _lock_users[session_id] = users
-        else:
-            _lock_users.pop(session_id, None)
-            if not lock.locked():
-                _locks.pop(session_id, None)
+    async with session_lock(session_id):
+        return await _database_call(
+            _confirm_booking_for_client, session_id, client_id, token, revision, confirmed
+        )
