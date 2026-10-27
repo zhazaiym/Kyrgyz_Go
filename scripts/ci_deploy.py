@@ -1,7 +1,6 @@
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -9,7 +8,7 @@ import sys
 import tarfile
 import time
 import urllib.request
-
+from pathlib import Path, PurePosixPath
 
 ROOT = Path('/home/ubuntu/Kyrgyz_Go')
 OVERRIDE = Path('/home/ubuntu/kyrgyzgo-deploy.override.yml')
@@ -17,8 +16,15 @@ RELEASES = Path('/home/ubuntu/releases')
 BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
 PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
 PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
-ALLOWED_FILES = {'.dockerignore', 'Dockerfile', 'requirements.txt', 'main.py',
-                 'create_admin.py', 'seed_demo.py', 'alembic.ini'}
+ALLOWED_FILES = {
+    '.dockerignore',
+    'Dockerfile',
+    'requirements.txt',
+    'main.py',
+    'create_admin.py',
+    'seed_demo.py',
+    'alembic.ini',
+}
 
 
 def revision_from_command(command):
@@ -36,10 +42,20 @@ def validate_members(bundle):
         path = PurePosixPath(member.name)
         allowed = path.as_posix() in ALLOWED_FILES
         allowed = allowed or bool(path.parts and path.parts[0] in {'mysite', 'alembic', 'scripts'})
-        sensitive = any(part.startswith('.env') or part in {'__pycache__', '.git'} for part in path.parts)
-        if (not allowed or path.is_absolute() or '..' in path.parts or sensitive
-                or '\\' in member.name or path.suffix in {'.pem', '.key', '.db', '.pyc', '.pyo'}
-                or not (member.isfile() or member.isdir())):
+        sensitive = any(
+            (part.startswith('.') and path.as_posix() not in ALLOWED_FILES) or part == '__pycache__'
+            for part in path.parts
+        )
+        if (
+            not allowed
+            or path.is_absolute()
+            or '..' in path.parts
+            or sensitive
+            or '\\' in member.name
+            or path.suffix.lower()
+            in {'.pem', '.key', '.db', '.sqlite', '.sqlite3', '.dump', '.sql', '.pyc', '.pyo'}
+            or not (member.isfile() or member.isdir())
+        ):
             raise ValueError('Unsafe archive member: ' + member.name)
     return members
 
@@ -60,7 +76,8 @@ def dockerfile_runtime_digest(contents):
     """Hash all Dockerfile instructions except CMD, which can be overridden cheaply."""
     normalized = contents.replace(b'\r\n', b'\n')
     runtime_instructions = b'\n'.join(
-        line for line in normalized.splitlines()
+        line
+        for line in normalized.splitlines()
         if not re.match(rb'^\s*CMD\s+', line, re.IGNORECASE)
     )
     return runtime_digest(runtime_instructions)
@@ -78,25 +95,26 @@ def dockerfile_command(contents):
 
 
 def runtime_dockerfile(base_image, command, *, install_requirements):
-    lines = [
-        'FROM ' + base_image,
-        'USER root',
-    ]
+    lines = ['FROM ' + base_image, 'USER root']
     if install_requirements:
-        lines.extend([
-            'COPY requirements.txt /tmp/kyrgyzgo-requirements.txt',
-            'RUN python -m pip install --no-cache-dir '
-            '-r /tmp/kyrgyzgo-requirements.txt '
-            '&& rm /tmp/kyrgyzgo-requirements.txt',
-        ])
-    lines.extend([
-        'RUN rm -rf /app && mkdir /app && chown app:app /app',
-        'COPY --chown=app:app . /app/',
-        'WORKDIR /app',
-        'USER app',
-        command,
-        '',
-    ])
+        lines.extend(
+            [
+                'COPY requirements.txt /tmp/kyrgyzgo-requirements.txt',
+                'RUN python -m pip install --no-cache-dir '
+                '-r /tmp/kyrgyzgo-requirements.txt '
+                '&& rm /tmp/kyrgyzgo-requirements.txt',
+            ]
+        )
+    lines.extend(
+        [
+            'RUN rm -rf /app && mkdir /app && chown app:app /app',
+            'COPY --chown=app:app . /app/',
+            'WORKDIR /app',
+            'USER app',
+            command,
+            '',
+        ]
+    )
     return '\n'.join(lines)
 
 
@@ -105,15 +123,21 @@ def deployed_runtime_digest(container, name):
     if name == 'Dockerfile':
         probe = (
             'import hashlib,re; from pathlib import Path; '
-            + 'contents=Path(' + repr(path) + ').read_bytes().replace(b"\\r\\n",b"\\n"); '
+            + 'contents=Path('
+            + repr(path)
+            + ').read_bytes().replace(b"\\r\\n",b"\\n"); '
             + 'contents=b"\\n".join(line for line in contents.splitlines() '
             + 'if not re.match(rb"^\\s*CMD\\s+",line,re.IGNORECASE)); '
             + 'print(hashlib.sha256(contents).hexdigest())'
         )
     else:
-        probe = ('import hashlib; from pathlib import Path; '
-                 + 'contents=Path(' + repr(path) + ').read_bytes(); '
-                 + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())")
+        probe = (
+            'import hashlib; from pathlib import Path; '
+            + 'contents=Path('
+            + repr(path)
+            + ').read_bytes(); '
+            + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())"
+        )
     return output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe])
 
 
@@ -132,13 +156,40 @@ def compose_override(image):
 
 
 def compose(*arguments):
-    return run(['sudo', '-n', 'docker', 'compose', '-p', 'kyrgyz_go',
-                '-f', str(ROOT / 'docker-compose.yml'), '-f', str(OVERRIDE), *arguments], cwd=ROOT)
+    return run(
+        [
+            'sudo',
+            '-n',
+            'docker',
+            'compose',
+            '-p',
+            'kyrgyz_go',
+            '-f',
+            str(ROOT / 'docker-compose.yml'),
+            '-f',
+            str(OVERRIDE),
+            *arguments,
+        ],
+        cwd=ROOT,
+    )
 
 
 def compose_output(*arguments):
-    return output(['sudo', '-n', 'docker', 'compose', '-p', 'kyrgyz_go',
-                   '-f', str(ROOT / 'docker-compose.yml'), '-f', str(OVERRIDE), *arguments])
+    return output(
+        [
+            'sudo',
+            '-n',
+            'docker',
+            'compose',
+            '-p',
+            'kyrgyz_go',
+            '-f',
+            str(ROOT / 'docker-compose.yml'),
+            '-f',
+            str(OVERRIDE),
+            *arguments,
+        ]
+    )
 
 
 def deploy(revision, source):
@@ -171,7 +222,10 @@ def deploy(revision, source):
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
         compose_output('config', '--quiet')
-        run(['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK], stdout=subprocess.DEVNULL)
+        run(
+            ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
+            stdout=subprocess.DEVNULL,
+        )
         previous_container = compose_output('ps', '-q', 'api')
         if not previous_container:
             raise RuntimeError('The production api container was not found; refusing deployment')
@@ -182,40 +236,66 @@ def deploy(revision, source):
         old_image = previous['Config']['Image']
         dockerfile_contents = (release / 'Dockerfile').read_bytes()
         dockerfile_cmd = dockerfile_command(dockerfile_contents)
-        same_base_runtime = (
-            dockerfile_cmd is not None
-            and deployed_runtime_digest(previous_container, 'Dockerfile')
-            == dockerfile_runtime_digest(dockerfile_contents)
-        )
-        requirements_changed = (
-            deployed_runtime_digest(previous_container, 'requirements.txt')
-            != runtime_digest((release / 'requirements.txt').read_bytes())
-        )
-        if not same_base_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024 ** 3:
+        same_base_runtime = dockerfile_cmd is not None and deployed_runtime_digest(
+            previous_container, 'Dockerfile'
+        ) == dockerfile_runtime_digest(dockerfile_contents)
+        requirements_changed = deployed_runtime_digest(
+            previous_container, 'requirements.txt'
+        ) != runtime_digest((release / 'requirements.txt').read_bytes())
+        if not same_base_runtime and shutil.disk_usage(RELEASES).free < 2 * 1024**3:
             raise RuntimeError('Dockerfile runtime changed: a full build needs at least 2 GiB free')
         for name in ('docker-compose.yml', 'Caddyfile', '.env'):
             shutil.copy2(ROOT / name, backup / name)
         shutil.copy2(OVERRIDE, backup / 'previous-deploy.override.yml')
         with (backup / 'database.dump').open('wb') as destination:
-            run(['sudo', '-n', 'docker', 'exec', 'kyrgyzgo_postgres', 'sh', '-c',
-                 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc'], stdout=destination)
+            run(
+                [
+                    'sudo',
+                    '-n',
+                    'docker',
+                    'exec',
+                    'kyrgyzgo_postgres',
+                    'sh',
+                    '-c',
+                    'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc',
+                ],
+                stdout=destination,
+            )
         with (backup / 'database.dump').open('rb') as database:
             if database.read(5) != b'PGDMP':
                 raise RuntimeError('Invalid database backup')
         dockerfile = 'Dockerfile'
         if same_base_runtime:
             dockerfile = 'Dockerfile.runtime'
-            (release / dockerfile).write_text(runtime_dockerfile(
-                old_image_id,
-                dockerfile_cmd,
-                install_requirements=requirements_changed,
-            ))
+            (release / dockerfile).write_text(
+                runtime_dockerfile(
+                    old_image_id, dockerfile_cmd, install_requirements=requirements_changed
+                )
+            )
         image = 'kyrgyzgo-api:' + stamp
-        state = {'revision': revision, 'image': image, 'previous_image': old_image,
-                 'source_directory': str(release), 'backup': str(backup), 'status': 'building'}
+        state = {
+            'revision': revision,
+            'image': image,
+            'previous_image': old_image,
+            'source_directory': str(release),
+            'backup': str(backup),
+            'status': 'building',
+        }
         state_file = backup / 'deployment-state.json'
         state_file.write_text(json.dumps(state, indent=2))
-        run(['sudo', '-n', 'docker', 'build', '-f', str(release / dockerfile), '-t', image, str(release)])
+        run(
+            [
+                'sudo',
+                '-n',
+                'docker',
+                'build',
+                '-f',
+                str(release / dockerfile),
+                '-t',
+                image,
+                str(release),
+            ]
+        )
         state['status'] = 'activating'
         try:
             temporary = OVERRIDE.with_suffix('.pending')

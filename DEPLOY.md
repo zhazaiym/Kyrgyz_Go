@@ -47,8 +47,7 @@ Do not set `*` for CORS origins when using credentials.
 Back up an existing database before deployment. Every API container start runs
 `alembic upgrade head` and starts Uvicorn only if migrations succeed. A database
 created outside Alembic needs its schema reviewed and baselined first; do not
-blindly stamp a populated PostgreSQL database. The legacy SQLite procedure is
-documented below. Do not scale this service to multiple replicas without moving
+blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
 
 ### Start and verify
@@ -84,8 +83,7 @@ docker compose exec api python create_admin.py
 For updates, back up PostgreSQL, update the source, then run
 `docker compose up --build -d`. Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
-requires an external PostgreSQL database; it does not persist a container-local
-SQLite database.
+requires an external PostgreSQL database.
 
 ### HTTPS on a Linux server
 
@@ -231,17 +229,10 @@ For a new empty database, apply the schema:
 python -m alembic upgrade head
 ```
 
-The repository currently contains a legacy SQLite database created before
-Alembic. If deploying that existing file, back it up first, mark its current
-schema as the baseline revision, and then apply later migrations:
-
-```bash
-python -m alembic stamp 15eb0352f12a
-python -m alembic upgrade head
-```
-
-Do not run `stamp` against an empty database. For a database that already has
-an `alembic_version` table, run only `python -m alembic upgrade head`.
+For an existing PostgreSQL database managed by this repository, run
+`python -m alembic upgrade head`. The migration history has one unified head.
+Back up the database before every schema update. Never stamp an unreviewed
+schema or run downgrade against your working data.
 
 ## 3. Create an administrator
 
@@ -257,6 +248,21 @@ The same administrator can use the bearer-token API and the SQLAdmin login.
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Run one worker when using SQLite. Put the service behind an HTTPS reverse proxy
-and keep `.env` and `kyrgyzgo.db` outside publicly served directories. The API
+Put the service behind an HTTPS reverse proxy and keep `.env` and PostgreSQL
+backups outside publicly served directories. The API
 documentation is available at `/docs`.
+
+## Tests with PostgreSQL
+
+Set `TEST_DATABASE_URL` to a PostgreSQL connection whose user has `CREATEDB`
+permission. If omitted locally, tests use the connection settings from `.env`.
+Tests create randomly named `test_kyrgyzgo_*` databases, apply Alembic migrations,
+and delete only those databases after completion. They never reset application
+tables. CI starts a separate PostgreSQL 17 service.
+
+```bash
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
+```
+
+`DATABASE_URL` is mandatory. Unsupported database backends fail at startup.

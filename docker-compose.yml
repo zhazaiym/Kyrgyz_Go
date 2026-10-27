@@ -10,6 +10,9 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     init: true
+    mem_limit: ${API_MEMORY_LIMIT:-1g}
+    cpus: ${API_CPU_LIMIT:-2.0}
+    pids_limit: 256
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3).close()"]
       interval: 30s

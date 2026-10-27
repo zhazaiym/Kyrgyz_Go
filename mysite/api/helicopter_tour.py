@@ -1,31 +1,26 @@
-
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
-from mysite.database.db import get_db
 from mysite.api.admin import get_current_admin
 from mysite.api.client_auth import current_client
-from mysite.database.catalogue_schema import HelicopterTourCardSchema, HelicopterCatalogueDetailSchema
-from mysite.translations.content import Language, localized, update_translations
+from mysite.api.filter_utils import Pagination, filtered_list
+from mysite.database.catalogue_schema import (HelicopterCatalogueDetailSchema,
+                                              HelicopterTourCardSchema)
+from mysite.database.db import get_db
 from mysite.database.models import HelicopterTour
-from mysite.database.schema import (
-    HelicopterTourInputSchema,
-    HelicopterTourUpdateSchema,
-    HelicopterTourOutSchema
+from mysite.database.schema import (HelicopterTourInputSchema, HelicopterTourOutSchema,
+                                    HelicopterTourUpdateSchema)
+from mysite.filters.filter import HelicopterTourFilter
+from mysite.translations.content import Language, localized, update_translations
+
+helicopter_tour_router = APIRouter(prefix='/helicopter-tours', tags=['Helicopter Tours'])
+
+
+@helicopter_tour_router.post(
+    '/', response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)]
 )
-
-
-helicopter_tour_router = APIRouter(
-    prefix="/helicopter-tours",
-    tags=["Helicopter Tours"]
-)
-
-
-@helicopter_tour_router.post("/", response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)])
-def create_helicopter_tour(
-    helicopter: HelicopterTourInputSchema,
-    db: Session = Depends(get_db)
-):
+def create_helicopter_tour(helicopter: HelicopterTourInputSchema, db: Session = Depends(get_db)):
     helicopter_db = HelicopterTour(**helicopter.model_dump())
 
     db.add(helicopter_db)
@@ -36,53 +31,40 @@ def create_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.get("/", response_model=list[HelicopterTourCardSchema])
-def list_helicopter_tours(
-    lang: Language = "ru",
-    db: Session = Depends(get_db)
-):
-    return [localized(record, lang) for record in db.query(HelicopterTour).filter(HelicopterTour.is_active.is_(True)).all()]
-
-
-@helicopter_tour_router.get("/{helicopter_id}/", response_model=HelicopterCatalogueDetailSchema, dependencies=[Depends(current_client)])
+@helicopter_tour_router.get(
+    '/{helicopter_id}/',
+    response_model=HelicopterCatalogueDetailSchema,
+    dependencies=[Depends(current_client)],
+)
 def detail_helicopter_tour(
-    helicopter_id: int,
-    lang: Language = "ru",
-    db: Session = Depends(get_db)
+    helicopter_id: int, lang: Language = 'ru', db: Session = Depends(get_db)
 ):
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None or not helicopter_db.is_active:
-        raise HTTPException(
-            status_code=404,
-            detail="Вертолёт туру табылган жок"
-        )
+        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
 
     return localized(helicopter_db, lang)
 
 
-@helicopter_tour_router.put("/{helicopter_id}/", response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)])
+@helicopter_tour_router.put(
+    '/{helicopter_id}/',
+    response_model=HelicopterTourOutSchema,
+    dependencies=[Depends(get_current_admin)],
+)
 def update_helicopter_tour(
-    helicopter_id: int,
-    helicopter: HelicopterTourUpdateSchema,
-    db: Session = Depends(get_db)
+    helicopter_id: int, helicopter: HelicopterTourUpdateSchema, db: Session = Depends(get_db)
 ):
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Вертолёт туру табылган жок"
-        )
+        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
 
     data = helicopter.model_dump(exclude_unset=True)
 
-    for field in ("title", "price", "price_unit", "is_active"):
+    for field in ('title', 'price', 'price_unit', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{field} бош болбошу керек"
-            )
+            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
 
     for key, value in data.items():
         setattr(helicopter_db, key, value)
@@ -94,22 +76,33 @@ def update_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.delete("/{helicopter_id}/", dependencies=[Depends(get_current_admin)])
-def delete_helicopter_tour(
-    helicopter_id: int,
-    db: Session = Depends(get_db)
-):
+@helicopter_tour_router.delete('/{helicopter_id}/', dependencies=[Depends(get_current_admin)])
+def delete_helicopter_tour(helicopter_id: int, db: Session = Depends(get_db)):
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Вертолёт туру табылган жок"
-        )
+        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
 
     db.delete(helicopter_db)
     db.commit()
 
-    return {
-        "message": "Вертолёт туру өчүрүлдү"
-    }
+    return {'message': 'Вертолёт туру өчүрүлдү'}
+
+
+@helicopter_tour_router.get('/', response_model=list[HelicopterTourCardSchema])
+def list_helicopter_tours(
+    lang: Language = 'ru',
+    filters: HelicopterTourFilter = FilterDepends(HelicopterTourFilter),
+    pagination: Pagination = Depends(),
+    db: Session = Depends(get_db),
+):
+    helicopters = filtered_list(
+        db=db,
+        model=HelicopterTour,
+        filters=filters,
+        pagination=pagination,
+        lang=lang,
+        active_only=True,
+    )
+
+    return [localized(helicopter, lang) for helicopter in helicopters]

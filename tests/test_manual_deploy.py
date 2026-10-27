@@ -1,7 +1,7 @@
 import importlib
-from pathlib import Path
 import subprocess
 import tarfile
+from pathlib import Path
 
 import pytest
 
@@ -23,9 +23,20 @@ def make_project(root):
 
 def test_manual_archive_includes_working_tree_but_not_private_files(tmp_path):
     module = make_project(tmp_path)
-    private = ['.env', 'secret.pem', 'private.key', 'local.db', 'local.db-wal', 'old.pyc',
-               'local.sqlite-wal', 'local.sqlite-shm', 'local.sqlite-journal',
-               'local.sqlite3-wal', 'local.sqlite3-shm', 'local.sqlite3-journal']
+    private = [
+        '.env',
+        'secret.pem',
+        'private.key',
+        'local.db',
+        'local.db-wal',
+        'old.pyc',
+        'local.sqlite-wal',
+        'local.sqlite-shm',
+        'local.sqlite-journal',
+        'local.sqlite3-wal',
+        'local.sqlite3-shm',
+        'local.sqlite3-journal',
+    ]
     for directory in (tmp_path, tmp_path / 'mysite'):
         for name in private:
             (directory / name).write_text('private', encoding='utf-8')

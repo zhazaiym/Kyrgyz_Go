@@ -42,7 +42,7 @@
 
 `python -B -m pytest tests/test_chat_booking_flow.py tests/test_chat_only_requests.py tests/test_shared_client_access.py -q`
 
-Тесты используют отдельную SQLite-базу и подменяют ответы AI. Они проверяют обработку подтверждений и админку, но не оценивают качество реальных ответов Gemini.
+Тесты используют отдельную временную PostgreSQL-базу и подменяют ответы AI. Они проверяют обработку подтверждений и админку, но не оценивают качество реальных ответов Gemini.
 
 ## Ручная проверка без frontend через Postman
 

@@ -9,6 +9,4 @@ def test_ai_clients_are_configured_for_required_invocation_modes():
     assert callable(agent_llm.astream)
     assert callable(extractor.ainvoke)
     assert callable(translation_model.invoke)
-    assert translation_model.model == os.getenv(
-        "GEMINI_MODEL", "gemini-3.5-flash-lite"
-    )
+    assert translation_model.model == os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')

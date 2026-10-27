@@ -1,4 +1,5 @@
 """Stored catalogue translations; public reads never call the translation service."""
+
 import logging
 from typing import Annotated
 
@@ -9,7 +10,7 @@ from sqlalchemy import inspect
 
 from mysite.translations.translator import translate_fields
 
-Language = Annotated[str, Query(pattern="^(ru|en|de|zh)$")]
+Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
 logger = logging.getLogger(__name__)
 
 CONTENT_FIELDS = {
@@ -21,7 +22,14 @@ CONTENT_FIELDS = {
     'districts': ('name',),
     'hotels': ('name', 'description', 'address'),
     'transports': ('name', 'description', 'color'),
-    'helicopter_tours': ('title', 'description', 'destination', 'departure_location', 'instruction', 'included'),
+    'helicopter_tours': (
+        'title',
+        'description',
+        'destination',
+        'departure_location',
+        'instruction',
+        'included',
+    ),
     'trekkings': ('title', 'description', 'route', 'included', 'requirements', 'difficulty'),
     'faqs': ('question', 'answer'),
     'contacts': ('country', 'city', 'address'),
@@ -31,8 +39,11 @@ CONTENT_FIELDS = {
 
 
 def localized(record, lang='ru'):
-    result = {column.key: getattr(record, column.key)
-              for column in record.__table__.columns if column.key != 'translations'}
+    result = {
+        column.key: getattr(record, column.key)
+        for column in record.__table__.columns
+        if column.key != 'translations'
+    }
     translations = record.translations if isinstance(record.translations, dict) else {}
     translation = translations.get(lang, {}) if lang != 'ru' else {}
     if not isinstance(translation, dict):
@@ -47,14 +58,7 @@ def localized(record, lang='ru'):
 def generate_translations(source):
     try:
         return translate_fields(source)
-    except (
-        ModelError,
-        ChatGoogleGenerativeAIError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-    ):
+    except (ModelError, ChatGoogleGenerativeAIError, ValueError, KeyError, TypeError, RuntimeError):
         logger.exception('Catalogue translation failed; keeping original text')
         return {}
 

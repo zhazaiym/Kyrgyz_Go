@@ -1,10 +1,9 @@
 import importlib.util
 import io
-from pathlib import Path
 import tarfile
+from pathlib import Path
 
 import pytest
-
 
 SCRIPT = Path('scripts/ci_deploy.py')
 
@@ -28,8 +27,18 @@ def make_archive(name, kind=tarfile.REGTYPE):
     return output
 
 
-@pytest.mark.parametrize('name', ['../main.py', '/app/main.py', '.env', 'mysite/.env',
-                                  'mysite/secret.pem', '.git/config', 'database.dump'])
+@pytest.mark.parametrize(
+    'name',
+    [
+        '../main.py',
+        '/app/main.py',
+        '.env',
+        'mysite/.env',
+        'mysite/secret.pem',
+        '.git/config',
+        'database.dump',
+    ],
+)
 def test_deployment_rejects_unsafe_archive_members(name):
     module = load_deployment()
     with tarfile.open(fileobj=make_archive(name)) as bundle:
@@ -50,8 +59,9 @@ def test_deployment_accepts_source_files():
         assert len(module.validate_members(bundle)) == 1
 
 
-@pytest.mark.parametrize('command', ['deploy main', 'deploy ../bad', 'sh',
-                                     'deploy ' + 'a' * 40 + '; whoami'])
+@pytest.mark.parametrize(
+    'command', ['deploy main', 'deploy ../bad', 'sh', 'deploy ' + 'a' * 40 + '; whoami']
+)
 def test_ssh_gateway_rejects_arbitrary_commands(command):
     with pytest.raises(ValueError):
         load_deployment().revision_from_command(command)
@@ -68,19 +78,33 @@ def test_runtime_digest_ignores_windows_line_endings():
 
 def test_dockerfile_runtime_digest_ignores_only_command_changes():
     module = load_deployment()
-    original = b'FROM python:3.12-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+    original = (
+        b'FROM python:3.12-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+    )
     changed_command = b'FROM python:3.12-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py", "--safe"]\n'
-    changed_runtime = b'FROM python:3.13-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+    changed_runtime = (
+        b'FROM python:3.13-slim\nRUN pip install -r requirements.txt\nCMD ["python", "main.py"]\n'
+    )
 
-    assert module.dockerfile_runtime_digest(original) == module.dockerfile_runtime_digest(changed_command)
-    assert module.dockerfile_runtime_digest(original) != module.dockerfile_runtime_digest(changed_runtime)
+    assert module.dockerfile_runtime_digest(original) == module.dockerfile_runtime_digest(
+        changed_command
+    )
+    assert module.dockerfile_runtime_digest(original) != module.dockerfile_runtime_digest(
+        changed_runtime
+    )
 
 
 def test_dockerfile_command_extracts_only_a_single_line_command():
     module = load_deployment()
-    assert module.dockerfile_command(b'FROM python:3.12-slim\nCMD ["python", "main.py"]\n') == 'CMD ["python", "main.py"]'
+    assert (
+        module.dockerfile_command(b'FROM python:3.12-slim\nCMD ["python", "main.py"]\n')
+        == 'CMD ["python", "main.py"]'
+    )
     assert module.dockerfile_command(b'FROM python:3.12-slim\n') is None
-    assert module.dockerfile_command(b'FROM python:3.12-slim\nCMD \\\n  ["python", "main.py"]\n') is None
+    assert (
+        module.dockerfile_command(b'FROM python:3.12-slim\nCMD \\\n  ["python", "main.py"]\n')
+        is None
+    )
 
 
 def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
@@ -88,10 +112,10 @@ def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
     command = 'CMD ["python", "main.py"]'
 
     incremental = module.runtime_dockerfile(
-        'kyrgyzgo-api:current', command, install_requirements=True,
+        'kyrgyzgo-api:current', command, install_requirements=True
     )
     source_only = module.runtime_dockerfile(
-        'kyrgyzgo-api:current', command, install_requirements=False,
+        'kyrgyzgo-api:current', command, install_requirements=False
     )
 
     assert 'FROM kyrgyzgo-api:current' in incremental

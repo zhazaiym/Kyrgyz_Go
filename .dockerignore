@@ -23,9 +23,9 @@ pytest-cache-files-*
 **/*.db-*
 **/*.sqlite*
 tests
+backups
 docs
 *.log
-.env
 .venv/
 __pycache__/
 *.pyc

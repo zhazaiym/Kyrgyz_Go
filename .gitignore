@@ -14,4 +14,5 @@ venv/
 *.sqlite3
 .ruff_cache/
 .pytest_cache/
+backups/
 pytest-cache-files-*/

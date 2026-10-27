@@ -21,6 +21,22 @@ jobs:
   test:
     name: Check Python
     runs-on: ubuntu-24.04
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Download repository
@@ -34,14 +50,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest ruff==0.17.2
+          python -m pip install -r requirements-dev.txt
 
       - name: Check Python syntax
         run: |
           python -m compileall -q main.py mysite scripts alembic
 
       - name: Lint Python
-        run: ruff check --select=F,E4,E7,E9 --output-format=github .
+        run: |
+          ruff check --output-format=github .
+          python -m scripts.format_code --check
+
+      - name: Audit dependency vulnerabilities
+        run: python -m pip_audit -r requirements.txt --progress-spinner off
+
+      - name: Scan runtime security issues
+        run: python -m bandit -r mysite main.py -ll
 
       - name: Run test suite
         env:

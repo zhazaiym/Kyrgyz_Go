@@ -1,81 +1,74 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
-import uvicorn
 import os
+from pathlib import Path
 
+import uvicorn
 from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv()
-
+from mysite.admin.setup import setup_admin
+from mysite.api.about import about_router
+from mysite.api.about_section import about_section_router
 # ADMIN
 from mysite.api.admin import admin_router
-from mysite.admin.setup import setup_admin
-
-# OLD KYRGYZGO API
-from mysite.api.tour_category import category_router
-from mysite.api.tour import tour_router
+from mysite.api.booking import booking_router
+from mysite.api.chat import chat_router
+from mysite.api.chat_ws import router as chat_ws_router
+# NEW AI CHAT
+from mysite.api.client_auth import router as client_auth_router
+from mysite.api.contact import contact_router
 from mysite.api.country import country_router
-from mysite.api.region import region_router
 from mysite.api.district import district_router
-
+from mysite.api.faq import faq_router
+from mysite.api.helicopter_image import helicopter_image_router
+from mysite.api.helicopter_tour import helicopter_tour_router
 from mysite.api.hotel import hotel_router
 from mysite.api.hotel_image import hotel_image_router
-
+from mysite.api.manager_selection import manager_selection_router
+from mysite.api.password_reset import router as password_reset_router
+from mysite.api.region import region_router
+from mysite.api.registration import router as registration_router
+from mysite.api.resource_limits import ResourceLimitsMiddleware
+from mysite.api.tour import tour_router
+# OLD KYRGYZGO API
+from mysite.api.tour_category import category_router
+from mysite.api.tour_image import tour_image_router
+from mysite.api.tour_program import tour_program_router
 from mysite.api.transport import transport_router
 from mysite.api.transport_image import transport_image_router
-
-from mysite.api.helicopter_tour import helicopter_tour_router
-from mysite.api.helicopter_image import helicopter_image_router
-
+from mysite.api.travel_request import travel_request_router
+from mysite.api.travel_selection import selection_router
 from mysite.api.trekking import trekking_router
 from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 
-from mysite.api.contact import contact_router
-from mysite.api.faq import faq_router
-from mysite.api.travel_request import travel_request_router
-from mysite.api.booking import booking_router
-
-from mysite.api.about import about_router
-from mysite.api.about_section import about_section_router
-
-from mysite.api.tour_image import tour_image_router
-from mysite.api.tour_program import tour_program_router
-from mysite.api.manager_selection import manager_selection_router
-from mysite.api.travel_selection import selection_router
-from mysite.api.registration import router as registration_router
-from mysite.api.password_reset import router as password_reset_router
-# NEW AI CHAT
-from mysite.api.client_auth import router as client_auth_router
-from mysite.api.chat import chat_router
-from mysite.api.chat_ws import router as chat_ws_router
-
-
 # FASTAPI
 app = FastAPI(
-    title="KYRGYZGO",
-    description="KYRGYZGO Tourism API + AI Travel Assistant",
-    version="1.0.0",
+    title='KYRGYZGO', description='KYRGYZGO Tourism API + AI Travel Assistant', version='1.0.0'
 )
 
 
 # CORS
+app.add_middleware(ResourceLimitsMiddleware)
 cors_allowed_origins = [
     origin.strip()
     for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS",
-        "http://localhost:3000;http://127.0.0.1:3000",
-    ).split(";")
+        'CORS_ALLOWED_ORIGINS', 'http://localhost:3000;http://127.0.0.1:3000'
+    ).split(';')
     if origin.strip()
 ]
+if '*' in cors_allowed_origins:
+    raise RuntimeError('CORS_ALLOWED_ORIGINS must list trusted origins explicitly')
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
 
 
@@ -135,17 +128,21 @@ app.include_router(password_reset_router)
 setup_admin(app)
 
 
-@app.get("/")
+@app.get('/')
 def home():
-    return {
-        "message": "Welcome to KYRGYZGO API"
-    }
+    return {'message': 'Welcome to KYRGYZGO API'}
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
+        'main:app',
+        host='127.0.0.1',
         port=8000,
-        reload=False
+        reload=False,
+        limit_concurrency=128,
+        backlog=256,
+        timeout_keep_alive=5,
+        ws_max_size=16_384,
+        ws_max_queue=8,
+        ws_per_message_deflate=False,
     )

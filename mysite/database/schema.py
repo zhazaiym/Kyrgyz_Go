@@ -1,22 +1,17 @@
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from mysite.database.contact_validation import validate_whatsapp_link
+from mysite.database.input_validation import StorageInput
 from mysite.database.models import PriceUnitChoices, RequestStatusChoices, TourTypeChoices
 
-class AdminInputSchema(BaseModel):
-    username: str
-    password: str
-    is_active: bool = True
 
 class AdminLoginSchema(BaseModel):
-    username: str
-    password: str
-
-
-class AdminUpdateSchema(BaseModel):
-    username: str | None = None
-    password: str | None = None
-    is_active: bool | None = None
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class AdminOutSchema(BaseModel):
@@ -30,30 +25,22 @@ class AdminOutSchema(BaseModel):
 
 class TokenSchema(BaseModel):
     access_token: str
-    token_type: str = "bearer"
+    token_type: str = 'bearer'
 
-class AboutInputSchema(BaseModel):
+
+class AboutInputSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     image: str | None = None
-    experience_years: int = 6
-    travelers_count: int = 28000
-    branches_count: int = 3
-    destinations_count: int = 20
-    routes_count: int = 100
     is_active: bool = True
 
 
-class AboutUpdateSchema(BaseModel):
+class AboutUpdateSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     image: str | None = None
-    experience_years: int | None = None
-    travelers_count: int | None = None
-    branches_count: int | None = None
-    destinations_count: int | None = None
-    routes_count: int | None = None
     is_active: bool | None = None
+
 
 class AboutOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -62,28 +49,22 @@ class AboutOutSchema(BaseModel):
     title: str | None
     description: str | None
     image: str | None
-    experience_years: int
-    travelers_count: int
-    branches_count: int
-    destinations_count: int
-    routes_count: int
     is_active: bool
 
 
-class AboutSectionInputSchema(BaseModel):
+class AboutSectionInputSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     image: str | None = None
-    order: int = 0
     is_active: bool = True
 
 
-class AboutSectionUpdateSchema(BaseModel):
+class AboutSectionUpdateSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     image: str | None = None
-    order: int | None = None
     is_active: bool | None = None
+
 
 class AboutSectionOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -96,12 +77,12 @@ class AboutSectionOutSchema(BaseModel):
     is_active: bool
 
 
-class TourCategoryInputSchema(BaseModel):
+class TourCategoryInputSchema(StorageInput):
     name: str
     image: str | None = None
 
 
-class TourCategoryUpdateSchema(BaseModel):
+class TourCategoryUpdateSchema(StorageInput):
     name: str | None = None
     image: str | None = None
 
@@ -113,7 +94,8 @@ class TourCategoryOutSchema(BaseModel):
     name: str
     image: str | None
 
-class TourInputSchema(BaseModel):
+
+class TourInputSchema(StorageInput):
     category_id: int | None = None
     title: str
     description: str | None = None
@@ -130,9 +112,10 @@ class TourInputSchema(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool = True
+    country_id: int | None = Field(default=None, gt=0)
 
 
-class TourUpdateSchema(BaseModel):
+class TourUpdateSchema(StorageInput):
     category_id: int | None = None
     title: str | None = None
     description: str | None = None
@@ -149,6 +132,7 @@ class TourUpdateSchema(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool | None = None
+    country_id: int | None = Field(default=None, gt=0)
 
 
 class TourOutSchema(BaseModel):
@@ -173,15 +157,16 @@ class TourOutSchema(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    country_id: int | None = Field(default=None, gt=0)
 
 
-class TourImageInputSchema(BaseModel):
+class TourImageInputSchema(StorageInput):
     tour_id: int
     image: str
     order: int = 0
 
 
-class TourImageUpdateSchema(BaseModel):
+class TourImageUpdateSchema(StorageInput):
     tour_id: int | None = None
     image: str | None = None
     order: int | None = None
@@ -196,7 +181,7 @@ class TourImageOutSchema(BaseModel):
     order: int
 
 
-class TourProgramInputSchema(BaseModel):
+class TourProgramInputSchema(StorageInput):
     tour_id: int
     day_number: int
     title: str | None = None
@@ -204,7 +189,8 @@ class TourProgramInputSchema(BaseModel):
     start_time: str | None = None
     end_time: str | None = None
 
-class TourProgramUpdateSchema(BaseModel):
+
+class TourProgramUpdateSchema(StorageInput):
     tour_id: int | None = None
     day_number: int | None = None
     title: str | None = None
@@ -225,11 +211,11 @@ class TourProgramOutSchema(BaseModel):
     end_time: str | None
 
 
-class CountryInputSchema(BaseModel):
+class CountryInputSchema(StorageInput):
     name: str
 
 
-class CountryUpdateSchema(BaseModel):
+class CountryUpdateSchema(StorageInput):
     name: str | None = None
 
 
@@ -240,13 +226,13 @@ class CountryOutSchema(BaseModel):
     name: str
 
 
-class RegionInputSchema(BaseModel):
+class RegionInputSchema(StorageInput):
     name: str
     image: str | None = None
     country_id: int | None = None
 
 
-class RegionUpdateSchema(BaseModel):
+class RegionUpdateSchema(StorageInput):
     name: str | None = None
     image: str | None = None
     country_id: int | None = None
@@ -261,12 +247,12 @@ class RegionOutSchema(BaseModel):
     country_id: int | None
 
 
-class DistrictInputSchema(BaseModel):
+class DistrictInputSchema(StorageInput):
     region_id: int
     name: str
 
 
-class DistrictUpdateSchema(BaseModel):
+class DistrictUpdateSchema(StorageInput):
     region_id: int | None = None
     name: str | None = None
 
@@ -279,7 +265,7 @@ class DistrictOutSchema(BaseModel):
     name: str
 
 
-class HotelInputSchema(BaseModel):
+class HotelInputSchema(StorageInput):
     region_id: int
     district_id: int
     name: str
@@ -296,7 +282,7 @@ class HotelInputSchema(BaseModel):
     is_active: bool = True
 
 
-class HotelUpdateSchema(BaseModel):
+class HotelUpdateSchema(StorageInput):
     region_id: int | None = None
     district_id: int | None = None
     name: str | None = None
@@ -334,13 +320,13 @@ class HotelOutSchema(BaseModel):
     created_at: datetime
 
 
-class HotelImageInputSchema(BaseModel):
+class HotelImageInputSchema(StorageInput):
     hotel_id: int
     image: str
     order: int = 0
 
 
-class HotelImageUpdateSchema(BaseModel):
+class HotelImageUpdateSchema(StorageInput):
     hotel_id: int | None = None
     image: str | None = None
     order: int | None = None
@@ -354,7 +340,8 @@ class HotelImageOutSchema(BaseModel):
     image: str
     order: int
 
-class TransportInputSchema(BaseModel):
+
+class TransportInputSchema(StorageInput):
     name: str
     brand: str | None = None
     model: str | None = None
@@ -370,7 +357,7 @@ class TransportInputSchema(BaseModel):
     is_active: bool = True
 
 
-class TransportUpdateSchema(BaseModel):
+class TransportUpdateSchema(StorageInput):
     name: str | None = None
     brand: str | None = None
     model: str | None = None
@@ -406,13 +393,13 @@ class TransportOutSchema(BaseModel):
     created_at: datetime
 
 
-class TransportImageInputSchema(BaseModel):
+class TransportImageInputSchema(StorageInput):
     transport_id: int
     image: str
     order: int = 0
 
 
-class TransportImageUpdateSchema(BaseModel):
+class TransportImageUpdateSchema(StorageInput):
     transport_id: int | None = None
     image: str | None = None
     order: int | None = None
@@ -426,7 +413,8 @@ class TransportImageOutSchema(BaseModel):
     image: str
     order: int
 
-class TrekkingProgramInputSchema(BaseModel):
+
+class TrekkingProgramInputSchema(StorageInput):
     trekking_id: int
     day_number: int
     start_time: str | None = None
@@ -435,7 +423,7 @@ class TrekkingProgramInputSchema(BaseModel):
     description: str | None = None
 
 
-class TrekkingProgramUpdateSchema(BaseModel):
+class TrekkingProgramUpdateSchema(StorageInput):
     trekking_id: int | None = None
     day_number: int | None = None
     start_time: str | None = None
@@ -455,7 +443,8 @@ class TrekkingProgramOutSchema(BaseModel):
     title: str | None
     description: str | None
 
-class ContactInputSchema(BaseModel):
+
+class ContactInputSchema(StorageInput):
     country: str | None = None
     city: str | None = None
     phone: str | None = None
@@ -468,8 +457,10 @@ class ContactInputSchema(BaseModel):
     qr_code: str | None = None
     is_active: bool = True
 
+    _validate_whatsapp = field_validator('whatsapp')(validate_whatsapp_link)
 
-class ContactUpdateSchema(BaseModel):
+
+class ContactUpdateSchema(StorageInput):
     country: str | None = None
     city: str | None = None
     phone: str | None = None
@@ -481,6 +472,8 @@ class ContactUpdateSchema(BaseModel):
     address: str | None = None
     qr_code: str | None = None
     is_active: bool | None = None
+
+    _validate_whatsapp = field_validator('whatsapp')(validate_whatsapp_link)
 
 
 class ContactOutSchema(BaseModel):
@@ -500,18 +493,17 @@ class ContactOutSchema(BaseModel):
     is_active: bool
 
 
-class FAQInputSchema(BaseModel):
+class FAQInputSchema(StorageInput):
     question: str
     answer: str
-    order: int = 0
     is_active: bool = True
 
 
-class FAQUpdateSchema(BaseModel):
+class FAQUpdateSchema(StorageInput):
     question: str | None = None
     answer: str | None = None
-    order: int | None = None
     is_active: bool | None = None
+
 
 class FAQOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -523,19 +515,7 @@ class FAQOutSchema(BaseModel):
     is_active: bool
 
 
-class TravelRequestInputSchema(BaseModel):
-    name: str
-    phone: str
-    email: str | None = None
-    travel_date: date | None = None
-    duration_days: int | None = None
-    travelers_count: int | None = None
-    destination: str | None = None
-    message: str | None = None
-    status: RequestStatusChoices = RequestStatusChoices.new
-
-
-class TravelRequestUpdateSchema(BaseModel):
+class TravelRequestUpdateSchema(StorageInput):
     name: str | None = None
     phone: str | None = None
     email: str | None = None
@@ -547,8 +527,15 @@ class TravelRequestUpdateSchema(BaseModel):
     status: RequestStatusChoices | None = None
 
 
+class SelectedServiceSchema(BaseModel):
+    kind: Literal['tour', 'hotel', 'transport']
+    id: int
+    name: str
+
+
 class TravelRequestOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    selected_services: list[SelectedServiceSchema] | None = None
 
     id: int
     name: str
@@ -562,11 +549,13 @@ class TravelRequestOutSchema(BaseModel):
     status: RequestStatusChoices
     created_at: datetime
 
+
 class TourDetailSchema(TourOutSchema):
     images: list[TourImageOutSchema] = []
     programs: list[TourProgramOutSchema] = []
 
-class HelicopterTourInputSchema(BaseModel):
+
+class HelicopterTourInputSchema(StorageInput):
     title: str
     description: str | None = None
     destination: str | None = None
@@ -581,7 +570,7 @@ class HelicopterTourInputSchema(BaseModel):
     is_active: bool = True
 
 
-class HelicopterTourUpdateSchema(BaseModel):
+class HelicopterTourUpdateSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     destination: str | None = None
@@ -610,20 +599,13 @@ class HelicopterTourOutSchema(BaseModel):
     main_image: str | None = None
 
 
-
-
-
-class TransportDetailSchema(TransportOutSchema):
-    images: list[TransportImageOutSchema] = Field(default_factory=list)
-
-class HelicopterImageInputSchema(BaseModel):
+class HelicopterImageInputSchema(StorageInput):
     helicopter_id: int
     image: str
     order: int = 0
 
 
-
-class HelicopterImageUpdateSchema(BaseModel):
+class HelicopterImageUpdateSchema(StorageInput):
     helicopter_id: int | None = None
     image: str | None = None
     order: int | None = None
@@ -637,11 +619,8 @@ class HelicopterImageOutSchema(BaseModel):
     image: str
     order: int
 
-class HelicopterTourDetailSchema(HelicopterTourOutSchema):
-    images: list[HelicopterImageOutSchema] = Field(default_factory=list)
 
-
-class TrekkingInputSchema(BaseModel):
+class TrekkingInputSchema(StorageInput):
     title: str
     description: str | None = None
     price: Decimal
@@ -651,7 +630,7 @@ class TrekkingInputSchema(BaseModel):
     is_active: bool = True
 
 
-class TrekkingUpdateSchema(BaseModel):
+class TrekkingUpdateSchema(StorageInput):
     title: str | None = None
     description: str | None = None
     price: Decimal | None = None
@@ -674,13 +653,13 @@ class TrekkingOutSchema(BaseModel):
     is_active: bool
 
 
-class TrekkingImageInputSchema(BaseModel):
+class TrekkingImageInputSchema(StorageInput):
     trekking_id: int
     image: str
     order: int = 0
 
 
-class TrekkingImageUpdateSchema(BaseModel):
+class TrekkingImageUpdateSchema(StorageInput):
     trekking_id: int | None = None
     image: str | None = None
     order: int | None = None
@@ -693,11 +672,3 @@ class TrekkingImageOutSchema(BaseModel):
     trekking_id: int
     image: str
     order: int
-
-class TrekkingDetailSchema(TrekkingOutSchema):
-    images: list[TrekkingImageOutSchema] = Field(default_factory=list)
-    programs: list[TrekkingProgramOutSchema] = Field(default_factory=list)
-
-class RegionDetailSchema(RegionOutSchema):
-    districts: list[DistrictOutSchema] = Field(default_factory=list)
-

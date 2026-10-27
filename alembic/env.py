@@ -1,23 +1,17 @@
-
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-
-from mysite.database.db import Base, DATABASE_URL
-from mysite.database import client_profile, password_reset_models  # noqa: F401
+from mysite.database import models  # noqa: F401  # noqa: F401
 from mysite.database import rate_limit_models  # noqa: F401
-from mysite.database import chat_models, models  # noqa: F401
-
+from mysite.database import selection_models  # noqa: F401
+from mysite.database import chat_models, client_profile, password_reset_models  # noqa: F401
+from mysite.database.db import DATABASE_URL, Base
 
 config = context.config
 
-config.set_main_option(
-    "sqlalchemy.url",
-    DATABASE_URL.replace("%", "%%")
-)
+config.set_main_option('sqlalchemy.url', DATABASE_URL.replace('%', '%%'))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -25,15 +19,14 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = config.get_main_option('sqlalchemy.url')
 
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
+        dialect_opts={'paramstyle': 'named'},
     )
 
     with context.begin_transaction():
@@ -43,15 +36,12 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+        prefix='sqlalchemy.',
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
