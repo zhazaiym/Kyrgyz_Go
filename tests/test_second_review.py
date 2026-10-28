@@ -80,7 +80,7 @@ def test_no_github_actions_job_can_deploy_to_production():
 
 
 def test_activation_override_preserves_admin_policy():
-    module = load_deployment()
+    module = ci_deploy
     networks = [ipaddress.ip_network('192.0.2.10/32')]
     override = module.compose_override('kyrgyzgo-api:manual-123', ','.join(map(str, networks)))
     assert 'ADMIN_ALLOWED_IPS: "192.0.2.10/32"' in override
