@@ -97,7 +97,7 @@ Migrations 0014 through 0016 must be manually applied before deploying this code
 - **A1′ — implemented:** SQLAdmin no longer treats absent languages/fields in the submitted JSON as deletion. The update hook locks and refreshes the record, merges explicit edits into the latest translations, and queues a fresh translation for explicit empty values. Test through the real SQLAdmin edit GET/POST path: `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues` (form opened with `{}`, worker writes translations, submit preserves them; explicit clear queues regeneration).
 - **A4 — implemented:** migration 0015 keeps a database server default `scope=''`, matching the ORM default, so old containers can insert counters without naming `scope`. Tested by `test_translation_migration_downgrade_removes_stale_values`, which upgrades and issues the legacy INSERT.
 - **A5 — implemented:** unknown login identifiers are SHA-256 hashed before storing the limiter account index; known accounts still use their numeric account ID. `test_unknown_254_character_email_is_not_stored_as_rate_limit_identity` verifies HTTP 401 for a 254-character email and confirms the raw value is absent from `account_id`.
-- **A6 — not implemented pending explicit authorization:** read-only audit found four `kyrgyzgo_*.db` files in each of `improve-chat-consultation-20261027` and `jazi`; `master` has no such files but diverges from `main`. Removing or rewriting remote branches changes shared GitHub history and is awaiting the repository owner's approval. The code changes do not erase those remote objects.
+- **A6 — branch refs cleaned:** after repository-owner authorization, deleted `improve-chat-consultation-20261027` and `jazi`, which each contained four `kyrgyzgo_*.db` files. Added `ABANDONED.md` to `master` in commit `4e88a9f`; all current development and deployment continues from `main`. Verify that no active remote branch contains `.db` with `git ls-tree -r` across `git branch -r`. GitHub Support has not been contacted to purge cached historical objects; that external request remains separate.
 
 ### Required block B
 
@@ -126,4 +126,4 @@ Verification completed on 2026-10-28:
 - `ruff format --check` on the 18 changed Python files: **passed**.
 - `git diff --check`: **passed**.
 
-Migrations 0014 through 0016 require the existing manual deployment procedure before this application version is deployed. A6 remains outstanding until the repository owner approves removal or rewriting of the two remote branches listed above.
+Migrations 0014 through 0016 require the existing manual deployment procedure before this application version is deployed.
