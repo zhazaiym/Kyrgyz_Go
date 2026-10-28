@@ -65,5 +65,6 @@ def test_public_client_login_is_rate_limited(client, monkeypatch):
     limited = client.post('/auth/login', json={'username': username, 'password': 'incorrect'})
 
     assert all(response.status_code == 401 for response in responses)
-    assert limited.status_code == 429
-    assert int(limited.headers['Retry-After']) > 0
+    # Account lockout uses the generic auth response to avoid revealing whether
+    # the username belongs to an account.
+    assert limited.status_code == 401

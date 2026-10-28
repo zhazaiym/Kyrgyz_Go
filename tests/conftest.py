@@ -47,6 +47,14 @@ def offline_catalogue_translations(monkeypatch):
             for lang in ('en', 'de', 'zh')
         },
     )
+    monkeypatch.setattr('mysite.translations.jobs.recover_missing_translations', lambda: 0)
+    monkeypatch.setattr(
+        'mysite.translations.translator.translate_fields',
+        lambda source: {
+            lang: {key: f'{value} {lang}' if value else value for key, value in source.items()}
+            for lang in ('en', 'de', 'zh')
+        },
+    )
     from mysite.translations.jobs import translate_record
 
     monkeypatch.setattr(

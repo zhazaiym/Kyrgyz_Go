@@ -210,7 +210,8 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     removed = client.delete(f'/chat/{sid}/services/{kind}', headers=headers(account))
     assert removed.status_code == 200
     assert f'valid_{kind}' not in removed.json()['booking_preview']['missing_fields']
-    assert removed.json()['stage'] == 'awaiting_confirmation'
+    assert removed.json()['stage'] == 'collecting'
+    assert not removed.json()['booking_preview']['can_confirm']
     with SessionLocal() as db:
         assert f'{kind}_id' not in db.get(ChatSession, sid).state
     stranger, _ = register(client)
@@ -222,8 +223,7 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
         headers=headers(account),
         json={'session_id': sid, 'revision': removed.json()['revision'], 'confirmed': True},
     )
-    assert confirmed.status_code == 200
-    assert confirmed.json()['status'] == 'submitted'
+    assert confirmed.status_code == 409
 
 
 def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):

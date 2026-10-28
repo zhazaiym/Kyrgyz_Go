@@ -72,6 +72,11 @@ def test_http_limiter_health_and_admin_assets_do_not_write_to_postgresql(monkeyp
     def record(connection, cursor, statement, parameters, context, executemany):
         statements.append(statement)
 
+    async def idle_token_cleanup():
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr('main.token_cleanup_loop', idle_token_cleanup)
+
     event.listen(engine, 'before_cursor_execute', record)
     try:
         with TestClient(app, client=('198.51.100.202', 1)) as browser:
