@@ -29,8 +29,7 @@ TRANSLATED_FIELDS = ['title', 'description', 'included', 'excluded']
 
 
 def try_save_translations(tour_db: Tour, db: Session):
-    schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
-    return True
+    return schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
 
 def get_localized_tour(
@@ -153,12 +152,6 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         db.flush()
 
         if any(field in data for field in TRANSLATED_FIELDS):
-            # Existing translations may not match the updated Russian text.
-            db.query(TourTranslation).filter(TourTranslation.tour_id == tour_db.id).delete(
-                synchronize_session=False
-            )
-
-            db.flush()
             try_save_translations(tour_db, db)
 
         db.commit()
@@ -183,8 +176,17 @@ def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
     try:
         source = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
         db.commit()
-        if not translate_record(Tour, tour_id, source, translate_tour):
-            raise HTTPException(status_code=503, detail='Gemini котормосу азыр жеткиликсиз')
+        result = translate_record(Tour, tour_id, source, translate_tour)
+        if result == 'busy':
+            raise HTTPException(
+                status_code=503, detail='Котормо кезеги бош эмес, кайра аракет кылыңыз'
+            )
+        if result == 'source_changed':
+            raise HTTPException(status_code=409, detail='Тур өзгөрдү; котормону кайра сураңыз')
+        if result == 'missing':
+            raise HTTPException(status_code=404, detail='Тур табылган жок')
+        if result != 'translated':
+            raise HTTPException(status_code=502, detail='Gemini котормосу азыр жеткиликсиз')
 
         db.commit()
 

@@ -11,7 +11,7 @@ from mysite.database.booking_validation import optional_email
 def validate_storage_values(entity, values, supplied):
     values = dict(values)
     for name, value in values.items():
-        if name not in entity.__table__.c:
+        if name not in entity.__table__.c or name not in supplied:
             continue
         column = entity.__table__.c[name]
         if value is None:
@@ -80,6 +80,11 @@ def validate_storage_values(entity, values, supplied):
         }:
             raise ValueError(f'Unsafe URL scheme in {name}')
     minimum, maximum = values.get('min_people'), values.get('max_people')
-    if minimum is not None and maximum is not None and minimum > maximum:
+    if (
+        {'min_people', 'max_people'} & supplied
+        and minimum is not None
+        and maximum is not None
+        and minimum > maximum
+    ):
         raise ValueError('min_people cannot exceed max_people')
     return values

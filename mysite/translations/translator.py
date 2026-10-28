@@ -44,7 +44,13 @@ def translate_fields(source: dict):
     if content.startswith('```'):
         content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
     result = json.loads(content)
+    if not isinstance(result, dict):
+        raise ValueError('Translation response must be a JSON object')
+    result = {lang: result.get(lang) for lang in ('en', 'de', 'zh')}
     for lang in ('en', 'de', 'zh'):
+        if not isinstance(result[lang], dict):
+            raise ValueError(f'Missing translation language: {lang}')
+        result[lang] = {field: result[lang].get(field) for field in source}
         for field, original in source.items():
             value = result[lang][field]
             if original is None or original == '':

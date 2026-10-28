@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from mysite.api.chat_service import owned, process_message
 from mysite.api.client_auth import client_by_token
+from mysite.api.network_identity import client_network
 from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limit
 from mysite.database.db import SessionLocal
 
@@ -83,7 +84,7 @@ async def socket(websocket: WebSocket, session_id: str):
         await websocket.close(code=1008)
         return
     client_address = getattr(websocket, 'client', None)
-    remote_address = client_address.host if client_address else 'unknown'
+    remote_address = client_network(client_address.host if client_address else 'unknown')
     try:
         await asyncio.to_thread(
             enforce_rate_limit,

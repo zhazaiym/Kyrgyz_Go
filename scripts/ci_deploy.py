@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 import os
@@ -211,16 +212,35 @@ def deployed_schema(container):
     return json.loads(output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe]))
 
 
-def candidate_schema(image):
-    probe = (
-        'import json; from alembic.config import Config; from alembic.script import ScriptDirectory; '
-        'print(json.dumps(ScriptDirectory.from_config(Config("alembic.ini")).get_heads()))'
-    )
-    return json.loads(
-        output(
-            ['sudo', '-n', 'docker', 'run', '--rm', '--entrypoint', 'python', image, '-c', probe]
-        )
-    )
+def candidate_schema(source):
+    revisions = {}
+    for path in (Path(source) / 'alembic' / 'versions').glob('*.py'):
+        values = {}
+        tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        for node in tree.body:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                target = (
+                    node.targets[0]
+                    if isinstance(node, ast.Assign) and len(node.targets) == 1
+                    else (node.target if isinstance(node, ast.AnnAssign) else None)
+                )
+                if isinstance(target, ast.Name) and target.id in {'revision', 'down_revision'}:
+                    values[target.id] = ast.literal_eval(node.value)
+        revision = values.get('revision')
+        if not isinstance(revision, str) or revision in revisions:
+            raise ValueError(f'Invalid or duplicate Alembic revision in {path.name}')
+        parent = values.get('down_revision')
+        revisions[revision] = set(parent if isinstance(parent, (tuple, list)) else [parent]) - {
+            None
+        }
+    known = set(revisions)
+    missing = set().union(*revisions.values()) - known if revisions else set()
+    if missing:
+        raise ValueError(f'Alembic revisions reference missing parents: {sorted(missing)}')
+    heads = known - set().union(*revisions.values()) if revisions else set()
+    if not heads:
+        raise ValueError('No Alembic migration head found in deployment source')
+    return sorted(heads)
 
 
 def deploy(revision, source):
@@ -265,6 +285,23 @@ def deploy(revision, source):
             raise RuntimeError('Current api is unhealthy; manual intervention required')
         old_image_id = previous['Image']
         old_image = previous['Config']['Image']
+        image = 'kyrgyzgo-api:' + stamp
+        state = {
+            'revision': revision,
+            'image': image,
+            'previous_image': old_image,
+            'source_directory': str(release),
+            'backup': str(backup),
+            'status': 'checking_schema',
+        }
+        state_file = backup / 'deployment-state.json'
+        state_file.write_text(json.dumps(state, indent=2))
+        try:
+            require_same_schema(deployed_schema(previous_container), candidate_schema(release))
+        except RuntimeError:
+            state['status'] = 'migration_required'
+            state_file.write_text(json.dumps(state, indent=2))
+            raise
         dockerfile_contents = (release / 'Dockerfile').read_bytes()
         dockerfile_cmd = dockerfile_command(dockerfile_contents)
         same_base_runtime = dockerfile_cmd is not None and deployed_runtime_digest(
@@ -303,16 +340,7 @@ def deploy(revision, source):
                     old_image_id, dockerfile_cmd, install_requirements=requirements_changed
                 )
             )
-        image = 'kyrgyzgo-api:' + stamp
-        state = {
-            'revision': revision,
-            'image': image,
-            'previous_image': old_image,
-            'source_directory': str(release),
-            'backup': str(backup),
-            'status': 'building',
-        }
-        state_file = backup / 'deployment-state.json'
+        state['status'] = 'building'
         state_file.write_text(json.dumps(state, indent=2))
         run(
             [
@@ -327,13 +355,6 @@ def deploy(revision, source):
                 str(release),
             ]
         )
-        # The old image is a safe rollback only while the database schema is unchanged.
-        try:
-            require_same_schema(deployed_schema(previous_container), candidate_schema(image))
-        except RuntimeError:
-            state['status'] = 'migration_required'
-            state_file.write_text(json.dumps(state, indent=2))
-            raise
         state['status'] = 'activating'
         try:
             temporary = OVERRIDE.with_suffix('.pending')

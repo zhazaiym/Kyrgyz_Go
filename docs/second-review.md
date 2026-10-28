@@ -1,5 +1,8 @@
 # Проверка второго внешнего ревью — main 360424b
 
+Исправления регрессий, обнаруженных при повторной проверке коммита `4e52a26`,
+описаны в [regression-review-4e52a26.md](regression-review-4e52a26.md).
+
 Итог: **442 теста прошли за 106,92 с** на временных PostgreSQL-базах.
 Основные регрессии: `tests/test_second_review.py`, `test_review_followup.py`,
 `test_frontend_contract.py`, `test_company_tools.py`, `test_rate_limit.py`.

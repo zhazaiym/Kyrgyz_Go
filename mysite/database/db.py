@@ -43,9 +43,9 @@ def get_db():
     try:
         yield db
     finally:
-        from mysite.translations.jobs import committed_jobs, translate_record
+        from mysite.translations.jobs import committed_jobs, enqueue_translation
 
         jobs = committed_jobs(db)
         db.close()
         for job in jobs:
-            translate_record(*job)
+            enqueue_translation(*job)

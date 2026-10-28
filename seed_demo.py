@@ -463,18 +463,33 @@ def seed_demo(db):
                 ):
                     stored.setdefault(lang, {})[key] = value
         contact.translations = stored
-        get_or_create(
-            TravelRequest,
-            'email',
-            f'test-request-{number}@example.com',
-            name=f'ТЕСТ: Заявка {number}',
-            phone=f'+1 202-555-01{number}',
-            travel_date=date(2030, 6, 1) + timedelta(days=index - 1),
-            duration_days=1 + index % 7,
-            travelers_count=1 + index % 6,
-            destination=f'ТЕСТ: Маршрут {number}',
-            message='ТЕСТ: Демонстрационная заявка. Не связываться и не бронировать.',
+        request_email = f'test-request-{number}@example.com'
+        old_request_email = f'test-request-{number}@example.invalid'
+        requests = (
+            db.query(TravelRequest)
+            .filter(TravelRequest.email.in_((request_email, old_request_email)))
+            .all()
         )
+        request = next(
+            (record for record in requests if record.email == request_email),
+            requests[0] if requests else None,
+        )
+        if request is None:
+            request = TravelRequest(email=request_email)
+            db.add(request)
+            created += 1
+        else:
+            request.email = request_email
+            for duplicate in requests:
+                if duplicate is not request:
+                    db.delete(duplicate)
+        request.name = f'ТЕСТ: Заявка {number}'
+        request.phone = f'+1 202-555-01{number}'
+        request.travel_date = date(2030, 6, 1) + timedelta(days=index - 1)
+        request.duration_days = 1 + index % 7
+        request.travelers_count = 1 + index % 6
+        request.destination = f'ТЕСТ: Маршрут {number}'
+        request.message = 'ТЕСТ: Демонстрационная заявка. Не связываться и не бронировать.'
 
     for model, image_model, foreign_key, section in [
         (Tour, TourImage, 'tour_id', 'tour'),

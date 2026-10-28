@@ -9,7 +9,7 @@ from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, Di
                                     TransportImage, TravelRequest, Trekking, TrekkingImage,
                                     TrekkingProgram)
 from mysite.translations.content import CONTENT_FIELDS, generate_translations
-from mysite.translations.jobs import translate_record
+from mysite.translations.jobs import enqueue_translation
 
 
 class LocalizedAdminMixin:
@@ -23,15 +23,12 @@ class LocalizedAdminMixin:
         )
         if source_changed and not manual_translation:
             source = {field: data.get(field, getattr(model, field, None)) for field in fields}
-            data['translations'] = {}
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
         source = getattr(request.state, 'catalogue_source', None)
         if source is not None:
-            await run_in_threadpool(
-                translate_record, type(model), model.id, source, generate_translations
-            )
+            enqueue_translation(type(model), model.id, source, generate_translations)
 
 
 class AdminAdmin(ModelView, model=Admin):
@@ -104,11 +101,8 @@ class TourAdmin(ModelView, model=Tour):
             if tour is None:
                 return
             source = {field: getattr(tour, field) for field in TRANSLATED_FIELDS}
-            from mysite.database.models import TourTranslation
-
-            db.query(TourTranslation).filter_by(tour_id=tour_id).delete(synchronize_session=False)
             db.commit()
-        translate_record(Tour, tour_id, source, translate_tour)
+        enqueue_translation(Tour, tour_id, source, translate_tour)
 
 
 class TourImageAdmin(ModelView, model=TourImage):

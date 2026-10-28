@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import enforce_request_limits
+from mysite.api.rate_limit import enforce_login_failure, enforce_login_ip_limit
 from mysite.api.selection_status import require_status_transition
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
@@ -77,22 +77,22 @@ def get_current_admin(
 
 @admin_router.post('/login/', response_model=TokenSchema)
 def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends(get_db)):
-    enforce_request_limits(
-        'admin-login', request, admin.username, ip_limit=20, identity_limit=5, window_seconds=60
-    )
+    enforce_login_ip_limit('admin-login', request, max_requests=20, window_seconds=60)
     admin_db = db.query(Admin).filter(Admin.username == admin.username).first()
-
-    valid = verify_password(
-        admin.password, admin_db.hashed_password if admin_db else dummy_admin_hash
-    )
-    if admin_db is None or not valid:
+    admin_id = admin_db.id if admin_db else None
+    is_active = bool(admin_db and admin_db.is_active)
+    password_hash = admin_db.hashed_password if admin_db else dummy_admin_hash
+    db.close()
+    valid = verify_password(admin.password, password_hash)
+    if admin_id is None or not valid:
+        enforce_login_failure('admin-login', admin.username, max_requests=5, window_seconds=60)
         raise HTTPException(status_code=401, detail='Логин же пароль туура эмес')
 
-    if not admin_db.is_active:
+    if not is_active:
         raise HTTPException(status_code=403, detail='Админ активдүү эмес')
 
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    token = jwt.encode({'sub': str(admin_db.id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode({'sub': str(admin_id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {'access_token': token, 'token_type': 'bearer'}
 
 

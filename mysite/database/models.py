@@ -3,7 +3,7 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
-                        Text, UniqueConstraint, event, inspect)
+                        Text, UniqueConstraint, event, inspect, select)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -431,9 +431,18 @@ def assign_content_order(mapper, connection, target):
 
 @event.listens_for(TravelRequest, 'before_update')
 def protect_completed_request(mapper, connection, target):
-    history = inspect(target).attrs.status.history
-    if history.has_changes() and history.deleted:
-        validate_status_transition(history.deleted[0], target.status)
+    status = inspect(target).attrs.status
+    if not status.history.has_changes():
+        return
+    previous = (
+        status.history.deleted[0]
+        if status.history.deleted
+        else connection.execute(
+            select(TravelRequest.status).where(TravelRequest.id == target.id).with_for_update()
+        ).scalar_one_or_none()
+    )
+    if previous is not None:
+        validate_status_transition(previous, target.status)
 
 
 @event.listens_for(Base, 'before_insert', propagate=True)

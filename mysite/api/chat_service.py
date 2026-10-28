@@ -562,8 +562,6 @@ def _remove_service(session_id, client_id, token, kind):
         answer = booking_text(state)['service_removed']
         db.add(ChatMessage(session_id=session_id, role='assistant', content=answer))
         preview = build_preview(db, session)
-        if preview['can_confirm']:
-            session.stage = 'awaiting_confirmation'
         db.commit()
         return {
             'status': 'updated',

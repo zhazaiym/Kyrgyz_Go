@@ -122,13 +122,27 @@ def enforce_request_limits(
 ):
     address = client_network(request.client.host if request.client else 'unknown')
     principal = f'identity:{identity.strip().casefold()}'
-    if scope.endswith('login'):
-        principal += f'\0ip:{address}'
     enforce_rate_limits(
         [
             (scope, f'ip:{address}', ip_limit, window_seconds),
             (scope, principal, identity_limit, window_seconds),
         ]
+    )
+
+
+def enforce_login_ip_limit(scope, request, *, max_requests, window_seconds):
+    address = client_network(request.client.host if request.client else 'unknown')
+    enforce_rate_limit(
+        scope, f'ip:{address}', max_requests=max_requests, window_seconds=window_seconds
+    )
+
+
+def enforce_login_failure(scope, identity, *, max_requests, window_seconds):
+    enforce_rate_limit(
+        scope,
+        f'failed-account:{identity.strip().casefold()}',
+        max_requests=max_requests,
+        window_seconds=window_seconds,
     )
 
 

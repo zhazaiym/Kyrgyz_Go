@@ -6,7 +6,7 @@ from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
 
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
-from mysite.api.rate_limit import enforce_request_limits
+from mysite.api.rate_limit import enforce_login_failure, enforce_login_ip_limit
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin as AdminModel
 
@@ -20,13 +20,17 @@ from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ChatRequestAdmin,
 class AdminAuthBackend(AuthenticationBackend):
     @staticmethod
     def login_identity(request, username, password):
-        enforce_request_limits(
-            'admin-login', request, username, ip_limit=20, identity_limit=5, window_seconds=60
-        )
+        enforce_login_ip_limit('admin-login', request, max_requests=20, window_seconds=60)
         with SessionLocal() as db:
             admin = db.query(AdminModel).filter(AdminModel.username == username).first()
-            valid = verify_password(password, admin.hashed_password if admin else dummy_admin_hash)
-            return admin.id if admin and admin.is_active and valid else None
+            admin_id = admin.id if admin else None
+            is_active = bool(admin and admin.is_active)
+            password_hash = admin.hashed_password if admin else dummy_admin_hash
+        valid = verify_password(password, password_hash)
+        if not admin_id or not valid:
+            enforce_login_failure('admin-login', username, max_requests=5, window_seconds=60)
+            return None
+        return admin_id if is_active else None
 
     async def login(self, request: Request) -> bool:
         form = await request.form()

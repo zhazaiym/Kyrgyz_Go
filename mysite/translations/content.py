@@ -1,18 +1,14 @@
 """Stored catalogue translations; public reads never call the translation service."""
 
-import logging
 from typing import Annotated
 
 from fastapi import Query
-from langchain_core.exceptions import ModelError
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
-logger = logging.getLogger(__name__)
 
 CONTENT_FIELDS = {
     'abouts': ('title', 'description'),
@@ -57,16 +53,11 @@ def localized(record, lang='ru'):
 
 
 def generate_translations(source):
-    try:
-        return translate_fields(source)
-    except (ModelError, ChatGoogleGenerativeAIError, ValueError, KeyError, TypeError, RuntimeError):
-        logger.exception('Catalogue translation failed; keeping original text')
-        return {}
+    return translate_fields(source)
 
 
 def update_translations(record):
     fields = CONTENT_FIELDS[record.__tablename__]
     state = inspect(record)
     if state.pending or any(state.attrs[field].history.has_changes() for field in fields):
-        record.translations = {}
         schedule_translation(record, fields, generate_translations)

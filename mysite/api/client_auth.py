@@ -9,7 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import enforce_request_limits
+from mysite.api.rate_limit import (enforce_login_failure, enforce_login_ip_limit,
+                                   enforce_request_limits)
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import get_db
@@ -125,10 +126,15 @@ def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db
                 raise ValueError('Email is required')
         except ValueError as exc:
             raise HTTPException(422, 'Введите корректный email') from exc
-    enforce_request_limits(
-        'client-login', request, identifier, ip_limit=30, identity_limit=8, window_seconds=60
-    )
-    client = authenticate_client(db, identifier, data.password, email_only=data.email is not None)
+    enforce_login_ip_limit('client-login', request, max_requests=30, window_seconds=60)
+    try:
+        client = authenticate_client(
+            db, identifier, data.password, email_only=data.email is not None
+        )
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            enforce_login_failure('client-login', identifier, max_requests=8, window_seconds=60)
+        raise
     return issue_token(db, client)
 
 
