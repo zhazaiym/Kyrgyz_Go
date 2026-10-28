@@ -291,5 +291,5 @@ pytest -q
 ```
 
 `ruff check` на изменённых Python-файлах: `All checks passed!`.
-`ruff format --check` на изменённых Python-файлах: `5 files already formatted`.
 `git diff --check`: без ошибок.
+Форматирование сохранено в принятом соседним кодом стиле; `ruff format` к целым файлам не применялся.
