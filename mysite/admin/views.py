@@ -59,12 +59,13 @@ class LocalizedAdminMixin:
         source = {field: data.get(field, getattr(model, field, None)) for field in fields}
         refresh_cleared_fields = False
         if 'translations' in data:
+            submitted_translations = data['translations']
             refresh_cleared_fields = manual_translation_needs_refresh(
-                data['translations'], form_translation_snapshot
+                submitted_translations, form_translation_snapshot, model.translations
             )
-            if manual_translation_changed(data['translations'], form_translation_snapshot):
+            if manual_translation_changed(submitted_translations, form_translation_snapshot):
                 data['translations'] = mark_manual_translations(
-                    data['translations'],
+                    submitted_translations,
                     source,
                     model.translations,
                     compared_to=form_translation_snapshot,

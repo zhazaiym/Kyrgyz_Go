@@ -21,6 +21,10 @@ BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
 DEPLOY_LOCK = Path('/home/ubuntu/.kyrgyzgo-deploy.lock')
 PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
 PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
+UNSAFE_IPV6_ADMIN_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in ('2001::/32', '64:ff9b::/96', '64:ff9b:1::/48', '2002::/16', '::ffff:0:0/96')
+)
 ALLOWED_FILES = {
     '.dockerignore',
     'Dockerfile',
@@ -207,9 +211,7 @@ def install_override(image, admin_networks):
     temporary.write_text(compose_override(image, admin_allowlist), encoding='utf-8')
     temporary.replace(OVERRIDE)
 
-    resolved_networks = validate_admin_allowlist(
-        compose_output('config', '--format', 'json')
-    )
+    resolved_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
     if resolved_networks != admin_networks:
         raise RuntimeError('ADMIN_ALLOWED_IPS changed while preparing the new image')
     compose('config', '--quiet')
@@ -347,6 +349,14 @@ def validate_admin_allowlist(rendered_config):
         raise RuntimeError(
             'Production ADMIN_ALLOWED_IPS is too broad; require IPv4 /16 or IPv6 /32 or narrower'
         )
+    if any(
+        network.version == unsafe.version and network.overlaps(unsafe)
+        for network in networks
+        for unsafe in UNSAFE_IPV6_ADMIN_NETWORKS
+    ):
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS cannot use IPv6 transition or translation networks'
+        )
     return networks
 
 
@@ -379,9 +389,7 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        admin_networks = validate_admin_allowlist(
-            compose_output('config', '--format', 'json')
-        )
+        admin_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
             stdout=subprocess.DEVNULL,
