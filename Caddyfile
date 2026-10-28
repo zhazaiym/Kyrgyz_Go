@@ -9,10 +9,5 @@
             profile shortlived
         }
     }
-    @admin_outside_vpn {
-        path /admin*
-        not remote_ip {$ADMIN_ALLOWED_CIDR}
-    }
-    respond @admin_outside_vpn 403
     reverse_proxy api:8000
 }

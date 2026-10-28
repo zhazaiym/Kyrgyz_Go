@@ -93,8 +93,9 @@ def test_deployment_failure_never_activates_a_new_schema_and_restores_exact_over
     override = tmp_path / 'override.yml'
     previous = 'services:\n  api:\n    image: old\n    environment:\n      KEEP: original\n'
     override.write_text(previous)
-    for name in ('docker-compose.yml', 'Caddyfile', '.env'):
+    for name in ('docker-compose.yml', 'Caddyfile'):
         (root / name).write_text('test fixture')
+    (root / '.env').write_text('ADMIN_ALLOWED_IPS=127.0.0.1/32\n')
     for name, value in [
         ('ROOT', root),
         ('RELEASES', releases),
@@ -191,16 +192,20 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     sid = client.post(
         f'/travel-selections/{identity}/start-chat/', headers=headers(account)
     ).json()['session_id']
-    initial_preview = client.post(
-        '/booking/preview', headers=headers(account), json={'session_id': sid}
-    )
-    assert initial_preview.status_code == 200
-    assert not initial_preview.json()['can_confirm']
     with SessionLocal() as db:
         row = db.get(ChatSession, sid)
         row.state = complete(row.state)
-        row.stage = 'awaiting_confirmation'
+        row.stage = 'collecting'
         identity = next(item['id'] for item in services if item['kind'] == kind)
+        db.commit()
+    collecting_preview = client.post(
+        '/booking/preview', headers=headers(account), json={'session_id': sid}
+    )
+    assert collecting_preview.status_code == 200
+    assert not collecting_preview.json()['can_confirm']
+    with SessionLocal() as db:
+        row = db.get(ChatSession, sid)
+        row.stage = 'awaiting_confirmation'
         db.get(m.Hotel if kind == 'hotel' else m.Transport, identity).is_active = False
         db.commit()
     response = client.post(
@@ -217,6 +222,12 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     assert f'valid_{kind}' not in removed.json()['booking_preview']['missing_fields']
     assert removed.json()['stage'] == 'awaiting_confirmation'
     assert removed.json()['booking_preview']['can_confirm']
+    from mysite.api.booking_text import booking_text
+
+    assert (
+        removed.json()['answer']
+        != booking_text(removed.json()['booking_preview']['data'])['service_removed']
+    )
     with SessionLocal() as db:
         assert f'{kind}_id' not in db.get(ChatSession, sid).state
     stranger, _ = register(client)
@@ -229,6 +240,7 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
         json={'session_id': sid, 'revision': removed.json()['revision'], 'confirmed': True},
     )
     assert confirmed.status_code == 200
+    assert confirmed.json()['status'] == 'submitted'
 
 
 def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):
@@ -294,21 +306,17 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
         assert socket.receive_json()['code'] == 'invalid_message'
 
 
-@pytest.mark.parametrize('admin', [False, True])
-def test_login_limit_blocks_one_ip_without_locking_the_account(
-    client, admin_headers, monkeypatch, admin
-):
+def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, monkeypatch):
     account, email = register(client)
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
-    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_800_000_000)
-    identity = {'username': 'test-admin'} if admin else {'email': email}
-    route = '/admin/login/' if admin else '/auth/login'
-    attempts = 5 if admin else 8
+    identity = {'email': email}
+    route = '/auth/login'
+    attempts = 8
     with (
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
         TestClient(app, client=('198.51.100.131', 1)) as owner,
     ):
-        password = 'StrongAdminPassword123!' if admin else PASSWORD
+        password = PASSWORD
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
         for _ in range(attempts):
             assert (
@@ -316,6 +324,37 @@ def test_login_limit_blocks_one_ip_without_locking_the_account(
             )
         assert attacker.post(route, json={**identity, 'password': password}).status_code == 429
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
+
+
+def test_admin_login_limit_caps_attempts_per_account_and_ip(client, admin_headers, monkeypatch):
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_333)
+    payload = {'username': 'test-admin', 'password': 'incorrect'}
+    for _ in range(5):
+        assert client.post('/admin/login/', json=payload).status_code == 401
+    assert client.post('/admin/login/', json=payload).status_code == 429
+
+
+def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client, monkeypatch):
+    import hashlib
+
+    email = 'a' * 242 + '@example.com'
+    assert len(email) == 254
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_334)
+    response = client.post('/auth/login', json={'email': email, 'password': 'NotThePassword123!'})
+    assert response.status_code == 401, response.text
+
+    expected = 'unknown:' + hashlib.sha256(email.encode()).hexdigest()
+    with SessionLocal() as db:
+        account_ids = [
+            row[0]
+            for row in db.query(rate_limit.RateLimitCounter.account_id)
+            .filter(rate_limit.RateLimitCounter.account_id.isnot(None))
+            .all()
+        ]
+    assert expected in account_ids
+    assert email not in account_ids
 
 
 def test_account_limits_use_one_insert_and_one_commit_for_both_counters(monkeypatch):

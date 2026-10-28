@@ -35,6 +35,7 @@ def test_environment_example_documents_required_settings():
         'GEMINI_MODEL',
         'CORS_ALLOWED_ORIGINS',
         'CHAT_ALLOWED_ORIGINS',
+        'ADMIN_ALLOWED_IPS',
     }
     names = {
         line.split('=', 1)[0].strip()

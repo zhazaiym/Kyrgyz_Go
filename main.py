@@ -18,6 +18,7 @@ from mysite.api.about_section import about_section_router
 
 # ADMIN
 from mysite.api.admin import admin_router
+from mysite.api.admin_access import AdminAccessMiddleware
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_ws import router as chat_ws_router
@@ -90,6 +91,7 @@ app = FastAPI(
 
 # CORS
 app.add_middleware(ResourceLimitsMiddleware)
+app.add_middleware(AdminAccessMiddleware)
 cors_allowed_origins = [
     origin.strip()
     for origin in os.getenv(

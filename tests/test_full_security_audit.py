@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
@@ -152,6 +152,50 @@ def test_rate_counter_is_atomic_across_concurrent_database_sessions():
 
     with ThreadPoolExecutor(max_workers=8) as workers:
         assert sorted(workers.map(consume, range(16))) == list(range(1, 17))
+
+
+def test_password_reset_cleanup_removes_all_account_ip_counters_and_blocks():
+    account_key = f'client:{uuid4().int}'
+    for address in ('198.51.100.21', '198.51.100.22'):
+        rate_limit.consume_rate_limit(
+            'client-login',
+            f'account-ip:{account_key}:ip:{address}',
+            max_requests=8,
+            window_seconds=60,
+            current_time=1_950_000_000,
+        )
+    rate_limit.consume_rate_limit(
+        'client-login',
+        'account-ip:client:unrelated:ip:198.51.100.21',
+        max_requests=8,
+        window_seconds=60,
+        current_time=1_950_000_000,
+    )
+    blocked = ('client-login', f'account-ip:{account_key}:ip:198.51.100.21', 8, 60)
+    with rate_limit._cache_lock:
+        rate_limit._blocked[blocked] = 1_950_000_060
+
+    request = Request(
+        {
+            'type': 'http',
+            'method': 'POST',
+            'scheme': 'http',
+            'path': '/account/reset-password',
+            'headers': [],
+            'client': ('198.51.100.21', 50000),
+            'server': ('testserver', 80),
+        }
+    )
+    with SessionLocal() as db:
+        rate_limit.clear_account_login_attempt(db, 'client-login', request, account_key)
+        db.commit()
+        assert db.query(rate_limit.RateLimitCounter).filter_by(account_id=account_key).count() == 0
+        assert (
+            db.query(rate_limit.RateLimitCounter).filter_by(account_id='client:unrelated').count()
+            == 1
+        )
+    with rate_limit._cache_lock:
+        assert blocked not in rate_limit._blocked
 
 
 def test_http_admission_rejects_excess_concurrency_and_releases_capacity(monkeypatch):

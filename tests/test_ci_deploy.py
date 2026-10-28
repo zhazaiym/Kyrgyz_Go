@@ -93,8 +93,13 @@ def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
     assert module.candidate_schema(tmp_path) == ['second']
 
 
-@pytest.mark.parametrize('separator', ['space', 'newline'])
-def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
+@pytest.mark.parametrize(
+    ('separator', 'configured'),
+    [('space', '%(here)s/first %(here)s/second'), ('newline', '%(here)s/first\n %(here)s/second')],
+)
+def test_candidate_schema_supports_legacy_named_version_path_separator(
+    tmp_path, separator, configured
+):
     module = load_deployment()
     first = tmp_path / 'first'
     second = tmp_path / 'second'
@@ -104,18 +109,34 @@ def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
     (second / '002.py').write_text(
         "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
     )
-    locations = (
-        '%(here)s/first %(here)s/second'
-        if separator == 'space'
-        else '%(here)s/first\n    %(here)s/second'
-    )
     (tmp_path / 'alembic.ini').write_text(
         '[alembic]\nscript_location = %(here)s\n'
-        f'version_locations = {locations}\nversion_path_separator = {separator}\n',
+        f'version_locations = {configured}\n'
+        f'version_path_separator = {separator}\n',
         encoding='utf-8',
     )
 
     assert module.candidate_schema(tmp_path) == ['second']
+
+
+@pytest.mark.parametrize(
+    ('content', 'valid'),
+    [
+        ('ADMIN_ALLOWED_IPS=192.0.2.4,2001:db8::/32\n', True),
+        ('SECRET_KEY=value\n', False),
+        ('ADMIN_ALLOWED_IPS=\n', False),
+        ('ADMIN_ALLOWED_IPS=bad-network\n', False),
+    ],
+)
+def test_deploy_requires_explicit_valid_admin_allowlist(tmp_path, content, valid):
+    env_file = tmp_path / '.env'
+    env_file.write_text(content, encoding='utf-8')
+    module = load_deployment()
+    if valid:
+        assert len(module.validate_admin_allowlist(env_file)) == 2
+    else:
+        with pytest.raises(RuntimeError, match='ADMIN_ALLOWED_IPS'):
+            module.validate_admin_allowlist(env_file)
 
 
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):
@@ -221,15 +242,3 @@ def test_workflow_separates_tests_and_main_deployment():
     assert 'StrictHostKeyChecking=yes' in workflow
     assert 'cancel-in-progress: false' in workflow
     assert 'secrets.DEPLOY_SSH_KEY' in workflow
-
-
-def test_caddy_restricts_admin_routes_to_the_configured_vpn_ip_range():
-    caddy = Path('Caddyfile').read_text(encoding='utf-8')
-    compose = Path('docker-compose.yml').read_text(encoding='utf-8')
-    example_env = Path('.env.example').read_text(encoding='utf-8')
-
-    assert 'path /admin*' in caddy
-    assert 'not remote_ip {$ADMIN_ALLOWED_CIDR}' in caddy
-    assert 'respond @admin_outside_vpn 403' in caddy
-    assert 'ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR:-127.0.0.1/32}' in compose
-    assert 'ADMIN_ALLOWED_CIDR=127.0.0.1/32' in example_env

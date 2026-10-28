@@ -20,13 +20,19 @@ environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
-The included Caddy proxy also restricts every `/admin*` route to
-`ADMIN_ALLOWED_CIDR`. Keep the default localhost-only range until you configure
-the fixed egress address of the administrator VPN. A request from any of 100
-other public IPs is denied at the proxy (0 password attempts reach the app);
-the admitted VPN egress is then subject to the existing five-attempts-per-minute
-account/IP limit (up to 10 attempts across a fixed-window boundary). Do not make
-this range public or set it to `0.0.0.0/0`.
+
+`/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
+list of administrator IPs or CIDR networks. Set it to the fixed egress address
+of the administrator VPN or office network before deploying. The default allows
+only localhost for local development. The deployment script refuses to deploy
+unless the server `.env` explicitly contains a valid `ADMIN_ALLOWED_IPS` value.
+For SSH port forwarding, the API sees the Docker bridge gateway as the client,
+not `127.0.0.1`; use the address observed by the API or connect through the
+allowlisted VPN. With
+100 unlisted attacker addresses, accepted admin requests are **0 attempts/minute**;
+if all administrators share one allowlisted VPN address, the existing admin
+login limiter permits at most **5 attempts/minute** from that address. Do not
+allowlist arbitrary public addresses.
 
 Database addressing:
 
@@ -59,6 +65,12 @@ Back up an existing database before deployment. Every API container start runs
 created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
+
+The deployment workflow refuses schema changes and reports `migration_required`
+before building or replacing the running image. Review the migration, take a
+database backup, apply `alembic upgrade head` using the project deployment
+procedure, then deploy the matching image. This release adds migrations 0014
+through 0016; do not rely on the application container to apply them automatically.
 
 ### Start and verify
 
@@ -118,10 +130,6 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
-    Set `ADMIN_ALLOWED_CIDR` to the fixed public egress address of the admin
-    VPN. The example defaults to `127.0.0.1/32`, so remote admin access is
-    intentionally denied until configured. If using Nginx instead, add an
-    equivalent `allow <VPN-CIDR>; deny all;` rule for `/admin`.
    Compose gives Caddy this fixed address on a dedicated proxy network. If
    `172.30.240.0/28` overlaps an existing network, change `PROXY_SUBNET`,
    `CADDY_PROXY_IP`, `API_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`

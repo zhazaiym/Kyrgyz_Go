@@ -1,5 +1,8 @@
+from copy import deepcopy
+
 from sqladmin import ModelView
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
@@ -30,47 +33,45 @@ from mysite.translations.content import (
     CONTENT_FIELDS,
     generate_translations,
     manual_translation_changed,
+    manual_translation_needs_refresh,
     mark_manual_translations,
-    release_stale_manual_translations,
 )
 from mysite.translations.jobs import enqueue_translation
-from mysite.translations.source import (
-    TOUR_TRANSLATION_FIELDS,
-    normalize_text,
-    source_field_hash,
-    source_value_changed,
-)
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS, normalize_text, source_value_changed
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
+        form_translation_snapshot = deepcopy(model.translations)
+        session = object_session(model)
+        if not is_created and session is not None:
+            # Serialize this form save with translation workers and merge against
+            # the submitted snapshot instead of overwriting a worker's newer JSON.
+            await run_in_threadpool(session.refresh, model, with_for_update=True)
         for field in fields:
-            if isinstance(data.get(field), str):
+            if field in data:
                 data[field] = normalize_text(data[field])
-        changed_fields = {
-            field
+        source_changed = is_created or any(
+            field in data and source_value_changed(getattr(model, field, None), data[field])
             for field in fields
-            if field in data and source_value_changed(getattr(model, field, None), data[field])
-        }
-        source_changed = is_created or bool(changed_fields)
+        )
         source = {field: data.get(field, getattr(model, field, None)) for field in fields}
-        translations_changed = False
+        refresh_cleared_fields = False
         if 'translations' in data:
-            translations_changed = manual_translation_changed(
-                data['translations'], model.translations
+            refresh_cleared_fields = manual_translation_needs_refresh(
+                data['translations'], form_translation_snapshot
             )
-            if translations_changed:
+            if manual_translation_changed(data['translations'], form_translation_snapshot):
                 data['translations'] = mark_manual_translations(
-                    data['translations'], source, model.translations
+                    data['translations'],
+                    source,
+                    model.translations,
+                    compared_to=form_translation_snapshot,
                 )
             else:
                 data['translations'] = model.translations or {}
-        if source_changed:
-            data['translations'] = release_stale_manual_translations(
-                data.get('translations', model.translations), source
-            )
-        if source_changed or translations_changed:
+        if source_changed or ('translations' in data and refresh_cleared_fields):
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
@@ -117,6 +118,9 @@ class TourAdmin(ModelView, model=Tour):
     form_excluded_columns = [Tour.duration_nights]
 
     async def on_model_change(self, data, model, is_created, request):
+        for field in TOUR_TRANSLATION_FIELDS:
+            if field in data:
+                data[field] = normalize_text(data[field])
         days = data.get('duration_days')
 
         if days is not None:
@@ -128,26 +132,10 @@ class TourAdmin(ModelView, model=Tour):
         else:
             data['duration_nights'] = None
 
-        changed_fields = set()
-        for field in TOUR_TRANSLATION_FIELDS:
-            if isinstance(data.get(field), str):
-                data[field] = normalize_text(data[field])
-            if field in data and source_value_changed(getattr(model, field, None), data[field]):
-                changed_fields.add(field)
-        request.state.tour_source_changed = is_created or bool(changed_fields)
-        if changed_fields:
-            source = {
-                field: data.get(field, getattr(model, field, None))
-                for field in TOUR_TRANSLATION_FIELDS
-            }
-            for translation in model.translations:
-                hashes = translation.source_hashes or {}
-                translation.manual_fields = [
-                    field
-                    for field in (translation.manual_fields or [])
-                    if field not in changed_fields
-                    and hashes.get(field) == source_field_hash(source.get(field))
-                ]
+        request.state.tour_source_changed = is_created or any(
+            field in data and source_value_changed(getattr(model, field, None), data[field])
+            for field in TOUR_TRANSLATION_FIELDS
+        )
 
     async def after_model_change(self, data, model, is_created, request):
         if request.state.tour_source_changed:

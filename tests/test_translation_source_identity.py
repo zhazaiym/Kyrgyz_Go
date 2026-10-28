@@ -1,16 +1,84 @@
 import asyncio
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
+
+from sqlalchemy import text
 
 from mysite.database.db import SessionLocal
 from mysite.database.models import About
+from mysite.admin.views import LocalizedAdminMixin
 from mysite.translations.content import (
     localized,
-    mark_manual_translations,
     manual_translation_changed,
-    release_stale_manual_translations,
+    mark_manual_translations,
 )
 from mysite.translations.jobs import _translation_is_complete, translate_record
-from mysite.translations.source import source_field_hash, source_value_changed
+from mysite.translations.source import source_field_hash, translation_ready
+from mysite.database.models import Tour
+from mysite.api.tour import get_localized_tour
+
+
+def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
+    from tests.postgres_support import temporary_database
+
+    with temporary_database() as url:
+        script = """
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+import hashlib
+
+config = Config('alembic.ini')
+command.upgrade(config, '20261028_0013')
+engine = create_engine(__import__('os').environ['DATABASE_URL'])
+try:
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO abouts (title, description, experience_years, travelers_count, "
+            "branches_count, destinations_count, routes_count, is_active, translations) "
+            "VALUES (E'Old\\r\\nsource', 'Description', 1, 1, 1, 1, 1, true, "
+            "CAST(:translations AS json))"
+        ), {'translations': '{"en":{"title":"Old translation"}}'})
+        connection.execute(text(
+            "INSERT INTO tours (title, price, price_unit, min_people, tour_type, "
+            "is_active, created_at, updated_at) VALUES "
+            "('Old tour', 1, 'per_person', 1, 'classic', true, now(), now())"
+        ))
+        connection.execute(text(
+            "INSERT INTO tour_translations (tour_id, lang, title) "
+            "VALUES (1, 'en', 'Old tour translation')"
+        ))
+    command.upgrade(config, 'head')
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO rate_limit_counters (key_hash, window_start, request_count) "
+            "VALUES ('legacy-insert', 1, 1)"
+        ))
+        assert connection.scalar(text(
+            "SELECT scope FROM rate_limit_counters WHERE key_hash='legacy-insert'"
+        )) == ''
+        translated = connection.scalar(text("SELECT translations FROM abouts WHERE id=1"))
+        expected = hashlib.md5('Old\\nsource'.encode(), usedforsecurity=False).hexdigest()
+        assert translated['en']['_source_hashes']['title'] == expected
+        assert connection.scalar(text("SELECT title FROM abouts WHERE id=1")) == 'Old\\nsource'
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE abouts SET title = 'New source' WHERE id = 1"))
+        connection.execute(text("UPDATE tours SET title = 'New tour' WHERE id = 1"))
+    command.downgrade(config, '20261028_0013')
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT translations FROM abouts WHERE id=1")) is None
+        assert connection.scalar(text("SELECT title FROM tour_translations WHERE tour_id=1")) == ''
+finally:
+    engine.dispose()
+"""
+        env = {**os.environ, 'DATABASE_URL': url}
+        env.pop('GEMINI_API_KEY', None)
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', script], env=env, capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_translation_recovery_treats_none_as_missing():
@@ -28,85 +96,6 @@ def test_translation_recovery_treats_none_as_missing():
     }
 
     assert not _translation_is_complete(translations, source)
-
-
-def test_translation_display_and_recovery_both_reject_whitespace():
-    source = {'title': 'A tour'}
-    translations = {
-        language: {'title': '   ', '_source_hashes': {'title': source_field_hash(source['title'])}}
-        for language in ('en', 'de', 'zh')
-    }
-
-    assert not _translation_is_complete(translations, source)
-
-
-def test_translation_comparison_normalizes_crlf():
-    assert source_field_hash('line one\r\nline two') == source_field_hash('line one\nline two')
-    assert not source_value_changed('line one\r\nline two', 'line one\nline two')
-
-
-def test_sqladmin_marks_only_changed_translation_fields_and_removes_empty_fields():
-    source = {'title': 'Current title', 'description': 'Current description'}
-    hashes = {field: source_field_hash(value) for field, value in source.items()}
-    existing = {
-        'en': {
-            'title': 'English title',
-            'description': 'English description',
-            '_source_hashes': hashes,
-            '_manual_fields': [],
-        },
-        'de': {
-            'title': 'Deutscher Titel',
-            '_source_hashes': {'title': hashes['title']},
-            '_manual_fields': [],
-        },
-    }
-    incoming = {
-        'en': {'title': 'Edited English title', 'description': 'English description'},
-        'de': {'title': 'Deutscher Titel'},
-    }
-
-    assert manual_translation_changed(incoming, existing)
-    updated = mark_manual_translations(incoming, source, existing)
-
-    assert updated['en']['_manual_fields'] == ['title']
-    assert updated['de']['_manual_fields'] == []
-    assert updated['en']['description'] == 'English description'
-
-    incoming['en']['title'] = ''
-    updated = mark_manual_translations(incoming, source, updated)
-    assert 'title' not in updated['en']
-    assert 'title' not in updated['en']['_source_hashes']
-    assert 'title' not in updated['en']['_manual_fields']
-
-
-def test_old_sqladmin_payload_does_not_mark_stale_translation_as_current():
-    old_source = {'title': 'Before edit', 'description': None}
-    new_source = {'title': 'After edit', 'description': None}
-    existing = mark_manual_translations({'en': {'title': 'Translation of old title'}}, old_source)
-
-    assert not manual_translation_changed(existing, existing)
-    unchanged = mark_manual_translations(existing, new_source, existing)
-    released = release_stale_manual_translations(unchanged, new_source)
-    assert released['en']['_source_hashes']['title'] == source_field_hash('Before edit')
-    assert released['en']['_manual_fields'] == []
-
-
-def test_sqladmin_source_edit_does_not_rehash_unchanged_old_translation():
-    from mysite.admin.views import AboutAdmin
-
-    old_source = {'title': 'Before edit', 'description': None}
-    new_source = {'title': 'After edit', 'description': None}
-    existing = mark_manual_translations({'en': {'title': 'Translation of old title'}}, old_source)
-    model = About(title=old_source['title'], description=None, translations=existing)
-    data = {**new_source, 'translations': existing}
-    request = SimpleNamespace(state=SimpleNamespace())
-
-    asyncio.run(AboutAdmin().on_model_change(data, model, False, request))
-
-    assert request.state.catalogue_source == new_source
-    assert data['translations']['en']['_source_hashes']['title'] == source_field_hash('Before edit')
-    assert data['translations']['en']['_manual_fields'] == []
 
 
 def test_stale_translation_job_does_not_overwrite_manual_translation():
@@ -141,16 +130,156 @@ def test_stale_translation_job_does_not_overwrite_manual_translation():
         assert record.translations['en']['_manual_fields'] == ['title']
 
 
-def test_localized_content_falls_back_when_source_hash_is_stale():
+def test_sqladmin_marks_only_changed_translation_field_as_manual():
+    old_source = {'title': 'Old title', 'description': 'Old description'}
+    source = old_source
+    existing = {
+        language: {
+            'title': f'{old_source["title"]} {language}',
+            'description': f'{old_source["description"]} {language}',
+            '_source_hashes': {
+                field: source_field_hash(value) for field, value in old_source.items()
+            },
+            '_manual_fields': [],
+        }
+        for language in ('en', 'de', 'zh')
+    }
+    incoming = {
+        lang: {field: value for field, value in existing[lang].items() if not field.startswith('_')}
+        for lang in ('en', 'de', 'zh')
+    }
+    incoming['en']['title'] = 'Edited English title'
+
+    marked = mark_manual_translations(incoming, source, existing)
+
+    assert marked['en']['_manual_fields'] == ['title']
+    assert marked['en']['_source_hashes']['title'] == source_field_hash(source['title'])
+    for language in ('en', 'de', 'zh'):
+        for field in ('title', 'description'):
+            if (language, field) != ('en', 'title'):
+                assert marked[language]['_source_hashes'][field] == source_field_hash(
+                    old_source[field]
+                )
+                assert field not in marked[language]['_manual_fields']
+
+
+def test_unchanged_stale_translation_form_does_not_refresh_its_hash():
     source = {'title': 'Current title'}
-    record = About(
-        title=source['title'],
-        translations={
-            'en': {
-                'title': 'Old translation',
-                '_source_hashes': {'title': source_field_hash('Old title')},
-            }
+    old_hash = source_field_hash('Previous title')
+    existing = {'en': {'title': 'Old English title', '_source_hashes': {'title': old_hash}}}
+
+    assert not manual_translation_changed({'en': {'title': 'Old English title'}}, existing)
+    saved = mark_manual_translations({'en': {'title': 'Old English title'}}, source, existing)
+    assert saved['en']['_source_hashes']['title'] == old_hash
+    assert not _translation_is_complete(saved, source)
+
+
+def test_admin_merge_keeps_translation_written_after_form_was_loaded():
+    source = {'title': 'Current title'}
+    current_hash = source_field_hash(source['title'])
+    form_snapshot = {'en': {'title': 'Previous English', '_source_hashes': {'title': current_hash}}}
+    latest = {'en': {'title': 'Worker English', '_source_hashes': {'title': current_hash}}}
+
+    merged = mark_manual_translations(form_snapshot, source, latest, compared_to=form_snapshot)
+
+    assert merged['en']['title'] == 'Worker English'
+    assert merged['en']['_manual_fields'] == []
+
+
+def test_translation_readiness_uses_same_whitespace_and_source_rules():
+    assert not translation_ready('   ', source_field_hash('source'), 'source')
+    assert not translation_ready('translated', source_field_hash('old'), 'source')
+    assert translation_ready('translated', source_field_hash('source'), 'source')
+
+    source = {'title': 'Visible source', 'description': 'Description'}
+    whitespace = {
+        language: {
+            'title': '   ',
+            'description': 'Translated description',
+            '_source_hashes': {field: source_field_hash(value) for field, value in source.items()},
+        }
+        for language in ('en', 'de', 'zh')
+    }
+    record = About(**source, translations=whitespace)
+    assert localized(record, 'en')['title'] == source['title']
+    assert not _translation_is_complete(whitespace, source)
+
+
+def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
+    from mysite.database import models
+
+    marker = 'WhitespaceTourFallback'
+    with SessionLocal() as db:
+        tour = Tour(title=marker, price=10)
+        db.add(tour)
+        db.flush()
+        db.execute(
+            text(
+                'INSERT INTO tour_translations (tour_id, lang, title, source_hashes, manual_fields) '
+                "VALUES (:tour_id, 'en', '   ', CAST(:hashes AS json), '[]')"
+            ),
+            {'tour_id': tour.id, 'hashes': '{"title":"' + source_field_hash(marker) + '"}'},
+        )
+        tour_id = tour.id
+        db.commit()
+        tour = db.get(models.Tour, tour_id)
+        assert get_localized_tour(tour, db, 'en')['title'] == marker
+
+    response = client.get('/tours/', params={'lang': 'en', 'search': marker})
+    assert response.status_code == 200, response.text
+    assert any(item['id'] == tour_id and item['title'] == marker for item in response.json())
+
+
+def test_sqladmin_crlf_is_normalized_before_translation_change_detection():
+    existing = {'en': {'description': 'line one\nline two'}}
+    assert not manual_translation_changed({'en': {'description': 'line one\r\nline two'}}, existing)
+
+
+def test_sqladmin_lf_and_crlf_source_are_equal_and_do_not_schedule_translation():
+    record = About(title='Title', description='line one\nline two')
+    record.translations = {'en': {'title': 'Title en'}}
+    data = {
+        'title': 'Title',
+        'description': 'line one\r\nline two',
+        'translations': record.translations,
+    }
+    request = SimpleNamespace(state=SimpleNamespace())
+
+    asyncio.run(LocalizedAdminMixin.on_model_change(None, data, record, False, request))
+
+    assert data['description'] == 'line one\nline two'
+    assert not hasattr(request.state, 'catalogue_source')
+
+
+def test_stale_manual_field_falls_back_to_source_then_can_be_regenerated():
+    old_source = {'title': 'Old title', 'description': 'Description'}
+    with SessionLocal() as db:
+        record = About(title=old_source['title'], description=old_source['description'])
+        record.translations = mark_manual_translations(
+            {'en': {'title': 'Manual old title'}}, old_source
+        )
+        db.add(record)
+        db.commit()
+        identity = record.id
+        record.title = 'Current title'
+        db.commit()
+
+    with SessionLocal() as db:
+        record = db.get(About, identity)
+        assert localized(record, 'en')['title'] == 'Current title'
+
+    source = {'title': 'Current title', 'description': 'Description'}
+    result = translate_record(
+        About,
+        identity,
+        source,
+        lambda values: {
+            language: {field: f'{value} ({language})' for field, value in values.items()}
+            for language in ('en', 'de', 'zh')
         },
     )
-
-    assert localized(record, 'en')['title'] == source['title']
+    assert result == 'translated'
+    with SessionLocal() as db:
+        record = db.get(About, identity)
+        assert localized(record, 'en')['title'] == 'Current title (en)'
+        assert 'title' not in record.translations['en']['_manual_fields']

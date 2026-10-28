@@ -263,13 +263,13 @@ def _save_message_response(
         preview_event = None
         if intent or s.stage in ('collecting', 'awaiting_confirmation'):
             if preview['complete']:
-                needs_summary = s.stage != 'awaiting_confirmation' or changed or intent
-                s.stage = 'awaiting_confirmation'
-                preview['can_confirm'] = True
-                if needs_summary:
+                if s.stage != 'awaiting_confirmation' or changed or intent:
+                    s.stage = 'awaiting_confirmation'
+                    preview = build_preview(db, s)
                     preview_event = preview
                     summary = _preview_summary(db, preview)
                     answer = summary
+                s.stage = 'awaiting_confirmation'
             else:
                 s.stage = 'collecting'
         if not answer.strip():
@@ -387,10 +387,8 @@ def build_preview(db, s):
         'revision': s.revision,
         'data': state,
         'missing_fields': missing,
-        # Internal callers use this to decide whether the AI has collected a
-        # complete request. Public preview endpoints additionally gate it on stage.
         'complete': not missing,
-        'can_confirm': not missing and s.stage == 'awaiting_confirmation',
+        'can_confirm': s.stage == 'awaiting_confirmation' and not missing,
     }
 
 
@@ -561,16 +559,16 @@ def _remove_service(session_id, client_id, token, kind):
         state.pop(f'{kind}_id', None)
         session.state = state
         session.revision += 1
-        session.stage = 'awaiting_confirmation'
+        session.stage = 'collecting'
         if selection:
             setattr(selection, f'{kind}_id', None)
         preview = build_preview(db, session)
         if preview['complete']:
+            session.stage = 'awaiting_confirmation'
+            preview = build_preview(db, session)
             answer = _preview_summary(db, preview)
         else:
-            session.stage = 'collecting'
             answer = booking_text(state)['service_removed']
-            preview['can_confirm'] = False
         db.add(ChatMessage(session_id=session_id, role='assistant', content=answer))
         db.commit()
         return {
