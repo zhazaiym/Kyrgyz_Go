@@ -1,6 +1,7 @@
 """Index rate-limit counters by scope/account for full password-reset cleanup."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = '20261028_0015'

@@ -6,36 +6,14 @@ from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
-from mysite.database.models import (
-    FAQ,
-    About,
-    AboutSection,
-    Admin,
-    Contact,
-    District,
-    HelicopterImage,
-    HelicopterTour,
-    Hotel,
-    HotelImage,
-    Region,
-    Tour,
-    TourCategory,
-    TourImage,
-    TourProgram,
-    Transport,
-    TransportImage,
-    TravelRequest,
-    Trekking,
-    TrekkingImage,
-    TrekkingProgram,
-)
-from mysite.translations.content import (
-    CONTENT_FIELDS,
-    generate_translations,
-    manual_translation_changed,
-    manual_translation_needs_refresh,
-    mark_manual_translations,
-)
+from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
+                                    HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
+                                    Tour, TourCategory, TourImage, TourProgram, Transport,
+                                    TransportImage, TravelRequest, Trekking, TrekkingImage,
+                                    TrekkingProgram)
+from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
+                                         manual_translation_changed,
+                                         manual_translation_needs_refresh, mark_manual_translations)
 from mysite.translations.jobs import enqueue_translation
 from mysite.translations.source import TOUR_TRANSLATION_FIELDS, normalize_text, source_value_changed
 

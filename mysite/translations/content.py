@@ -7,12 +7,8 @@ from fastapi import Query
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
-from mysite.translations.source import (
-    normalize_text,
-    source_field_hash,
-    source_value_changed,
-    translation_ready,
-)
+from mysite.translations.source import (normalize_text, source_field_hash, source_value_changed,
+                                        translation_ready)
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]

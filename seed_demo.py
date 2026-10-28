@@ -4,30 +4,11 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from mysite.database.db import Base, SessionLocal
-from mysite.database.models import (
-    FAQ,
-    About,
-    AboutSection,
-    Contact,
-    Country,
-    District,
-    HelicopterImage,
-    HelicopterTour,
-    Hotel,
-    HotelImage,
-    Region,
-    Tour,
-    TourCategory,
-    TourImage,
-    TourProgram,
-    TourTranslation,
-    Transport,
-    TransportImage,
-    TravelRequest,
-    Trekking,
-    TrekkingImage,
-    TrekkingProgram,
-)
+from mysite.database.models import (FAQ, About, AboutSection, Contact, Country, District,
+                                    HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
+                                    Tour, TourCategory, TourImage, TourProgram, TourTranslation,
+                                    Transport, TransportImage, TravelRequest, Trekking,
+                                    TrekkingImage, TrekkingProgram)
 from mysite.translations.content import CONTENT_FIELDS
 from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_field_hash
 
