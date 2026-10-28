@@ -367,6 +367,88 @@ def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues
     assert enqueued[0][2] == source
 
 
+def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_update(
+    client, admin_headers, monkeypatch
+):
+    import json
+
+    from sqlalchemy.orm import Session
+
+    from mysite.database.models import FAQ
+    from mysite.translations.source import source_field_hash
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    source = {'question': 'Race question', 'answer': 'Race answer'}
+    old_translation = 'Older worker translation'
+    with SessionLocal() as db:
+        record = FAQ(
+            **source,
+            translations={
+                'en': {
+                    'question': old_translation,
+                    '_source_hashes': {'question': source_field_hash(source['question'])},
+                }
+            },
+        )
+        db.add(record)
+        db.commit()
+        identity = record.id
+
+    edit_path = f'/admin/faq/edit/{identity}'
+    assert client.get(edit_path).status_code == 200
+    latest_translation = 'New worker translation'
+    original_refresh = Session.refresh
+    worker_write = []
+
+    def update_worker_before_locked_refresh(session, instance, *args, **kwargs):
+        if (
+            isinstance(instance, FAQ)
+            and instance.id == identity
+            and kwargs.get('with_for_update')
+            and not worker_write
+        ):
+            with SessionLocal() as worker_db:
+                row = worker_db.get(FAQ, identity)
+                row.translations = {
+                    'en': {
+                        'question': latest_translation,
+                        '_source_hashes': {'question': source_field_hash(source['question'])},
+                    }
+                }
+                worker_db.commit()
+            worker_write.append(True)
+        return original_refresh(session, instance, *args, **kwargs)
+
+    monkeypatch.setattr(Session, 'refresh', update_worker_before_locked_refresh)
+    enqueued = []
+    monkeypatch.setattr(
+        'mysite.admin.views.enqueue_translation', lambda *args: enqueued.append(args)
+    )
+    stale_form = {
+        'en': {
+            'question': '',
+            '_source_hashes': {'question': source_field_hash(source['question'])},
+        }
+    }
+    response = client.post(
+        edit_path,
+        data={**source, 'is_active': 'y', 'translations': json.dumps(stale_form), 'save': 'Save'},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in (302, 303), response.text
+    assert worker_write == [True]
+    assert enqueued == []
+    with SessionLocal() as db:
+        saved = db.get(FAQ, identity).translations['en']
+        assert saved['question'] == latest_translation
+        assert saved['_manual_fields'] == []
+
+
 def test_tour_rest_put_only_normalizing_line_endings_keeps_translation(
     client, admin_headers, customer_headers
 ):

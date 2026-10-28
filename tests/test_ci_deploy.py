@@ -157,6 +157,25 @@ def test_deploy_requires_explicit_valid_admin_allowlist(value, expected, error):
         assert [str(network) for network in module.validate_admin_allowlist(rendered)] == expected
 
 
+@pytest.mark.parametrize(
+    'network',
+    (
+        '2001::/32',
+        '2001:0:1::/48',
+        '64:ff9b::/96',
+        '64:ff9b:1::/48',
+        '2002:1::/32',
+        '2002:c000:0204::/48',
+        '::ffff:0:0/96',
+        '::ffff:c000:204/128',
+    ),
+)
+def test_deploy_rejects_ipv6_transition_and_translation_allowlists(network):
+    rendered = json.dumps({'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': network}}}})
+    with pytest.raises(RuntimeError, match='IPv6 transition or translation'):
+        load_deployment().validate_admin_allowlist(rendered)
+
+
 @pytest.mark.skipif(shutil.which('docker') is None, reason='Docker Compose CLI unavailable')
 @pytest.mark.parametrize(
     ('content', 'override', 'expected', 'error'),
@@ -352,6 +371,61 @@ def test_activation_override_preserves_allowlist_and_validates_after_write(monke
     module.install_override('kyrgyzgo-api:manual-123', expected_networks)
 
     assert calls == ['resolved-config', ('config', '--quiet')]
+
+
+@pytest.mark.skipif(shutil.which('docker') is None, reason='Docker Compose CLI unavailable')
+def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypatch, tmp_path):
+    module = load_deployment()
+    root = tmp_path / 'server'
+    root.mkdir()
+    override = tmp_path / 'deploy.override.yml'
+    (root / '.env').write_text('ADMIN_ALLOWED_IPS=198.51.100.44/32\n', encoding='utf-8')
+    (root / 'docker-compose.yml').write_text(
+        'services:\n'
+        '  api:\n'
+        '    image: kyrgyzgo-api:old\n'
+        '    env_file: [.env]\n'
+        '    networks: [kyrgyzgo_network]\n'
+        'networks:\n'
+        '  kyrgyzgo_network:\n'
+        '    external: true\n'
+        '    name: kyrgyz_go_kyrgyzgo_network\n',
+        encoding='utf-8',
+    )
+    override.write_text(
+        'services:\n  api:\n    environment:\n      ADMIN_ALLOWED_IPS: 192.0.2.10/32\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(module, 'ROOT', root)
+    monkeypatch.setattr(module, 'OVERRIDE', override)
+    calls = []
+
+    def docker_command(arguments):
+        assert arguments[:3] == ['sudo', '-n', 'docker']
+        return ['docker', *arguments[3:]]
+
+    def real_output(arguments, **options):
+        calls.append(('config', arguments[-3:]))
+        assert '192.0.2.10/32' in override.read_text(encoding='utf-8') if len(calls) > 1 else True
+        return subprocess.check_output(docker_command(arguments), **options)
+
+    def real_run(arguments, **options):
+        calls.append(('run', arguments[-2:]))
+        return subprocess.run(docker_command(arguments), **options)
+
+    monkeypatch.setattr(module, 'output', real_output)
+    monkeypatch.setattr(module, 'run', real_run)
+
+    current = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+    assert [str(network) for network in current] == ['192.0.2.10/32']
+    module.install_override('kyrgyzgo-api:manual-test', current)
+    resolved = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+
+    assert resolved == current
+    assert calls[0][0] == 'config'
+    assert calls[1][0] == 'config'
+    assert calls[2][0] == 'run'
+    assert calls[3][0] == 'config'
 
 
 def test_github_actions_runs_ci_without_deployment():

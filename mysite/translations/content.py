@@ -7,8 +7,12 @@ from fastapi import Query
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
-from mysite.translations.source import (normalize_text, source_field_hash, source_value_changed,
-                                        translation_ready)
+from mysite.translations.source import (
+    normalize_text,
+    source_field_hash,
+    source_value_changed,
+    translation_ready,
+)
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
@@ -97,6 +101,12 @@ def mark_manual_translations(translations, source, existing=None, *, compared_to
             value = normalize_text(raw_value)
             old_value = normalize_text(baseline.get(field))
             if not value.strip():
+                current_value = normalize_text(previous.get(field))
+                # A worker may have committed a newer translation after the
+                # form's baseline was read. An empty stale form value must not
+                # erase that concurrent update.
+                if current_value != old_value:
+                    continue
                 previous.pop(field, None)
                 hashes.pop(field, None)
                 manual.discard(field)
@@ -146,7 +156,7 @@ def manual_translation_changed(incoming, existing):
     return False
 
 
-def manual_translation_needs_refresh(incoming, existing):
+def manual_translation_needs_refresh(incoming, existing, latest=None):
     """Detect explicit empty values used to clear translations in SQLAdmin."""
     if isinstance(incoming, str):
         try:
@@ -156,17 +166,27 @@ def manual_translation_needs_refresh(incoming, existing):
     if not isinstance(incoming, dict):
         return False
     existing = existing if isinstance(existing, dict) else {}
+    latest = latest if isinstance(latest, dict) else existing
     for language in ('en', 'de', 'zh'):
         values = incoming.get(language)
         previous = existing.get(language)
+        current = latest.get(language)
         if not isinstance(values, dict) or not isinstance(previous, dict):
             continue
+        current = current if isinstance(current, dict) else {}
         for field, value in values.items():
             if not isinstance(field, str):
                 continue
             if field.startswith('_'):
                 continue
-            if isinstance(value, str) and not normalize_text(value).strip() and previous.get(field):
+            baseline_value = normalize_text(previous.get(field))
+            current_value = normalize_text(current.get(field))
+            if (
+                isinstance(value, str)
+                and not normalize_text(value).strip()
+                and isinstance(baseline_value, str)
+                and current_value == baseline_value
+            ):
                 return True
     return False
 

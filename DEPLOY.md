@@ -41,6 +41,13 @@ if all administrators share one allowlisted VPN address, the existing admin
 login limiter permits at most **5 attempts/minute** from that address. Do not
 allowlist arbitrary public addresses.
 
+The manual deployment helper carries this effective value into its generated
+`/home/ubuntu/kyrgyzgo-deploy.override.yml`. After the first deployment, that
+override is authoritative: change `ADMIN_ALLOWED_IPS` there on the server, then
+run the manual deployment so the helper validates and preserves the new value.
+Editing `.env` alone will not override a value already set in that Compose
+override.
+
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -81,6 +88,11 @@ commands. The manual deploy script refuses schema changes and reports
 migration, take a database backup, apply `alembic upgrade head`, then deploy the
 matching image. This release adds migrations 0014 through 0016; do not rely on
 the application container to apply them automatically.
+The repository no longer uses GitHub Actions deployment secrets. Remove the
+old `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, and `DEPLOY_USER`
+repository secrets. If the old CI public key is still in the server's
+`authorized_keys`, remove that CI-only key while preserving the separate manual
+deployment key.
 Pause catalogue writes through REST and SQLAdmin during this maintenance window.
 Apply the migrations and immediately activate the matching image before reopening
 catalogue writes, so an old application cannot store raw CRLF hashes after normalization.
