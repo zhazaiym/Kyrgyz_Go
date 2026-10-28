@@ -287,9 +287,36 @@ pytest -q -ra
 
 ```text
 pytest -q
-514 passed in 90.96s
+514 passed in 197.70s (после синхронизации форматирования с origin/main)
 ```
 
 `ruff check` на изменённых Python-файлах: `All checks passed!`.
 `git diff --check`: без ошибок.
-Форматирование сохранено в принятом соседним кодом стиле; `ruff format` к целым файлам не применялся.
+
+### Проверка main на EC2 и исправление CI после 7577ff3
+
+На EC2 получен `7577ff3` fast-forward, без изменения работающего образа.
+Полный pytest в изолированном контейнере, с настоящим Compose CLI без Docker socket:
+
+```text
+514 passed in 145.33s (0:02:25)
+```
+
+GitHub run `40680389295` завершился на шаге Lint Python до тестов.
+Локально воспроизведена причина: `python -m scripts.format_code --check`
+нашёл 11 ранее не приведённых к общему стилю файлов. Штатный форматтер
+применён; исполняемые выражения не менялись. Сравнение AST всех 138 Python-файлов
+с нормализацией порядка импортов подтвердило эквивалентность.
+
+Проверки после оформления:
+
+- `ruff check .`: All checks passed.
+- `python -m scripts.format_code --check`: 0 files need formatting.
+- `python -m bandit -r mysite main.py -ll`: нет находок Medium/High.
+- `python -m pip_audit -r requirements.txt --progress-spinner off`: No known vulnerabilities found.
+- `git diff --check`: без ошибок.
+
+Новых исправлений бизнес-логики в этом follow-up нет. Полный pytest выше
+выполнен до оформления; эквивалентность после оформления проверена AST.
+Рабочий API остаётся `kyrgyzgo-api:main-edefb05`, healthy, без перезапусков.
+Ручной релиз, настройка allowlist и удаление старых доступов не выполнялись.

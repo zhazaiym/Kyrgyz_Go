@@ -9,12 +9,8 @@ from sqlalchemy.orm import Session, object_session
 
 from mysite.database.db import Base, SessionLocal
 from mysite.database.models import Tour, TourTranslation
-from mysite.translations.source import (
-    TOUR_TRANSLATION_FIELDS,
-    source_field_hash,
-    source_value_changed,
-    translation_ready,
-)
+from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, source_field_hash,
+                                        source_value_changed, translation_ready)
 
 logger = logging.getLogger(__name__)
 capacity = BoundedSemaphore(2)
