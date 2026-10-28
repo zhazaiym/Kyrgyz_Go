@@ -47,6 +47,27 @@ def offline_catalogue_translations(monkeypatch):
             for lang in ('en', 'de', 'zh')
         },
     )
+    from mysite.translations.jobs import translate_record
+
+    monkeypatch.setattr(
+        'mysite.translations.jobs.enqueue_translation',
+        lambda entity, identity, source, translator: (
+            translate_record(entity, identity, source, translator) == 'translated'
+        ),
+    )
+    monkeypatch.setattr(
+        'mysite.admin.views.enqueue_translation',
+        lambda entity, identity, source, translator: (
+            translate_record(entity, identity, source, translator) == 'translated'
+        ),
+    )
+    monkeypatch.setattr(
+        'mysite.api.tour.translate_tour',
+        lambda source: {
+            lang: {key: f'{value} {lang}' if value else value for key, value in source.items()}
+            for lang in ('en', 'de', 'zh')
+        },
+    )
     yield
     setting.cache_clear()
     validate_resource_settings.cache_clear()

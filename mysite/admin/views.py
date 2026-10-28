@@ -1,13 +1,32 @@
 from sqladmin import ModelView
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
-from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
-                                    HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
-                                    Tour, TourCategory, TourImage, TourProgram, Transport,
-                                    TransportImage, TravelRequest, Trekking, TrekkingImage,
-                                    TrekkingProgram)
+from mysite.database.models import (
+    FAQ,
+    About,
+    AboutSection,
+    Admin,
+    Contact,
+    District,
+    HelicopterImage,
+    HelicopterTour,
+    Hotel,
+    HotelImage,
+    Region,
+    Tour,
+    TourCategory,
+    TourImage,
+    TourProgram,
+    Transport,
+    TransportImage,
+    TravelRequest,
+    Trekking,
+    TrekkingImage,
+    TrekkingProgram,
+)
 from mysite.translations.content import CONTENT_FIELDS, generate_translations
 from mysite.translations.jobs import enqueue_translation
 
@@ -23,6 +42,7 @@ class LocalizedAdminMixin:
         )
         if source_changed and not manual_translation:
             source = {field: data.get(field, getattr(model, field, None)) for field in fields}
+            data['translations'] = {}
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
@@ -86,6 +106,14 @@ class TourAdmin(ModelView, model=Tour):
             field in data and data[field] != getattr(model, field, None)
             for field in TRANSLATED_FIELDS
         )
+        if request.state.tour_source_changed and model.id is not None:
+            session = object_session(model)
+            if session is not None:
+                from mysite.database.models import TourTranslation
+
+                session.query(TourTranslation).filter_by(tour_id=model.id).delete(
+                    synchronize_session=False
+                )
 
     async def after_model_change(self, data, model, is_created, request):
         if request.state.tour_source_changed:
@@ -101,7 +129,6 @@ class TourAdmin(ModelView, model=Tour):
             if tour is None:
                 return
             source = {field: getattr(tour, field) for field in TRANSLATED_FIELDS}
-            db.commit()
         enqueue_translation(Tour, tour_id, source, translate_tour)
 
 

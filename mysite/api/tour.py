@@ -13,8 +13,12 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.db import get_db
 from mysite.database.models import Country, Tour, TourCategory, TourTranslation
-from mysite.database.schema import (TourDetailSchema, TourInputSchema, TourOutSchema,
-                                    TourUpdateSchema)
+from mysite.database.schema import (
+    TourDetailSchema,
+    TourInputSchema,
+    TourOutSchema,
+    TourUpdateSchema,
+)
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
@@ -152,6 +156,10 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         db.flush()
 
         if any(field in data for field in TRANSLATED_FIELDS):
+            db.query(TourTranslation).filter(TourTranslation.tour_id == tour_db.id).delete(
+                synchronize_session=False
+            )
+            db.flush()
             try_save_translations(tour_db, db)
 
         db.commit()

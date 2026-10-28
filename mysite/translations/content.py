@@ -60,4 +60,5 @@ def update_translations(record):
     fields = CONTENT_FIELDS[record.__tablename__]
     state = inspect(record)
     if state.pending or any(state.attrs[field].history.has_changes() for field in fields):
+        record.translations = {}
         schedule_translation(record, fields, generate_translations)

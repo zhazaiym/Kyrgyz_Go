@@ -219,6 +219,7 @@ class ResourceLimitsMiddleware:
                 self.http_active -= 1
 
     async def websocket(self, scope, receive, send, address):
+        address = client_network(address)
         with self.lock:
             admitted = self.ws_active < setting('WS_MAX_CONNECTIONS') and self.ws_clients.get(
                 address, 0

@@ -1,20 +1,21 @@
 """Queue catalogue translations after commit, without holding a request DB session."""
 
 import logging
-from queue import Full, Queue
+from queue import Queue
 from threading import BoundedSemaphore, Lock, Thread
 
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session, object_session
 
-from mysite.database.db import SessionLocal
+from mysite.database.db import Base, SessionLocal
 from mysite.database.models import Tour, TourTranslation
 
 logger = logging.getLogger(__name__)
 capacity = BoundedSemaphore(2)
-translation_queue = Queue(maxsize=512)
+translation_queue = Queue()
 _worker_lock = Lock()
 _workers_started = False
+_pending_jobs = {}
 
 
 def schedule_translation(record, fields, translator):
@@ -63,21 +64,138 @@ def enqueue_translation(entity, identity, source, translator):
                     daemon=True,
                 ).start()
             _workers_started = True
-    try:
-        translation_queue.put((entity, identity, source, translator), timeout=0.1)
-        return True
-    except Full:
-        logger.error('Catalogue translation queue is full; existing translations were retained')
-        return False
+    key = (entity, identity)
+    with _worker_lock:
+        if key in _pending_jobs:
+            _pending_jobs[key] = (source, translator)
+            return True
+        _pending_jobs[key] = (source, translator)
+        translation_queue.put_nowait(key)
+    return True
 
 
 def _translation_worker():
     while True:
         job = translation_queue.get()
         try:
-            translate_record(*job, wait_for_capacity=True)
+            with _worker_lock:
+                pending = _pending_jobs.pop(job, None)
+            if pending is not None:
+                source, translator = pending
+                translate_record(job[0], job[1], source, translator, wait_for_capacity=True)
         finally:
             translation_queue.task_done()
+
+
+def _translation_is_complete(translations, source):
+    if not any(source.values()):
+        return True
+    for language in ('en', 'de', 'zh'):
+        values = translations.get(language) if isinstance(translations, dict) else None
+        if not isinstance(values, dict):
+            return False
+        for field, original in source.items():
+            if original not in (None, '') and not str(values.get(field, '')).strip():
+                return False
+    return True
+
+
+def _valid_translation_result(translated, source):
+    if not isinstance(translated, dict):
+        return {}
+    allowed_fields = set(source)
+    clean = {}
+    for language in ('en', 'de', 'zh'):
+        values = translated.get(language)
+        if not isinstance(values, dict):
+            continue
+        fields = {
+            field: value
+            for field, value in values.items()
+            if field in allowed_fields and isinstance(value, str)
+        }
+        if fields:
+            clean[language] = fields
+    return clean
+
+
+def recover_missing_translations(batch_size=100):
+    """Requeue missing translations after restarts; stale text is never served meanwhile."""
+    from mysite.translations.content import CONTENT_FIELDS, generate_translations
+
+    entities = {
+        mapper.class_.__tablename__: mapper.class_
+        for mapper in Base.registry.mappers
+        if hasattr(mapper.class_, '__tablename__')
+    }
+    queued = 0
+    for table_name, fields in CONTENT_FIELDS.items():
+        entity = entities.get(table_name)
+        if entity is None or entity is Tour:
+            continue
+        last_id = 0
+        while True:
+            with SessionLocal() as db:
+                records = (
+                    db.query(entity)
+                    .filter(entity.id > last_id)
+                    .order_by(entity.id)
+                    .limit(batch_size)
+                    .all()
+                )
+                batch = [
+                    (
+                        record.id,
+                        {field: getattr(record, field) for field in fields},
+                        record.translations,
+                    )
+                    for record in records
+                ]
+            if not batch:
+                break
+            for identity, source, translations in batch:
+                if not _translation_is_complete(translations, source):
+                    queued += enqueue_translation(entity, identity, source, generate_translations)
+            last_id = batch[-1][0]
+
+    last_id = 0
+    while True:
+        with SessionLocal() as db:
+            tours = (
+                db.query(Tour).filter(Tour.id > last_id).order_by(Tour.id).limit(batch_size).all()
+            )
+            identities = [tour.id for tour in tours]
+            sources = {
+                tour.id: {
+                    field: getattr(tour, field)
+                    for field in ('title', 'description', 'included', 'excluded')
+                }
+                for tour in tours
+            }
+            rows = (
+                db.query(TourTranslation).filter(TourTranslation.tour_id.in_(identities)).all()
+                if identities
+                else []
+            )
+            translated = {}
+            for row in rows:
+                translated.setdefault(row.tour_id, {})[row.lang] = {
+                    field: getattr(row, field)
+                    for field in ('title', 'description', 'included', 'excluded')
+                }
+        if not tours:
+            break
+        for identity, source in sources.items():
+            if not _translation_is_complete(translated.get(identity, {}), source):
+                queued += enqueue_translation(Tour, identity, source, _translate_tour)
+        last_id = identities[-1]
+    return queued
+
+
+def _translate_tour(source):
+    from mysite.translations.translator import translate_tour
+
+    return translate_tour(source)
 
 
 def translate_record(entity, identity, source, translator, *, wait_for_capacity=False):
@@ -85,8 +203,16 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
         logger.warning('Catalogue translation capacity exhausted; keeping stored translations')
         return 'busy'
     try:
-        # No database session is open while the external service is called.
-        translated = translator(source)
+        # Skip obsolete queued work before paying for an external model call.
+        with SessionLocal() as db:
+            record = db.get(entity, identity)
+            if record is None:
+                return 'missing'
+            if any(getattr(record, key) != value for key, value in source.items()):
+                return 'source_changed'
+        translated = _valid_translation_result(translator(source), source)
+        if not translated:
+            return 'invalid_translation'
         with SessionLocal() as db:
             record = db.get(entity, identity, with_for_update=True)
             if record is None:

@@ -1,8 +1,10 @@
 import ast
+import configparser
 import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -213,8 +215,44 @@ def deployed_schema(container):
 
 
 def candidate_schema(source):
+    source = Path(source)
+    config_path = source / 'alembic.ini'
+    config = configparser.ConfigParser(interpolation=None)
+    if not config.read(config_path, encoding='utf-8') or not config.has_section('alembic'):
+        raise ValueError('alembic.ini has no [alembic] configuration')
+    values = config['alembic']
+    base = config_path.parent
+
+    def resolve(value):
+        value = value.replace('%(here)s', str(base))
+        path = Path(value)
+        return path if path.is_absolute() else base / path
+
+    script_location = resolve(values.get('script_location', 'alembic'))
+    configured = values.get('version_locations')
+    if configured:
+        separator = values.get('path_separator')
+        if separator == 'os':
+            locations = configured.split(os.pathsep)
+        elif separator == 'space' or not separator:
+            locations = shlex.split(configured)
+        elif separator == 'newline':
+            locations = configured.splitlines()
+        else:
+            locations = configured.split(separator)
+        version_paths = [resolve(item.strip()) for item in locations if item.strip()]
+    else:
+        version_paths = [script_location / 'versions']
+
+    paths = []
+    recursive = values.getboolean('recursive_version_locations', fallback=False)
+    for directory in version_paths:
+        if not directory.is_dir():
+            raise ValueError(f'Alembic version directory does not exist: {directory}')
+        paths.extend(directory.rglob('*.py') if recursive else directory.glob('*.py'))
+
     revisions = {}
-    for path in (Path(source) / 'alembic' / 'versions').glob('*.py'):
+    for path in paths:
         values = {}
         tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
         for node in tree.body:
@@ -297,7 +335,15 @@ def deploy(revision, source):
         state_file = backup / 'deployment-state.json'
         state_file.write_text(json.dumps(state, indent=2))
         try:
-            require_same_schema(deployed_schema(previous_container), candidate_schema(release))
+            current_schema = deployed_schema(previous_container)
+            candidate = candidate_schema(release)
+        except Exception as exc:
+            state['status'] = 'schema_check_failed'
+            state['schema_check_error'] = f'{type(exc).__name__}: {exc}'[:500]
+            state_file.write_text(json.dumps(state, indent=2))
+            raise
+        try:
+            require_same_schema(current_schema, candidate)
         except RuntimeError:
             state['status'] = 'migration_required'
             state_file.write_text(json.dumps(state, indent=2))

@@ -59,6 +59,21 @@ def test_deployment_accepts_source_files():
         assert len(module.validate_members(bundle)) == 1
 
 
+def test_candidate_schema_uses_alembic_configured_version_locations(tmp_path):
+    module = load_deployment()
+    versions = tmp_path / 'custom' / 'versions'
+    versions.mkdir(parents=True)
+    (versions / '001.py').write_text("revision = 'head'\ndown_revision = None\n", encoding='utf-8')
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = %(here)s/custom\n'
+        'version_locations = %(here)s/custom/versions\n'
+        'path_separator = os\n',
+        encoding='utf-8',
+    )
+
+    assert module.candidate_schema(tmp_path) == ['head']
+
+
 @pytest.mark.parametrize(
     'command', ['deploy main', 'deploy ../bad', 'sh', 'deploy ' + 'a' * 40 + '; whoami']
 )

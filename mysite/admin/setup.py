@@ -6,30 +6,69 @@ from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
 
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
-from mysite.api.rate_limit import enforce_login_failure, enforce_login_ip_limit
+from mysite.api.rate_limit import login_attempt_allowed, record_login_failure, record_login_success
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin as AdminModel
 
-from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ChatRequestAdmin, ContactAdmin,
-                    DistrictAdmin, FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
-                    HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
-                    TourProgramAdmin, TransportAdmin, TransportImageAdmin, TrekkingAdmin,
-                    TrekkingImageAdmin, TrekkingProgramAdmin)
+from .views import (
+    AboutAdmin,
+    AboutSectionAdmin,
+    AdminAdmin,
+    ChatRequestAdmin,
+    ContactAdmin,
+    DistrictAdmin,
+    FAQAdmin,
+    HelicopterImageAdmin,
+    HelicopterTourAdmin,
+    HotelAdmin,
+    HotelImageAdmin,
+    RegionAdmin,
+    TourAdmin,
+    TourCategoryAdmin,
+    TourImageAdmin,
+    TourProgramAdmin,
+    TransportAdmin,
+    TransportImageAdmin,
+    TrekkingAdmin,
+    TrekkingImageAdmin,
+    TrekkingProgramAdmin,
+)
 
 
 class AdminAuthBackend(AuthenticationBackend):
     @staticmethod
     def login_identity(request, username, password):
-        enforce_login_ip_limit('admin-login', request, max_requests=20, window_seconds=60)
         with SessionLocal() as db:
             admin = db.query(AdminModel).filter(AdminModel.username == username).first()
             admin_id = admin.id if admin else None
+            account_key = (
+                f'admin:{admin_id}'
+                if admin_id is not None
+                else (f'unknown:{username.strip().casefold()}')
+            )
             is_active = bool(admin and admin.is_active)
             password_hash = admin.hashed_password if admin else dummy_admin_hash
+            allowed = login_attempt_allowed(
+                db,
+                'admin-login',
+                request,
+                account_key,
+                ip_limit=20,
+                account_limit=5,
+                window_seconds=60,
+            )
+        if not allowed:
+            return None
         valid = verify_password(password, password_hash)
         if not admin_id or not valid:
-            enforce_login_failure('admin-login', username, max_requests=5, window_seconds=60)
+            record_login_failure(
+                'admin-login', request, account_key, ip_limit=20, account_limit=5, window_seconds=60
+            )
             return None
+        if is_active:
+            record_login_success(
+                'admin-login', request, account_key, ip_limit=20, window_seconds=60
+            )
         return admin_id if is_active else None
 
     async def login(self, request: Request) -> bool:

@@ -4,11 +4,30 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from mysite.database.db import SessionLocal
-from mysite.database.models import (FAQ, About, AboutSection, Contact, Country, District,
-                                    HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
-                                    Tour, TourCategory, TourImage, TourProgram, TourTranslation,
-                                    Transport, TransportImage, TravelRequest, Trekking,
-                                    TrekkingImage, TrekkingProgram)
+from mysite.database.models import (
+    FAQ,
+    About,
+    AboutSection,
+    Contact,
+    Country,
+    District,
+    HelicopterImage,
+    HelicopterTour,
+    Hotel,
+    HotelImage,
+    Region,
+    Tour,
+    TourCategory,
+    TourImage,
+    TourProgram,
+    TourTranslation,
+    Transport,
+    TransportImage,
+    TravelRequest,
+    Trekking,
+    TrekkingImage,
+    TrekkingProgram,
+)
 
 
 def seed_demo(db):
@@ -470,26 +489,17 @@ def seed_demo(db):
             .filter(TravelRequest.email.in_((request_email, old_request_email)))
             .all()
         )
-        request = next(
-            (record for record in requests if record.email == request_email),
-            requests[0] if requests else None,
-        )
-        if request is None:
+        if not requests:
             request = TravelRequest(email=request_email)
+            request.name = f'ТЕСТ: Заявка {number}'
+            request.phone = f'+1 202-555-01{number}'
+            request.travel_date = date(2030, 6, 1) + timedelta(days=index - 1)
+            request.duration_days = 1 + index % 7
+            request.travelers_count = 1 + index % 6
+            request.destination = f'ТЕСТ: Маршрут {number}'
+            request.message = 'ТЕСТ: Демонстрационная заявка. Не связываться и не бронировать.'
             db.add(request)
             created += 1
-        else:
-            request.email = request_email
-            for duplicate in requests:
-                if duplicate is not request:
-                    db.delete(duplicate)
-        request.name = f'ТЕСТ: Заявка {number}'
-        request.phone = f'+1 202-555-01{number}'
-        request.travel_date = date(2030, 6, 1) + timedelta(days=index - 1)
-        request.duration_days = 1 + index % 7
-        request.travelers_count = 1 + index % 6
-        request.destination = f'ТЕСТ: Маршрут {number}'
-        request.message = 'ТЕСТ: Демонстрационная заявка. Не связываться и не бронировать.'
 
     for model, image_model, foreign_key, section in [
         (Tour, TourImage, 'tour_id', 'tour'),

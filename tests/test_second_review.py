@@ -290,7 +290,7 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
 
 
 @pytest.mark.parametrize('admin', [False, True])
-def test_bad_logins_from_another_ip_cannot_lock_out_the_account(
+def test_account_lockout_blocks_untrusted_ips_but_allows_a_trusted_ip(
     client, admin_headers, monkeypatch, admin
 ):
     account, email = register(client)
@@ -302,12 +302,13 @@ def test_bad_logins_from_another_ip_cannot_lock_out_the_account(
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
         TestClient(app, client=('198.51.100.131', 1)) as owner,
     ):
+        password = 'StrongAdminPassword123!' if admin else PASSWORD
+        assert owner.post(route, json={**identity, 'password': password}).status_code == 200
         for _ in range(attempts):
             assert (
                 attacker.post(route, json={**identity, 'password': 'incorrect'}).status_code == 401
             )
-        assert attacker.post(route, json={**identity, 'password': 'incorrect'}).status_code == 429
-        password = 'StrongAdminPassword123!' if admin else PASSWORD
+        assert attacker.post(route, json={**identity, 'password': password}).status_code == 401
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
 
 

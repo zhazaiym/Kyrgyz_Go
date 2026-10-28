@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 
 from mysite.api.client_auth import authenticate_client, current_client, issue_token
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import (enforce_login_failure, enforce_login_ip_limit,
-                                   enforce_request_limits)
+from mysite.api.rate_limit import enforce_request_limits
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
@@ -94,13 +93,7 @@ def register(data: RegisterInput, request: Request, db: Session = Depends(get_db
 @router.post('/login')
 def login(data: LoginInput, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(data.email)
-    enforce_login_ip_limit('client-login', request, max_requests=30, window_seconds=60)
-    try:
-        client = authenticate_client(db, email, data.password, email_only=True)
-    except HTTPException as exc:
-        if exc.status_code == 401:
-            enforce_login_failure('client-login', email, max_requests=8, window_seconds=60)
-        raise
+    client = authenticate_client(db, email, data.password, email_only=True, request=request)
     profile = db.query(ClientProfile).filter(ClientProfile.client_id == client.id).first()
 
     result = issue_token(db, client)

@@ -1,5 +1,6 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -14,11 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from mysite.admin.setup import setup_admin
 from mysite.api.about import about_router
 from mysite.api.about_section import about_section_router
+
 # ADMIN
 from mysite.api.admin import admin_router
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_ws import router as chat_ws_router
+
 # NEW AI CHAT
 from mysite.api.client_auth import router as client_auth_router
 from mysite.api.contact import contact_router
@@ -36,6 +39,7 @@ from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
+
 # OLD KYRGYZGO API
 from mysite.api.tour_category import category_router
 from mysite.api.tour_image import tour_image_router
@@ -48,17 +52,31 @@ from mysite.api.trekking import trekking_router
 from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 
+logger = logging.getLogger(__name__)
+
 
 # FASTAPI
 @asynccontextmanager
 async def lifespan(app):
     cleanup = asyncio.create_task(token_cleanup_loop())
+    from mysite.translations.jobs import recover_missing_translations
+
+    async def recover_translations():
+        try:
+            await asyncio.to_thread(recover_missing_translations)
+        except Exception:
+            logger.exception('Could not queue missing catalogue translations')
+
+    translation_recovery = asyncio.create_task(recover_translations())
     try:
         yield
     finally:
         cleanup.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup
+        translation_recovery.cancel()
+        with suppress(asyncio.CancelledError):
+            await translation_recovery
 
 
 validate_resource_settings()
