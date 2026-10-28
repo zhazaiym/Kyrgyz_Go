@@ -73,11 +73,14 @@ created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
 
-The deployment workflow refuses schema changes and reports `migration_required`
-before building or replacing the running image. Review the migration, take a
-database backup, apply `alembic upgrade head` using the project deployment
-procedure, then deploy the matching image. This release adds migrations 0014
-through 0016; do not rely on the application container to apply them automatically.
+GitHub Actions runs checks and tests only; it never connects to EC2 or deploys.
+Production updates are started manually by an administrator using
+`scripts/deploy.ps1` from a workstation or the server's documented Docker
+commands. The manual deploy script refuses schema changes and reports
+`migration_required` before building or replacing the running image. Review the
+migration, take a database backup, apply `alembic upgrade head`, then deploy the
+matching image. This release adds migrations 0014 through 0016; do not rely on
+the application container to apply them automatically.
 Pause catalogue writes through REST and SQLAdmin during this maintenance window.
 Apply the migrations and immediately activate the matching image before reopening
 catalogue writes, so an old application cannot store raw CRLF hashes after normalization.
@@ -124,8 +127,8 @@ Create an administrator interactively after the API starts:
 docker compose exec api python create_admin.py
 ```
 
-For updates, back up PostgreSQL, update the source, then run
-`docker compose up --build -d`. Stop the API with `docker compose down`.
+For manual updates, back up PostgreSQL, update the source, then run
+`docker compose up --build -d` when the server can handle a build. Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
 requires an external PostgreSQL database.
 
