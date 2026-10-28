@@ -24,6 +24,7 @@ def _cleanup_database():
 atexit.register(_cleanup_database)
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-isolated-tests')
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used-for-network-calls')
+os.environ['ADMIN_COOKIE_SECURE'] = 'false'
 
 command.upgrade(Config('alembic.ini'), 'head')
 
@@ -34,9 +35,10 @@ from mysite.database.models import Admin
 
 @pytest.fixture(autouse=True)
 def offline_catalogue_translations(monkeypatch):
-    from mysite.api.resource_limits import setting
+    from mysite.api.resource_limits import setting, validate_resource_settings
 
     setting.cache_clear()
+    validate_resource_settings.cache_clear()
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'false')
     monkeypatch.setattr(
         'mysite.translations.content.translate_fields',
@@ -47,6 +49,7 @@ def offline_catalogue_translations(monkeypatch):
     )
     yield
     setting.cache_clear()
+    validate_resource_settings.cache_clear()
 
 
 @pytest.fixture(scope='session')

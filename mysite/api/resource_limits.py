@@ -13,9 +13,24 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
+from mysite.api.network_identity import client_network
 
-@lru_cache(maxsize=32)
-def setting(name, default, maximum):
+RESOURCE_LIMITS = {
+    'AI_MAX_CONCURRENT': (4, 32),
+    'AUTH_MAX_CONCURRENT': (4, 16),
+    'HTTP_MAX_CONCURRENT': (64, 512),
+    'HTTP_REQUESTS_PER_MINUTE': (120, 100_000),
+    'HTTP_IP_BUCKETS': (8192, 65_536),
+    'MAX_REQUEST_BODY_BYTES': (1_048_576, 16_777_216),
+    'REQUEST_BODY_TIMEOUT': (10, 60),
+    'WS_MAX_CONNECTIONS': (64, 512),
+    'WS_MAX_PER_IP': (8, 64),
+}
+
+
+@lru_cache(maxsize=len(RESOURCE_LIMITS))
+def setting(name):
+    default, maximum = RESOURCE_LIMITS[name]
     try:
         value = int(os.getenv(name, str(default)))
     except ValueError as exc:
@@ -25,19 +40,10 @@ def setting(name, default, maximum):
     return value
 
 
+@lru_cache(maxsize=1)
 def validate_resource_settings():
-    for name, default, maximum in (
-        ('AI_MAX_CONCURRENT', 4, 32),
-        ('AUTH_MAX_CONCURRENT', 4, 16),
-        ('HTTP_MAX_CONCURRENT', 64, 512),
-        ('HTTP_REQUESTS_PER_MINUTE', 120, 100_000),
-        ('HTTP_IP_BUCKETS', 8192, 65_536),
-        ('MAX_REQUEST_BODY_BYTES', 1_048_576, 16_777_216),
-        ('REQUEST_BODY_TIMEOUT', 10, 60),
-        ('WS_MAX_CONNECTIONS', 64, 512),
-        ('WS_MAX_PER_IP', 8, 64),
-    ):
-        setting(name, default, maximum)
+    for name in RESOURCE_LIMITS:
+        setting(name)
 
 
 _ai_lock = Lock()
@@ -48,7 +54,7 @@ _ai_active = 0
 def ai_capacity():
     global _ai_active
     with _ai_lock:
-        if _ai_active >= setting('AI_MAX_CONCURRENT', 4, 32):
+        if _ai_active >= setting('AI_MAX_CONCURRENT'):
             raise HTTPException(503, 'AI is busy; retry shortly', headers={'Retry-After': '5'})
         _ai_active += 1
     try:
@@ -71,6 +77,7 @@ class ResourceLimitsMiddleware:
     def http_quota(self, address):
         if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
             return
+        address = client_network(address)
         instant = time.monotonic()
         window = int(instant // 60)
         with self.lock:
@@ -80,12 +87,15 @@ class ResourceLimitsMiddleware:
                     break
                 self.http_counters.popitem(last=False)
             if address not in self.http_counters:
-                if len(self.http_counters) >= setting('HTTP_IP_BUCKETS', 8192, 65_536):
-                    raise HTTPException(503, 'Rate limiter is busy', headers={'Retry-After': '60'})
+                if len(self.http_counters) >= setting('HTTP_IP_BUCKETS'):
+                    self.http_counters.popitem(last=False)
                 self.http_counters[address] = (window, 0)
-            _, count = self.http_counters[address]
-            maximum = setting('HTTP_REQUESTS_PER_MINUTE', 120, 100_000)
+            old_window, count = self.http_counters[address]
+            if old_window != window:
+                count = 0
+            maximum = setting('HTTP_REQUESTS_PER_MINUTE')
             self.http_counters[address] = (window, min(count + 1, maximum + 1))
+            self.http_counters.move_to_end(address)
         if count >= maximum:
             retry = max(1, int((window + 1) * 60 - instant) + 1)
             raise HTTPException(
@@ -102,7 +112,7 @@ class ResourceLimitsMiddleware:
         if kind == 'websocket':
             return await self.websocket(scope, receive, send, address)
         with self.lock:
-            admitted = self.http_active < setting('HTTP_MAX_CONCURRENT', 64, 512)
+            admitted = self.http_active < setting('HTTP_MAX_CONCURRENT')
             if admitted:
                 self.http_active += 1
 
@@ -141,7 +151,7 @@ class ResourceLimitsMiddleware:
                 or sum(len(key) + len(value) for key, value in scope.get('headers', [])) > 32_768
             ):
                 return await reject(431, 'Request headers are too large')
-            maximum = setting('MAX_REQUEST_BODY_BYTES', 1_048_576, 16_777_216)
+            maximum = setting('MAX_REQUEST_BODY_BYTES')
             lengths = request_headers.getlist('content-length')
             if lengths:
                 try:
@@ -179,7 +189,7 @@ class ResourceLimitsMiddleware:
                 return await reject(exc.status_code, exc.detail, exc.headers)
             chunks, size = [], 0
             try:
-                async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT', 10, 60)):
+                async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT')):
                     while True:
                         message = await receive()
                         if message['type'] == 'http.disconnect':
@@ -210,9 +220,9 @@ class ResourceLimitsMiddleware:
 
     async def websocket(self, scope, receive, send, address):
         with self.lock:
-            admitted = self.ws_active < setting(
-                'WS_MAX_CONNECTIONS', 64, 512
-            ) and self.ws_clients.get(address, 0) < setting('WS_MAX_PER_IP', 8, 64)
+            admitted = self.ws_active < setting('WS_MAX_CONNECTIONS') and self.ws_clients.get(
+                address, 0
+            ) < setting('WS_MAX_PER_IP')
             if admitted:
                 self.ws_active += 1
                 self.ws_clients[address] = self.ws_clients.get(address, 0) + 1

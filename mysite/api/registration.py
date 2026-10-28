@@ -1,7 +1,6 @@
 import re
 import secrets
 
-from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +9,7 @@ from sqlalchemy.orm import Session
 from mysite.api.client_auth import authenticate_client, current_client, issue_token
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_request_limits
+from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
@@ -33,10 +33,12 @@ class LoginInput(BaseModel):
 
 def normalize_email(value: str):
     try:
-        result = validate_email(value.strip(), check_deliverability=False)
-        return result.normalized.lower()
+        result = optional_email(value)
+        if result is None:
+            raise ValueError('Email is required')
+        return result
 
-    except EmailNotValidError:
+    except ValueError:
         raise HTTPException(status_code=422, detail='Введите корректный email')
 
 

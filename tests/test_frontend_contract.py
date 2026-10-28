@@ -477,7 +477,7 @@ def test_extended_seed_has_translated_reference_and_contact_fields(client):
         assert country.translations['en']['name'] == 'TEST: Country 02'
         assert country.translations['de']['name'] == 'TEST: Land 02'
         assert country.translations['zh']['name'] == '测试: 国家 02'
-        contact = db.query(models.Contact).filter_by(email='test-office-02@example.invalid').one()
+        contact = db.query(models.Contact).filter_by(email='test-office-02@example.com').one()
         assert contact.translations['de']['city'] == 'TEST: Stadt 02'
         assert contact.translations['zh']['city'] == '测试: 城市 02'
         tour = db.query(models.Tour).filter_by(title='ТЕСТ: Ала-Арча').one()
@@ -508,7 +508,7 @@ def test_seed_completes_every_content_field_and_translation(client):
                         )
         contacts = (
             db.query(models.Contact)
-            .filter(models.Contact.email.like('test-office-%@example.invalid'))
+            .filter(models.Contact.email.like('test-office-%@example.com'))
             .all()
         )
         assert len(contacts) == 20

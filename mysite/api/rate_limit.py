@@ -1,4 +1,4 @@
-"""Database-backed fixed-window limits shared by every application worker."""
+"""Atomic database limits for account actions and chat, shared across workers."""
 
 import hashlib
 import os
@@ -10,6 +10,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy import case, delete
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 
+from mysite.api.network_identity import client_network
 from mysite.database.db import SessionLocal
 from mysite.database.rate_limit_models import RateLimitCounter
 
@@ -18,48 +19,45 @@ _blocked = OrderedDict()
 _cleanup_after = 0
 
 
-def _current_epoch() -> int:
+def _current_epoch():
     return int(time.time())
 
 
-def consume_rate_limit(
-    scope: str,
-    principal: str,
-    *,
-    max_requests: int,
-    window_seconds: int,
-    current_time: int | None = None,
-) -> tuple[int, int]:
-    """Atomically record a request and return its count and retry delay."""
+def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
-    if max_requests < 1 or window_seconds < 1:
-        raise ValueError('Rate limits must be positive')
-    window_start = instant // window_seconds * window_seconds
-    key_hash = hashlib.sha256(f'{scope}\0{principal}'.encode('utf-8')).hexdigest()
+    rows, bounds, identities, retries = [], {}, [], []
+    for scope, principal, maximum, window in limits:
+        if maximum < 1 or window < 1:
+            raise ValueError('Rate limits must be positive')
+        start = instant // window * window
+        key = hashlib.sha256(f'{scope}\0{principal}'.encode()).hexdigest()
+        if key in bounds:
+            raise ValueError('Duplicate rate-limit identity in a batch')
+        bounds[key] = maximum + 1
+        identities.append(key)
+        retries.append(max(1, start + window - instant))
+        rows.append({'key_hash': key, 'window_start': start, 'request_count': 1})
     table = RateLimitCounter.__table__
-
     with SessionLocal() as db:
-        statement = postgresql_insert(table).values(
-            key_hash=key_hash, window_start=window_start, request_count=1
-        )
+        statement = postgresql_insert(table).values(rows)
+        ceiling = case(bounds, value=table.c.key_hash, else_=1)
         statement = statement.on_conflict_do_update(
             index_elements=[table.c.key_hash],
             set_={
-                'window_start': window_start,
+                'window_start': statement.excluded.window_start,
                 'request_count': case(
                     (
-                        table.c.window_start == window_start,
+                        table.c.window_start == statement.excluded.window_start,
                         case(
-                            (table.c.request_count < max_requests + 1, table.c.request_count + 1),
-                            else_=max_requests + 1,
+                            (table.c.request_count < ceiling, table.c.request_count + 1),
+                            else_=ceiling,
                         ),
                     ),
                     else_=1,
                 ),
             },
-        ).returning(table.c.request_count)
-
-        request_count = db.execute(statement).scalar_one()
+        ).returning(table.c.key_hash, table.c.request_count)
+        counts = dict(db.execute(statement).all())
         global _cleanup_after
         with _cache_lock:
             cleanup = instant >= _cleanup_after
@@ -68,44 +66,49 @@ def consume_rate_limit(
         if cleanup:
             db.execute(delete(table).where(table.c.window_start < instant - 86_400))
         db.commit()
-
-    retry_after = max(1, window_start + window_seconds - instant)
-    return request_count, retry_after
+    return [(counts[key], retry) for key, retry in zip(identities, retries)]
 
 
-def enforce_rate_limit(
-    scope: str, principal: str, *, max_requests: int, window_seconds: int
-) -> None:
+def consume_rate_limit(scope, principal, *, max_requests, window_seconds, current_time=None):
+    return consume_rate_limits(
+        [(scope, principal, max_requests, window_seconds)], current_time=current_time
+    )[0]
+
+
+def _limited(retry):
+    raise HTTPException(
+        429,
+        detail={'code': 'rate_limited', 'retry_after': retry},
+        headers={'Retry-After': str(retry)},
+    )
+
+
+def enforce_rate_limits(limits):
     if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
         return
-
     instant = _current_epoch()
-    cache_key = (scope, principal, max_requests, window_seconds)
     with _cache_lock:
-        blocked_until = _blocked.get(cache_key, 0)
-        if blocked_until <= instant:
-            _blocked.pop(cache_key, None)
-    if blocked_until > instant:
-        raise HTTPException(
-            429,
-            detail={'code': 'rate_limited', 'retry_after': blocked_until - instant},
-            headers={'Retry-After': str(blocked_until - instant)},
-        )
+        for limit in limits:
+            until = _blocked.get(limit, 0)
+            if until > instant:
+                _limited(until - instant)
+            _blocked.pop(limit, None)
+    results = consume_rate_limits(limits, current_time=instant)
+    rejected = []
+    with _cache_lock:
+        for limit, (count, retry) in zip(limits, results):
+            if count > limit[2]:
+                _blocked[limit] = instant + retry
+                _blocked.move_to_end(limit)
+                rejected.append(retry)
+        while len(_blocked) > 4096:
+            _blocked.popitem(last=False)
+    if rejected:
+        _limited(max(rejected))
 
-    request_count, retry_after = consume_rate_limit(
-        scope, principal, max_requests=max_requests, window_seconds=window_seconds
-    )
-    if request_count > max_requests:
-        with _cache_lock:
-            _blocked[cache_key] = instant + retry_after
-            _blocked.move_to_end(cache_key)
-            while len(_blocked) > 4096:
-                _blocked.popitem(last=False)
-        raise HTTPException(
-            status_code=429,
-            detail={'code': 'rate_limited', 'retry_after': retry_after},
-            headers={'Retry-After': str(retry_after)},
-        )
+
+def enforce_rate_limit(scope, principal, *, max_requests, window_seconds):
+    enforce_rate_limits([(scope, principal, max_requests, window_seconds)])
 
 
 def enforce_request_limits(
@@ -116,20 +119,21 @@ def enforce_request_limits(
     ip_limit: int,
     identity_limit: int,
     window_seconds: int,
-) -> None:
-    ip_address = request.client.host if request.client else 'unknown'
-    enforce_rate_limit(
-        scope, f'ip:{ip_address}', max_requests=ip_limit, window_seconds=window_seconds
-    )
-    enforce_rate_limit(
-        scope,
-        f'identity:{identity.strip().casefold()}',
-        max_requests=identity_limit,
-        window_seconds=window_seconds,
+):
+    address = client_network(request.client.host if request.client else 'unknown')
+    principal = f'identity:{identity.strip().casefold()}'
+    if scope.endswith('login'):
+        principal += f'\0ip:{address}'
+    enforce_rate_limits(
+        [
+            (scope, f'ip:{address}', ip_limit, window_seconds),
+            (scope, principal, identity_limit, window_seconds),
+        ]
     )
 
 
-def enforce_chat_message_limits(client_id: int) -> None:
+def enforce_chat_message_limits(client_id):
     principal = f'client:{client_id}'
-    enforce_rate_limit('chat-message-minute', principal, max_requests=10, window_seconds=60)
-    enforce_rate_limit('chat-message-day', principal, max_requests=300, window_seconds=86_400)
+    enforce_rate_limits(
+        [('chat-message-minute', principal, 10, 60), ('chat-message-day', principal, 300, 86_400)]
+    )

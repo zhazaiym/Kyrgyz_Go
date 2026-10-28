@@ -2,7 +2,6 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_filter import FilterDepends
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError, GoogleAPIError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
@@ -18,6 +17,7 @@ from mysite.database.schema import (TourDetailSchema, TourInputSchema, TourOutSc
                                     TourUpdateSchema)
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
+from mysite.translations.jobs import schedule_translation, translate_record
 from mysite.translations.translator import translate_tour
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])
@@ -28,48 +28,9 @@ LANGUAGES = ['en', 'de', 'zh']
 TRANSLATED_FIELDS = ['title', 'description', 'included', 'excluded']
 
 
-def save_translations(tour_db: Tour, db: Session):
-    data = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
-
-    translations = translate_tour(data)
-
-    for lang in LANGUAGES:
-        fields = translations[lang]
-
-        translation_db = (
-            db.query(TourTranslation)
-            .filter(TourTranslation.tour_id == tour_db.id, TourTranslation.lang == lang)
-            .first()
-        )
-
-        if translation_db is None:
-            translation_db = TourTranslation(tour_id=tour_db.id, lang=lang, **fields)
-            db.add(translation_db)
-        else:
-            for key, value in fields.items():
-                setattr(translation_db, key, value)
-
-
 def try_save_translations(tour_db: Tour, db: Session):
-    try:
-        # Keep the tour even when translation fails.
-        # The savepoint rolls back translation changes only.
-        with db.begin_nested():
-            save_translations(tour_db, db)
-
-        return True
-
-    except (
-        ChatGoogleGenerativeAIError,
-        GoogleAPIError,
-        SQLAlchemyError,
-        RuntimeError,
-        ValueError,
-        KeyError,
-        TypeError,
-    ):
-        logger.exception('Tour %s котормосу сакталган жок', tour_db.id)
-        return False
+    schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
+    return True
 
 
 def get_localized_tour(
@@ -220,9 +181,9 @@ def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail='Тур табылган жок')
 
     try:
-        if not try_save_translations(tour_db, db):
-            db.rollback()
-
+        source = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
+        db.commit()
+        if not translate_record(Tour, tour_id, source, translate_tour):
             raise HTTPException(status_code=503, detail='Gemini котормосу азыр жеткиликсиз')
 
         db.commit()

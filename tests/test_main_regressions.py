@@ -301,7 +301,8 @@ def test_unavailable_selected_services_prevent_confirmation(client, selection, k
         headers=headers(account),
         json={'session_id': sid, 'revision': 0, 'confirmed': True},
     )
-    assert response.status_code == 422
+    assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'booking_needs_update'
 
 
 def test_catalogue_routes_have_unique_operation_ids_and_keep_public_cards(client, selection):

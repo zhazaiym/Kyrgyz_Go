@@ -1,6 +1,7 @@
 """Independent WebSocket transport; chat business logic resides in chat_service.py."""
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -48,6 +49,27 @@ def authenticate_session(session_id, token):
         return client.id
 
 
+async def receive_json_text(websocket):
+    frame = await websocket.receive()
+    if frame['type'] == 'websocket.disconnect':
+        raise WebSocketDisconnect(frame.get('code', 1000))
+    text = frame.get('text')
+    if not isinstance(text, str):
+        raise ValueError('A JSON text frame is required')
+    return json.loads(text)
+
+
+async def unavailable(websocket):
+    await websocket.send_json(
+        {
+            'type': 'error',
+            'code': 'service_unavailable',
+            'message': 'Сервис временно недоступен. Повторите подключение позже.',
+        }
+    )
+    await websocket.close(code=1011)
+
+
 @router.websocket('/ws/chat/{session_id}')
 async def socket(websocket: WebSocket, session_id: str):
     allowed = {
@@ -73,9 +95,14 @@ async def socket(websocket: WebSocket, session_id: str):
     except HTTPException:
         await websocket.close(code=1008)
         return
+    except SQLAlchemyError:
+        log.exception('WebSocket handshake limiter failed')
+        await websocket.accept()
+        await unavailable(websocket)
+        return
     await websocket.accept()
     try:
-        first = await asyncio.wait_for(websocket.receive_json(), timeout=30)
+        first = await asyncio.wait_for(receive_json_text(websocket), timeout=30)
         token = AuthenticationFrame.model_validate(first).token
         client_id = await asyncio.to_thread(authenticate_session, session_id, token)
         await websocket.send_json({'type': 'connected', 'session_id': session_id})
@@ -98,7 +125,7 @@ async def socket(websocket: WebSocket, session_id: str):
         return
     except (SQLAlchemyError, ValueError, TypeError, KeyError, RuntimeError, OSError):
         log.exception('WebSocket authentication failure')
-        await websocket.close(code=1011)
+        await unavailable(websocket)
         return
 
     # Sequential execution on each connection. Service layer also serializes same session locally.
@@ -106,7 +133,7 @@ async def socket(websocket: WebSocket, session_id: str):
     throttled_messages = 0
     while True:
         try:
-            data = await websocket.receive_json()
+            data = await receive_json_text(websocket)
         except WebSocketDisconnect:
             return
         except ValueError:
@@ -153,6 +180,10 @@ async def socket(websocket: WebSocket, session_id: str):
                 await websocket.close(code=1008)
                 return
             continue
+        except SQLAlchemyError:
+            log.exception('WebSocket message limiter failed')
+            await unavailable(websocket)
+            return
         invalid_messages = 0
         throttled_messages = 0
         await websocket.send_json({'type': 'typing', 'status': True})

@@ -9,6 +9,7 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.api.selection_status import linked_request, processing_status, requests_for_selections
+from mysite.database.catalogue_rules import is_demo_name
 from mysite.database.chat_models import ChatClient, ChatMessage, ChatSession
 from mysite.database.db import get_db
 from mysite.database.models import Hotel, Tour, Transport
@@ -47,7 +48,11 @@ def validate_items(db, tour_id, hotel_id, transport_id):
         if item_id is not None:
             item = db.get(model, item_id)
 
-            if not item or not item.is_active:
+            if (
+                not item
+                or not item.is_active
+                or is_demo_name(getattr(item, 'title' if model is Tour else 'name'))
+            ):
                 raise HTTPException(status_code=404, detail=f'{name} не найден или недоступен')
 
 

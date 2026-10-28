@@ -18,6 +18,9 @@ already configured. Set a long random `SECRET_KEY` and real database credentials
 The image excludes `.env` and local database files; Compose injects the runtime
 environment with `env_file`.
 
+Admin cookies are Secure by default. For local HTTP development explicitly
+set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
+
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -81,6 +84,11 @@ the coarse allowance can reach N times the configured value. Use the proxy
 or an upstream service for network-level and cross-worker traffic limits.
 Numeric resource settings are validated at startup; restart after changing them.
 
+The coarse counter uses LRU eviction and groups IPv6 addresses by /64. Evicted
+counters can restart; account/chat limits remain database-backed. Expired login
+and reset tokens are cleaned hourly, retaining one day after expiry; active
+tokens are not revoked. Manual cleanup: `python -m scripts.cleanup_tokens`.
+
 Create an administrator interactively after the API starts:
 
 ```bash
@@ -105,7 +113,7 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    remains accessible only locally and through the proxy.
    Compose gives Caddy this fixed address on a dedicated proxy network. If
    `172.30.240.0/28` overlaps an existing network, change `PROXY_SUBNET`,
-   `CADDY_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`
+   `CADDY_PROXY_IP`, `API_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`
    merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.

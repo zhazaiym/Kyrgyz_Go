@@ -1,5 +1,7 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
+import asyncio
 import os
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 import uvicorn
@@ -32,6 +34,7 @@ from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
+from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
 # OLD KYRGYZGO API
 from mysite.api.tour_category import category_router
@@ -45,10 +48,25 @@ from mysite.api.trekking import trekking_router
 from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 
+
 # FASTAPI
+@asynccontextmanager
+async def lifespan(app):
+    cleanup = asyncio.create_task(token_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup
+
+
 validate_resource_settings()
 app = FastAPI(
-    title='KYRGYZGO', description='KYRGYZGO Tourism API + AI Travel Assistant', version='1.0.0'
+    title='KYRGYZGO',
+    description='KYRGYZGO Tourism API + AI Travel Assistant',
+    version='1.0.0',
+    lifespan=lifespan,
 )
 
 

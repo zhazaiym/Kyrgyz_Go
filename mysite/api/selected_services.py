@@ -1,5 +1,6 @@
 """Validated catalogue snapshots for booking previews and stored requests."""
 
+from mysite.database.catalogue_rules import is_demo_name
 from mysite.database.models import Hotel, Tour, Transport
 
 
@@ -14,7 +15,7 @@ def selected_services(db, state):
         if identity is None:
             continue
         item = db.get(model, identity) if type(identity) is int and identity > 0 else None
-        if not item or not item.is_active:
+        if not item or not item.is_active or is_demo_name(getattr(item, field)):
             missing.append(f'valid_{kind}')
         else:
             snapshot.append({'kind': kind, 'id': item.id, 'name': getattr(item, field)})

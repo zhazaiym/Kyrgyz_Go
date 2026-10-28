@@ -1,4 +1,3 @@
-import hashlib
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -11,17 +10,15 @@ from sqlalchemy.orm import Session
 
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_request_limits
+from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import get_db
+from mysite.database.token_utils import digest
 
 router = APIRouter(tags=['Client authentication'])
 passwords = BoundedPasswords()
 dummy_password_hash = passwords.hash(secrets.token_urlsafe(32))
 client_bearer = HTTPBearer(auto_error=False, scheme_name='ClientBearer')
-
-
-def digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def login_required(message: str) -> HTTPException:
@@ -42,10 +39,10 @@ class RegistrationCredentials(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     email: EmailStr | None = Field(default=None, max_length=254)
 
-    @field_validator('email', mode='before')
+    @field_validator('email', mode='after')
     @classmethod
     def normalize_email(cls, value):
-        return value.strip().lower() if isinstance(value, str) else value
+        return optional_email(value)
 
 
 class LoginCredentials(BaseModel):
@@ -82,12 +79,12 @@ def issue_token(db: Session, client: ChatClient):
 
 def authenticate_client(db: Session, identifier: str, password: str, *, email_only=False):
     field = ChatClient.email if email_only or '@' in identifier else ChatClient.username
-    client = db.query(ChatClient).filter(field == identifier).first()
-    client_id = client.id if client else None
-    verified_hash = client.password_hash if client else dummy_password_hash
+    with Session(bind=db.get_bind(), autoflush=False) as lookup:
+        client = lookup.query(ChatClient).filter(field == identifier).first()
+        client_id = client.id if client else None
+        verified_hash = client.password_hash if client else dummy_password_hash
     # Argon2 must not hold a row lock or a pooled connection. Recheck the hash
     # under the short token-issuance lock so a concurrent reset still wins.
-    db.rollback()
     valid = passwords.verify(password, verified_hash)
     if client_id is None or not valid:
         raise login_required('Неверный email или пароль')
@@ -121,6 +118,13 @@ def register(data: RegistrationCredentials, request: Request, db: Session = Depe
 @router.post('/login')
 def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db)):
     identifier = (data.email if data.email is not None else data.username).strip().lower()
+    if data.email is not None or '@' in identifier:
+        try:
+            identifier = optional_email(identifier)
+            if identifier is None:
+                raise ValueError('Email is required')
+        except ValueError as exc:
+            raise HTTPException(422, 'Введите корректный email') from exc
     enforce_request_limits(
         'client-login', request, identifier, ip_limit=30, identity_limit=8, window_seconds=60
     )

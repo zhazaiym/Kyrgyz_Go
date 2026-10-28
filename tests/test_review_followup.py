@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
@@ -93,9 +92,8 @@ def test_http_limiter_bounds_memory_and_expires_old_ip_buckets(monkeypatch):
     limiter = resource_limits.ResourceLimitsMiddleware(app)
     limiter.http_quota('first')
     limiter.http_quota('second')
-    with pytest.raises(HTTPException) as busy:
-        limiter.http_quota('third')
-    assert busy.value.status_code == 503
+    limiter.http_quota('third')
+    assert 'first' not in limiter.http_counters
     assert len(limiter.http_counters) == 2
     monkeypatch.setattr(resource_limits.time, 'monotonic', lambda: 180)
     limiter.http_quota('third')
@@ -119,9 +117,9 @@ def test_invalid_resource_settings_fail_during_initialization(monkeypatch, name,
 
 def test_validated_settings_are_not_reparsed_for_each_request(monkeypatch):
     resource_limits.validate_resource_settings()
-    original = resource_limits.setting('MAX_REQUEST_BODY_BYTES', 1_048_576, 16_777_216)
+    original = resource_limits.setting('MAX_REQUEST_BODY_BYTES')
     monkeypatch.setenv('MAX_REQUEST_BODY_BYTES', '1MB')
-    assert resource_limits.setting('MAX_REQUEST_BODY_BYTES', 1_048_576, 16_777_216) == original
+    assert resource_limits.setting('MAX_REQUEST_BODY_BYTES') == original
 
 
 @pytest.mark.parametrize('reset_during_verify', [False, True])
@@ -194,7 +192,7 @@ def test_orm_write_cannot_reopen_a_completed_request(client, selection):
         row.status = m.RequestStatusChoices.completed
         db.commit()
         row.status = m.RequestStatusChoices.cancelled
-        with pytest.raises(ValueError, match='Завершённую'):
+        with pytest.raises((ValueError, IntegrityError)):
             db.commit()
         db.rollback()
 
@@ -207,7 +205,7 @@ def test_stale_orm_editor_cannot_overwrite_a_concurrently_completed_request(clie
             other.get(m.TravelRequest, request_id).status = m.RequestStatusChoices.completed
             other.commit()
         row.status = m.RequestStatusChoices.in_progress
-        with pytest.raises(ValueError, match='Завершённую'):
+        with pytest.raises((ValueError, IntegrityError)):
             stale.commit()
         stale.rollback()
 

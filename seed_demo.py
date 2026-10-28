@@ -416,7 +416,7 @@ def seed_demo(db):
         contact = get_or_create(
             Contact,
             'email',
-            f'test-office-{number}@example.invalid',
+            f'test-office-{number}@example.com',
             country='ТЕСТ: Кыргызстан',
             city=f'ТЕСТ: Город {number}',
             phone=f'+1 202-555-01{number}',
@@ -466,7 +466,7 @@ def seed_demo(db):
         get_or_create(
             TravelRequest,
             'email',
-            f'test-request-{number}@example.invalid',
+            f'test-request-{number}@example.com',
             name=f'ТЕСТ: Заявка {number}',
             phone=f'+1 202-555-01{number}',
             travel_date=date(2030, 6, 1) + timedelta(days=index - 1),

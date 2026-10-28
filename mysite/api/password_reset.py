@@ -1,10 +1,9 @@
-import hashlib
 import logging
 import os
 import secrets
 import smtplib
 import ssl
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from email.message import EmailMessage
 from urllib.parse import urlencode
 
@@ -18,6 +17,8 @@ from mysite.api.registration import normalize_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import SessionLocal, get_db
 from mysite.database.password_reset_models import PasswordResetToken
+from mysite.database.token_utils import digest
+from mysite.database.token_utils import utcnow as now
 
 router = APIRouter(prefix='/account', tags=['Tourist Account'])
 
@@ -32,14 +33,6 @@ class ForgotPasswordInput(BaseModel):
 class ResetPasswordInput(BaseModel):
     token: str = Field(min_length=1, max_length=256)
     new_password: str = Field(min_length=8, max_length=128)
-
-
-def now():
-    return datetime.now(timezone.utc)
-
-
-def digest(value: str):
-    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def send_reset_email(email: str, token: str):
@@ -133,20 +126,26 @@ def _deliver_reset(email, raw_token, reset_id):
 
 @router.post('/reset-password')
 def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
-    reset = (
-        db.query(PasswordResetToken)
-        .filter(PasswordResetToken.token_hash == digest(data.token))
-        .first()
-    )
+    with Session(bind=db.get_bind(), autoflush=False) as lookup:
+        candidate = (
+            lookup.query(PasswordResetToken).filter_by(token_hash=digest(data.token)).first()
+        )
+        if not candidate or candidate.used_at is not None:
+            raise HTTPException(400, 'Недействительная или использованная ссылка')
+        expires = candidate.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= now():
+            raise HTTPException(400, 'Срок действия ссылки истёк')
+        reset_id, client_id = candidate.id, candidate.client_id
+
+    encoded = passwords.hash(data.new_password)
+    client = db.get(ChatClient, client_id, with_for_update=True, populate_existing=True)
+    reset = db.get(PasswordResetToken, reset_id, with_for_update=True, populate_existing=True)
 
     # Serialize all resets for the account, including different reset tokens.
     # Lock the account before refreshing/locking tokens to avoid lock inversion
     # when one reset invalidates all the account's other tokens.
-    if reset:
-        client = db.get(ChatClient, reset.client_id, with_for_update=True, populate_existing=True)
-        db.refresh(reset)
-    else:
-        client = None
 
     if not reset or reset.used_at is not None:
         raise HTTPException(400, 'Недействительная или использованная ссылка')
@@ -162,7 +161,7 @@ def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
     if not client:
         raise HTTPException(400, 'Аккаунт не найден')
 
-    client.password_hash = passwords.hash(data.new_password)
+    client.password_hash = encoded
     reset.used_at = now()
 
     db.query(ChatLoginToken).filter(ChatLoginToken.client_id == client.id).delete(

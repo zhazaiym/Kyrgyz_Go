@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 import time
 
@@ -127,11 +128,14 @@ def test_chat_database_wait_does_not_block_event_loop(client, monkeypatch, opera
         async def accept(self):
             pass
 
-        async def receive_json(self):
+        async def receive(self):
             if self.received:
                 raise WebSocketDisconnect()
             self.received = True
-            return {'type': 'auth', 'token': token}
+            return {
+                'type': 'websocket.receive',
+                'text': json.dumps({'type': 'auth', 'token': token}),
+            }
 
         async def send_json(self, data):
             self.sent.append(data)

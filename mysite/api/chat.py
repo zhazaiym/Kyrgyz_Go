@@ -1,12 +1,14 @@
 """HTTP chat and booking routes; WebSocket is registered separately in chat_ws.py."""
 
 import uuid
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from mysite.api.chat_service import build_preview, confirm_booking_serialized, owned
+from mysite.api.chat_service import (build_preview, confirm_booking_serialized, owned,
+                                     remove_optional_service)
 from mysite.api.client_auth import client_by_token, current_client, login_required
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.chain.prompts import WELCOME_MESSAGE
@@ -92,6 +94,19 @@ async def confirm(
     data: BookingConfirm, identity: tuple[int, str] = Depends(detached_client_identity)
 ):
     client_id, token = identity
-    return await confirm_booking_serialized(
+    result = await confirm_booking_serialized(
         data.session_id, client_id, token, data.revision, data.confirmed
     )
+    if result.get('status') == 'needs_update':
+        raise HTTPException(409, detail={'code': 'booking_needs_update', **result})
+    return result
+
+
+@chat_router.delete('/chat/{session_id}/services/{kind}')
+async def remove_service(
+    session_id: str,
+    kind: Literal['hotel', 'transport'],
+    identity: tuple[int, str] = Depends(detached_client_identity),
+):
+    client_id, token = identity
+    return await remove_optional_service(session_id, client_id, token, kind)

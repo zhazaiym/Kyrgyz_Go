@@ -341,6 +341,7 @@ def test_booking_boundary_validates_email_even_if_ai_returns_invalid_state(
         headers=headers(account),
         json={'session_id': sid, 'revision': 0, 'confirmed': True},
     )
-    assert confirmed.status_code == 422
+    assert confirmed.status_code == 409
+    assert confirmed.json()['detail']['code'] == 'booking_needs_update'
     with SessionLocal() as db:
         assert db.query(ChatBookingLink).filter_by(session_id=sid).count() == 0

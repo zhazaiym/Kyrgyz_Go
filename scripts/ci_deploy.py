@@ -14,6 +14,7 @@ ROOT = Path('/home/ubuntu/Kyrgyz_Go')
 OVERRIDE = Path('/home/ubuntu/kyrgyzgo-deploy.override.yml')
 RELEASES = Path('/home/ubuntu/releases')
 BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
+DEPLOY_LOCK = Path('/home/ubuntu/.kyrgyzgo-deploy.lock')
 PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
 PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
 ALLOWED_FILES = {
@@ -123,9 +124,9 @@ def deployed_runtime_digest(container, name):
     if name == 'Dockerfile':
         probe = (
             'import hashlib,re; from pathlib import Path; '
-            + 'contents=Path('
+            + 'source=Path('
             + repr(path)
-            + ').read_bytes().replace(b"\\r\\n",b"\\n"); '
+            + '); contents=(source.read_bytes() if source.is_file() else b"").replace(b"\\r\\n",b"\\n"); '
             + 'contents=b"\\n".join(line for line in contents.splitlines() '
             + 'if not re.match(rb"^\\s*CMD\\s+",line,re.IGNORECASE)); '
             + 'print(hashlib.sha256(contents).hexdigest())'
@@ -133,9 +134,9 @@ def deployed_runtime_digest(container, name):
     else:
         probe = (
             'import hashlib; from pathlib import Path; '
-            + 'contents=Path('
+            + 'source=Path('
             + repr(path)
-            + ').read_bytes(); '
+            + '); contents=source.read_bytes() if source.is_file() else b""; '
             + "print(hashlib.sha256(contents.replace(b'\\r\\n',b'\\n')).hexdigest())"
         )
     return output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe])
@@ -192,11 +193,41 @@ def compose_output(*arguments):
     )
 
 
+def require_same_schema(current, candidate):
+    if sorted(current) != sorted(candidate):
+        raise RuntimeError(
+            'Schema revision changes require a separate backed-up maintenance migration '
+            'before automatic deployment. Production has not been replaced.'
+        )
+
+
+def deployed_schema(container):
+    probe = (
+        'import json; from sqlalchemy import text; from mysite.database.db import engine; '
+        'connection=engine.connect(); '
+        'print(json.dumps(list(connection.execute(text("SELECT version_num FROM alembic_version")).scalars()))); '
+        'connection.close()'
+    )
+    return json.loads(output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe]))
+
+
+def candidate_schema(image):
+    probe = (
+        'import json; from alembic.config import Config; from alembic.script import ScriptDirectory; '
+        'print(json.dumps(ScriptDirectory.from_config(Config("alembic.ini")).get_heads()))'
+    )
+    return json.loads(
+        output(
+            ['sudo', '-n', 'docker', 'run', '--rm', '--entrypoint', 'python', image, '-c', probe]
+        )
+    )
+
+
 def deploy(revision, source):
     import fcntl
 
     os.umask(0o077)
-    with Path('/home/ubuntu/.kyrgyzgo-deploy.lock').open('a') as lock:
+    with DEPLOY_LOCK.open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if shutil.disk_usage(RELEASES).free < 256 * 1024 * 1024:
             raise RuntimeError('Less than 256 MiB free; increase server disk before deployment')
@@ -296,6 +327,13 @@ def deploy(revision, source):
                 str(release),
             ]
         )
+        # The old image is a safe rollback only while the database schema is unchanged.
+        try:
+            require_same_schema(deployed_schema(previous_container), candidate_schema(image))
+        except RuntimeError:
+            state['status'] = 'migration_required'
+            state_file.write_text(json.dumps(state, indent=2))
+            raise
         state['status'] = 'activating'
         try:
             temporary = OVERRIDE.with_suffix('.pending')
@@ -308,7 +346,7 @@ def deploy(revision, source):
                     raise RuntimeError('Public HTTPS health check failed')
             state['status'] = 'healthy'
         except BaseException:
-            OVERRIDE.write_text(compose_override(old_image))
+            shutil.copy2(backup / 'previous-deploy.override.yml', OVERRIDE)
             state['status'] = 'rolling_back'
             state_file.write_text(json.dumps(state, indent=2))
             compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')

@@ -7,8 +7,9 @@ services:
     environment:
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.30.240.2}
     networks:
-      - default
-      - proxy
+      default: {}
+      proxy:
+        ipv4_address: ${API_PROXY_IP:-172.30.240.3}
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:${API_PORT:-8000}:8000"
     extra_hosts:

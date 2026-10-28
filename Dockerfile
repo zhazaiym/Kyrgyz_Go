@@ -11,7 +11,7 @@ RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
     && groupadd --system app \
     && useradd --system --gid app --home-dir /app app
 
-COPY --chown=app:app main.py create_admin.py seed_demo.py alembic.ini ./
+COPY --chown=app:app Dockerfile main.py create_admin.py seed_demo.py alembic.ini ./
 COPY --chown=app:app mysite ./mysite
 COPY --chown=app:app alembic ./alembic
 

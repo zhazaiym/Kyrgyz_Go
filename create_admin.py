@@ -12,8 +12,8 @@ def create_admin():
     username = input('Админдин логини: ').strip()
     password = getpass('Админдин паролу: ')
 
-    if not username or not password:
-        print('Логин жана пароль бош болбошу керек')
+    if not username or len(username) > 100 or not 8 <= len(password) <= 128:
+        print('Логин: 1–100 символов; пароль: 8–128 символов')
         return
 
     with SessionLocal() as db:

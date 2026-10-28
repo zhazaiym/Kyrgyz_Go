@@ -47,13 +47,13 @@ def test_company_info_uses_active_database_content_and_public_contact_fields(com
                     city='Бишкек',
                     phone='+996 700 123456',
                     whatsapp='https://wa.me/996700123456',
-                    email='office@example.test',
+                    email='office@example.com',
                     instagram='https://instagram.example.test/company',
                     address='Public office address',
                     qr_code='internal-qr-file',
                     translations={'private': 'translation payload'},
                 ),
-                Contact(phone='inactive-phone', email='hidden@example.test', is_active=False),
+                Contact(phone='inactive-phone', email='hidden@example.com', is_active=False),
             ]
         )
         db.flush()
@@ -81,7 +81,7 @@ def test_company_info_uses_active_database_content_and_public_contact_fields(com
     ]
     assert len(result['contacts']) == 1
     assert result['contacts'][0]['phone'] == '+996 700 123456'
-    assert result['contacts'][0]['email'] == 'office@example.test'
+    assert result['contacts'][0]['email'] == 'office@example.com'
     assert result['contacts'][0]['address'] == 'Public office address'
     assert set(result['contacts'][0]) <= {
         'country',
@@ -161,10 +161,17 @@ def test_company_info_excludes_explicit_demo_records_and_placeholder_contacts(co
                 Contact(
                     city='Public office',
                     phone='+996 700 654321',
-                    email='placeholder@example.invalid',
+                    email=None,
                     instagram='https://example.invalid/instagram',
                 ),
             ]
+        )
+        db.flush()
+        # Simulate a legacy placeholder that predates write-time validation.
+        db.execute(
+            Contact.__table__.update()
+            .where(Contact.city == 'Public office')
+            .values(email='placeholder@example.invalid')
         )
         db.commit()
 

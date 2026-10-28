@@ -8,6 +8,7 @@ from langchain_core.exceptions import ModelError
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from sqlalchemy import inspect
 
+from mysite.translations.jobs import schedule_translation
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
@@ -67,5 +68,5 @@ def update_translations(record):
     fields = CONTENT_FIELDS[record.__tablename__]
     state = inspect(record)
     if state.pending or any(state.attrs[field].history.has_changes() for field in fields):
-        source = {field: getattr(record, field) for field in fields}
-        record.translations = generate_translations(source)
+        record.translations = {}
+        schedule_translation(record, fields, generate_translations)

@@ -72,7 +72,7 @@ def setup_admin(auth_app: FastAPI):
             secret_key=SECRET_KEY,
             max_age=3600,
             same_site='strict',
-            https_only=os.getenv('ADMIN_COOKIE_SECURE', 'false').lower() == 'true',
+            https_only=os.getenv('ADMIN_COOKIE_SECURE', 'true').lower() == 'true',
         ),
     )
     admin.add_view(AdminAdmin)

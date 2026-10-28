@@ -13,10 +13,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: kyrgyzgo-production
-  cancel-in-progress: false
-
 jobs:
   test:
     name: Check Python
@@ -91,6 +87,9 @@ jobs:
 
   deploy:
     name: Deploy to AWS
+    concurrency:
+      group: kyrgyzgo-production
+      cancel-in-progress: false
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04

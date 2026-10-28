@@ -17,7 +17,7 @@ _active = 0
 def password_capacity():
     global _active
     with _lock:
-        if _active >= setting('AUTH_MAX_CONCURRENT', 4, 16):
+        if _active >= setting('AUTH_MAX_CONCURRENT'):
             raise HTTPException(
                 503, 'Authentication is busy; retry shortly', headers={'Retry-After': '2'}
             )

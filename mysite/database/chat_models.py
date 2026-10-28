@@ -1,14 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import (JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
                         func)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mysite.database.db import Base
-
-
-def utcnow():
-    return datetime.now(timezone.utc)
+from mysite.database.token_utils import utcnow
 
 
 class ChatClient(Base):
@@ -26,7 +23,7 @@ class ChatLoginToken(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     client_id: Mapped[int] = mapped_column(ForeignKey('chat_clients.id'), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ChatSession(Base):

@@ -1,19 +1,16 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
-                        Text, UniqueConstraint, event, inspect, select)
+                        Text, UniqueConstraint, event, inspect)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
 from mysite.database.request_status import validate_status_transition
-
-
-def now_utc():
-    return datetime.now(timezone.utc)
+from mysite.database.token_utils import utcnow as now_utc
 
 
 class RequestStatusChoices(str, PyEnum):
@@ -434,9 +431,22 @@ def assign_content_order(mapper, connection, target):
 
 @event.listens_for(TravelRequest, 'before_update')
 def protect_completed_request(mapper, connection, target):
-    if not inspect(target).attrs.status.history.has_changes():
+    history = inspect(target).attrs.status.history
+    if history.has_changes() and history.deleted:
+        validate_status_transition(history.deleted[0], target.status)
+
+
+@event.listens_for(Base, 'before_insert', propagate=True)
+@event.listens_for(Base, 'before_update', propagate=True)
+def validate_catalogue_write(mapper, connection, target):
+    if type(target).__module__ != __name__:
         return
-    current = connection.execute(
-        select(TravelRequest.status).where(TravelRequest.id == target.id).with_for_update()
-    ).scalar_one()
-    validate_status_transition(current, target.status)
+    from mysite.database.storage_validation import validate_storage_values
+
+    state = inspect(target)
+    supplied = {key for key in state.attrs.keys() if state.attrs[key].history.has_changes()}
+    values = {column.key: getattr(target, column.key) for column in target.__table__.columns}
+    validated = validate_storage_values(type(target), values, supplied)
+    for key, value in validated.items():
+        if value != values[key]:
+            setattr(target, key, value)

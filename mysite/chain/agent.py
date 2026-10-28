@@ -22,9 +22,6 @@ from mysite.database.db import SessionLocal
 from mysite.database.models import Tour
 
 load_dotenv()
-for _proxy_key in list(os.environ):
-    if _proxy_key.lower() in {'http_proxy', 'https_proxy', 'all_proxy'}:
-        os.environ.pop(_proxy_key, None)
 log = logging.getLogger(__name__)
 FIELDS = (
     'client_name',

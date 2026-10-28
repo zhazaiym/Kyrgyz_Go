@@ -11,8 +11,10 @@ from jwt import InvalidTokenError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_request_limits
+from mysite.api.selection_status import require_status_transition
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
 from mysite.database.schema import (AdminLoginSchema, AdminOutSchema, TokenSchema,
@@ -105,9 +107,17 @@ class RequestStatusUpdate(BaseModel):
 
 @admin_router.get('/requests/', response_model=list[TravelRequestOutSchema])
 def list_travel_requests(
-    current_admin: Admin = Depends(get_current_admin), db: Session = Depends(get_db)
+    current_admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
 ):
-    return db.query(TravelRequest).order_by(TravelRequest.created_at.desc()).limit(100).all()
+    return (
+        db.query(TravelRequest)
+        .order_by(TravelRequest.id.desc())
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+        .all()
+    )
 
 
 @admin_router.get('/requests/{request_id}/', response_model=TravelRequestOutSchema)
@@ -129,8 +139,6 @@ def update_travel_request_status(
     current_admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    from mysite.api.selection_status import require_status_transition
-
     request = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
     if request is None:
         raise HTTPException(404, 'Заявка не найдена')

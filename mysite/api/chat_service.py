@@ -165,36 +165,9 @@ def _prepare_message(session_id, client_id, token, message):
         if confirmation_allowed(s.stage, message) or (
             s.stage == 'submitted' and _is_confirmation_text(message)
         ):
-            try:
-                result = confirm_booking(db, s, client_id, s.revision, True)
-            except HTTPException as exc:
-                if exc.status_code != 422 or not isinstance(exc.detail, dict):
-                    raise
-                advance_message_version(db, s)
-                s.stage = 'collecting'
-                s.revision += 1
-                preview = build_preview(db, s)
-                answer = invalid_preview_text(s.state or {})
-                db.add_all(
-                    [
-                        ChatMessage(session_id=s.id, role='user', content=message),
-                        ChatMessage(session_id=s.id, role='assistant', content=answer),
-                    ]
-                )
-                db.commit()
-                return (
-                    {
-                        'answer': answer,
-                        'revision': s.revision,
-                        'booking_intent': False,
-                        'stage': s.stage,
-                        'booking_preview': preview,
-                    },
-                    None,
-                    None,
-                    None,
-                    None,
-                )
+            result = confirm_booking(db, s, client_id, s.revision, True, message=message)
+            if result['status'] == 'needs_update':
+                return result, None, None, None, None
             answer = booking_text(s.state or {})['submitted'].format(
                 request_id=result['request_id']
             )
@@ -424,7 +397,27 @@ def already_submitted(request_id, client_id):
     }
 
 
-def confirm_booking(db, s, client_id, revision, confirmed):
+def recover_confirmation(db, session, message=None):
+    advance_message_version(db, session)
+    session.stage = 'collecting'
+    session.revision += 1
+    preview = build_preview(db, session)
+    answer = invalid_preview_text(session.state or {})
+    if message is not None:
+        db.add(ChatMessage(session_id=session.id, role='user', content=message))
+    db.add(ChatMessage(session_id=session.id, role='assistant', content=answer))
+    db.commit()
+    return {
+        'status': 'needs_update',
+        'answer': answer,
+        'revision': session.revision,
+        'booking_intent': False,
+        'stage': session.stage,
+        'booking_preview': preview,
+    }
+
+
+def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     if not confirmed:
         raise HTTPException(400, 'Необходимо явное подтверждение')
     existing = (
@@ -440,7 +433,7 @@ def confirm_booking(db, s, client_id, revision, confirmed):
     if revision != s.revision:
         raise HTTPException(409, 'Данные изменились, запросите новый preview')
     if preview['missing_fields']:
-        raise HTTPException(422, detail={'missing_fields': preview['missing_fields']})
+        return recover_confirmation(db, s, message)
     st = preview['data']
     selections = (
         db.query(TravelSelection)
@@ -538,3 +531,51 @@ async def confirm_booking_serialized(session_id, client_id, token, revision, con
         return await _database_call(
             _confirm_booking_for_client, session_id, client_id, token, revision, confirmed
         )
+
+
+def _remove_service(session_id, client_id, token, kind):
+    with SessionLocal() as db:
+        if client_by_token(db, token).id != client_id:
+            raise HTTPException(401, 'Authentication required')
+        session = owned(db, session_id, client_id)
+        if session.stage == 'submitted':
+            raise HTTPException(409, 'Submitted requests cannot be edited')
+        selection = (
+            db.query(TravelSelection)
+            .filter_by(session_id=session_id, client_id=client_id)
+            .with_for_update()
+            .first()
+        )
+        if selection and processing_status(selection, linked_request(db, selection)) in {
+            'completed',
+            'cancelled',
+        }:
+            raise HTTPException(409, 'Closed selections cannot be edited')
+        advance_message_version(db, session)
+        state = dict(session.state or {})
+        state.pop(f'{kind}_id', None)
+        session.state = state
+        session.revision += 1
+        session.stage = 'collecting'
+        if selection:
+            setattr(selection, f'{kind}_id', None)
+        answer = booking_text(state)['service_removed']
+        db.add(ChatMessage(session_id=session_id, role='assistant', content=answer))
+        preview = build_preview(db, session)
+        if preview['can_confirm']:
+            session.stage = 'awaiting_confirmation'
+        db.commit()
+        return {
+            'status': 'updated',
+            'stage': session.stage,
+            'revision': session.revision,
+            'answer': answer,
+            'booking_preview': preview,
+        }
+
+
+async def remove_optional_service(session_id, client_id, token, kind):
+    if kind not in {'hotel', 'transport'}:
+        raise HTTPException(422, 'Only optional services can be removed')
+    async with session_lock(session_id):
+        return await _database_call(_remove_service, session_id, client_id, token, kind)
