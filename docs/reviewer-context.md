@@ -86,4 +86,44 @@ Verification completed on 2026-10-28:
 - Ruff format check on the changed Python files: **17 files already formatted**.
 - `git diff --check`: **passed**.
 
-Migrations 0014 and 0015 must be manually applied before deploying this code because the deployment workflow blocks automatic schema changes.
+Migrations 0014 through 0016 must be manually applied before deploying this code because the deployment workflow blocks automatic schema changes.
+
+---
+
+## Follow-up for review `bbab808..worktree` (2026-10-28)
+
+### Required block A
+
+- **A1′ — implemented:** SQLAdmin no longer treats absent languages/fields in the submitted JSON as deletion. The update hook locks and refreshes the record, merges explicit edits into the latest translations, and queues a fresh translation for explicit empty values. Test through the real SQLAdmin edit GET/POST path: `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues` (form opened with `{}`, worker writes translations, submit preserves them; explicit clear queues regeneration).
+- **A4 — implemented:** migration 0015 keeps a database server default `scope=''`, matching the ORM default, so old containers can insert counters without naming `scope`. Tested by `test_translation_migration_downgrade_removes_stale_values`, which upgrades and issues the legacy INSERT.
+- **A5 — implemented:** unknown login identifiers are SHA-256 hashed before storing the limiter account index; known accounts still use their numeric account ID. `test_unknown_254_character_email_is_not_stored_as_rate_limit_identity` verifies HTTP 401 for a 254-character email and confirms the raw value is absent from `account_id`.
+- **A6 — not implemented pending explicit authorization:** read-only audit found four `kyrgyzgo_*.db` files in each of `improve-chat-consultation-20261027` and `jazi`; `master` has no such files but diverges from `main`. Removing or rewriting remote branches changes shared GitHub history and is awaiting the repository owner's approval. The code changes do not erase those remote objects.
+
+### Required block B
+
+- **B4 — implemented:** runtime tour display now uses `translation_ready`; SQL search and ordering apply equivalent hash and non-whitespace checks. Test: `test_tour_display_and_search_fall_back_for_whitespace_translation`.
+- **B5 — implemented:** see B7 below; explicitly clearing a translation schedules immediate regeneration.
+- **B6 — implemented:** whitespace-only tour translations now fall back in detail/list display, and SQL search/sort uses the same non-whitespace rule. Test: `test_tour_display_and_search_fall_back_for_whitespace_translation`.
+- **B7 — implemented:** explicit empty SQLAdmin translation fields are removed from stored translations/manual overrides and enqueue a replacement. Test: `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues`.
+- **B9 — implemented:** invalid or empty `ADMIN_ALLOWED_IPS` logs an error and denies `/admin` only; public paths continue. IPv4-mapped IPv6 addresses are normalized with `client_network`. Tests: `test_invalid_admin_allowlist_fails_closed_without_disabling_public_paths`, `test_admin_allowlist_normalizes_ipv4_mapped_ipv6`.
+- **B10 — implemented:** deployment checks the production `.env` for a non-empty, valid `ADMIN_ALLOWED_IPS`; `DEPLOY.md` documents the SSH tunnel/Docker gateway address issue. Tests: `test_deploy_requires_explicit_valid_admin_allowlist`, `test_environment_example_documents_required_settings`.
+- **Restored admin login limiter coverage:** `test_admin_login_limit_caps_attempts_per_account_and_ip` verifies five failed attempts are accepted and the sixth from the same account/IP is rate-limited.
+- **Legacy CRLF rows — implemented:** migration 0016 normalizes localized source fields and updates hashes only when the stored hash matched the pre-migration source. SQLAdmin also normalizes existing and submitted values before compare/save. Test: `test_translation_migration_downgrade_removes_stale_values`.
+
+### Optional block C
+
+- **C8 — implemented:** migration 0014 downgrade clears stale tour translation fields instead of copying Russian source text into translation columns. The migration regression test now expects the legacy non-null title to be empty.
+- **C11 — implemented:** admin allowlist uses the shared `client_network` identity; see `test_admin_allowlist_normalizes_ipv4_mapped_ipv6`.
+- **C12 — implemented:** the Alembic parser maps legacy `version_path_separator = space` and `newline` to their actual separators. Test: `test_candidate_schema_supports_legacy_named_version_path_separator`.
+- **C14 — deferred:** query optimization is independent of these correctness and deployment blockers; retain the existing query plan until separately benchmarked.
+- **C15 — deferred:** helper/constant deduplication is cleanup and is not needed for the requested fixes.
+- **C16 — already implemented in `bbab808`:** `build_preview()` separates internal completeness from stage-aware `can_confirm`.
+
+Verification completed on 2026-10-28:
+
+- `TEST_DATABASE_URL=postgresql+psycopg2://postgres@127.0.0.1:5432/postgres python -m pytest -q`: **468 passed in 162.45s**. Tests created and dropped a temporary PostgreSQL database.
+- `ruff check .`: **passed**.
+- `ruff format --check` on the 18 changed Python files: **passed**.
+- `git diff --check`: **passed**.
+
+Migrations 0014 through 0016 require the existing manual deployment procedure before this application version is deployed. A6 remains outstanding until the repository owner approves removal or rewriting of the two remote branches listed above.

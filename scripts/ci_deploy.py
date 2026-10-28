@@ -2,6 +2,7 @@ import ast
 import configparser
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 import re
@@ -257,6 +258,10 @@ def candidate_schema(source):
             locations = configured.split(separator)
         elif values.get('version_path_separator') == 'os':
             locations = configured.split(os.pathsep)
+        elif values.get('version_path_separator') == 'space':
+            locations = shlex.split(configured)
+        elif values.get('version_path_separator') == 'newline':
+            locations = configured.splitlines()
         elif values.get('version_path_separator'):
             locations = configured.split(values['version_path_separator'])
         else:
@@ -302,6 +307,36 @@ def candidate_schema(source):
     return sorted(heads)
 
 
+def validate_admin_allowlist(env_path):
+    """Require a valid explicit admin network policy in the production env file."""
+    try:
+        lines = Path(env_path).read_text(encoding='utf-8').splitlines()
+    except OSError as exc:
+        raise RuntimeError('Production .env is unavailable; configure ADMIN_ALLOWED_IPS') from exc
+    configured = ''
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or '=' not in stripped:
+            continue
+        key, value = stripped.split('=', 1)
+        if key.strip() == 'ADMIN_ALLOWED_IPS':
+            configured = value.strip().strip('"').strip("'")
+            break
+    if not configured:
+        raise RuntimeError('Production .env must set ADMIN_ALLOWED_IPS before deployment')
+    try:
+        networks = [
+            ipaddress.ip_network(item.strip(), strict=False) for item in configured.split(',')
+        ]
+    except ValueError as exc:
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS contains an invalid IP or network'
+        ) from exc
+    if not networks:
+        raise RuntimeError('Production ADMIN_ALLOWED_IPS must contain at least one network')
+    return networks
+
+
 def deploy(revision, source):
     import fcntl
 
@@ -331,6 +366,7 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
+        validate_admin_allowlist(ROOT / '.env')
         compose_output('config', '--quiet')
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],

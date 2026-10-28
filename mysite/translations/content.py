@@ -83,8 +83,8 @@ def mark_manual_translations(translations, source, existing=None, *, compared_to
     for language in ('en', 'de', 'zh'):
         values = translations.get(language)
         if not isinstance(values, dict):
-            if language in comparison:
-                result.pop(language, None)
+            # Missing languages were not present in the submitted form. Preserve
+            # worker updates that arrived after the form was rendered.
             continue
         previous = result.get(language)
         previous = dict(previous) if isinstance(previous, dict) else {}
@@ -96,17 +96,6 @@ def mark_manual_translations(translations, source, existing=None, *, compared_to
         submitted_hashes = submitted_hashes if isinstance(submitted_hashes, dict) else {}
         old_manual = previous.get('_manual_fields', [])
         manual = set(old_manual if isinstance(old_manual, list) else [])
-        incoming_fields = {field for field in values if field in source}
-        baseline_fields = {field for field in baseline if field in source}
-        for field in baseline_fields - incoming_fields:
-            previous.pop(field, None)
-            hashes.pop(field, None)
-            manual.discard(field)
-        for field in source:
-            if field not in incoming_fields and field not in baseline_fields:
-                previous.pop(field, None)
-                hashes.pop(field, None)
-                manual.discard(field)
         for field, raw_value in values.items():
             if field not in source or not isinstance(raw_value, str):
                 continue
@@ -145,16 +134,41 @@ def manual_translation_changed(incoming, existing):
     for language in ('en', 'de', 'zh'):
         values = incoming.get(language)
         if not isinstance(values, dict):
-            values = {}
+            continue
         previous = existing.get(language)
         if not isinstance(previous, dict):
             previous = {}
-        fields = {key for key in values if isinstance(key, str)}
-        fields.update(key for key in previous if isinstance(key, str) and not key.startswith('_'))
-        for field in fields:
+        for field in values:
+            if not isinstance(field, str):
+                continue
             if field.startswith('_'):
                 continue
             if normalize_text(values.get(field)) != normalize_text(previous.get(field)):
+                return True
+    return False
+
+
+def manual_translation_needs_refresh(incoming, existing):
+    """Detect explicit empty values used to clear translations in SQLAdmin."""
+    if isinstance(incoming, str):
+        try:
+            incoming = json.loads(incoming) if incoming.strip() else {}
+        except json.JSONDecodeError:
+            return False
+    if not isinstance(incoming, dict):
+        return False
+    existing = existing if isinstance(existing, dict) else {}
+    for language in ('en', 'de', 'zh'):
+        values = incoming.get(language)
+        previous = existing.get(language)
+        if not isinstance(values, dict) or not isinstance(previous, dict):
+            continue
+        for field, value in values.items():
+            if not isinstance(field, str):
+                continue
+            if field.startswith('_'):
+                continue
+            if isinstance(value, str) and not normalize_text(value).strip() and previous.get(field):
                 return True
     return False
 

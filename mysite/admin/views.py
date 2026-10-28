@@ -33,6 +33,7 @@ from mysite.translations.content import (
     CONTENT_FIELDS,
     generate_translations,
     manual_translation_changed,
+    manual_translation_needs_refresh,
     mark_manual_translations,
 )
 from mysite.translations.jobs import enqueue_translation
@@ -56,7 +57,11 @@ class LocalizedAdminMixin:
             for field in fields
         )
         source = {field: data.get(field, getattr(model, field, None)) for field in fields}
+        refresh_cleared_fields = False
         if 'translations' in data:
+            refresh_cleared_fields = manual_translation_needs_refresh(
+                data['translations'], form_translation_snapshot
+            )
             if manual_translation_changed(data['translations'], form_translation_snapshot):
                 data['translations'] = mark_manual_translations(
                     data['translations'],
@@ -66,7 +71,7 @@ class LocalizedAdminMixin:
                 )
             else:
                 data['translations'] = model.translations or {}
-        if source_changed:
+        if source_changed or ('translations' in data and refresh_cleared_fields):
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):

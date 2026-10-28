@@ -4,6 +4,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+from sqlalchemy import text
+
 from mysite.database.db import SessionLocal
 from mysite.database.models import About
 from mysite.admin.views import LocalizedAdminMixin
@@ -14,6 +16,8 @@ from mysite.translations.content import (
 )
 from mysite.translations.jobs import _translation_is_complete, translate_record
 from mysite.translations.source import source_field_hash, translation_ready
+from mysite.database.models import Tour
+from mysite.api.tour import get_localized_tour
 
 
 def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
@@ -24,6 +28,7 @@ def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+import hashlib
 
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0013')
@@ -33,7 +38,7 @@ try:
         connection.execute(text(
             "INSERT INTO abouts (title, description, experience_years, travelers_count, "
             "branches_count, destinations_count, routes_count, is_active, translations) "
-            "VALUES ('Old source', 'Description', 1, 1, 1, 1, 1, true, "
+            "VALUES (E'Old\\r\\nsource', 'Description', 1, 1, 1, 1, 1, true, "
             "CAST(:translations AS json))"
         ), {'translations': '{"en":{"title":"Old translation"}}'})
         connection.execute(text(
@@ -47,12 +52,24 @@ try:
         ))
     command.upgrade(config, 'head')
     with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO rate_limit_counters (key_hash, window_start, request_count) "
+            "VALUES ('legacy-insert', 1, 1)"
+        ))
+        assert connection.scalar(text(
+            "SELECT scope FROM rate_limit_counters WHERE key_hash='legacy-insert'"
+        )) == ''
+        translated = connection.scalar(text("SELECT translations FROM abouts WHERE id=1"))
+        expected = hashlib.md5('Old\\nsource'.encode(), usedforsecurity=False).hexdigest()
+        assert translated['en']['_source_hashes']['title'] == expected
+        assert connection.scalar(text("SELECT title FROM abouts WHERE id=1")) == 'Old\\nsource'
+    with engine.begin() as connection:
         connection.execute(text("UPDATE abouts SET title = 'New source' WHERE id = 1"))
         connection.execute(text("UPDATE tours SET title = 'New tour' WHERE id = 1"))
     command.downgrade(config, '20261028_0013')
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT translations FROM abouts WHERE id=1")) is None
-        assert connection.scalar(text("SELECT title FROM tour_translations WHERE tour_id=1")) == 'New tour'
+        assert connection.scalar(text("SELECT title FROM tour_translations WHERE tour_id=1")) == ''
 finally:
     engine.dispose()
 """
@@ -186,6 +203,31 @@ def test_translation_readiness_uses_same_whitespace_and_source_rules():
     record = About(**source, translations=whitespace)
     assert localized(record, 'en')['title'] == source['title']
     assert not _translation_is_complete(whitespace, source)
+
+
+def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
+    from mysite.database import models
+
+    marker = 'WhitespaceTourFallback'
+    with SessionLocal() as db:
+        tour = Tour(title=marker, price=10)
+        db.add(tour)
+        db.flush()
+        db.execute(
+            text(
+                'INSERT INTO tour_translations (tour_id, lang, title, source_hashes, manual_fields) '
+                "VALUES (:tour_id, 'en', '   ', CAST(:hashes AS json), '[]')"
+            ),
+            {'tour_id': tour.id, 'hashes': '{"title":"' + source_field_hash(marker) + '"}'},
+        )
+        tour_id = tour.id
+        db.commit()
+        tour = db.get(models.Tour, tour_id)
+        assert get_localized_tour(tour, db, 'en')['title'] == marker
+
+    response = client.get('/tours/', params={'lang': 'en', 'search': marker})
+    assert response.status_code == 200, response.text
+    assert any(item['id'] == tour_id and item['title'] == marker for item in response.json())
 
 
 def test_sqladmin_crlf_is_normalized_before_translation_change_detection():

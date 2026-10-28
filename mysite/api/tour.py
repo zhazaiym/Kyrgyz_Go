@@ -24,8 +24,8 @@ from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
 from mysite.translations.source import (
     TOUR_TRANSLATION_FIELDS,
-    source_field_hash,
     source_value_changed,
+    translation_ready,
 )
 from mysite.translations.translator import translate_tour
 
@@ -62,10 +62,9 @@ def get_localized_tour(
         source_hashes = translation_db.source_hashes or {}
         for field in TRANSLATED_FIELDS if detail or include_description else ('title',):
             value = getattr(translation_db, field)
-            if (
-                isinstance(value, str)
-                and value
-                and source_hashes.get(field) == source_field_hash(getattr(tour_db, field))
+            source_value = getattr(tour_db, field)
+            if source_value not in (None, '') and translation_ready(
+                value, source_hashes.get(field), source_value
             ):
                 result[field] = value
 

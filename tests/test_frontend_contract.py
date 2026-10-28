@@ -289,6 +289,73 @@ def test_sqladmin_generates_translations(client, admin_headers):
     client.get('/admin/logout')
 
 
+def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues(
+    client, admin_headers
+):
+    from mysite.database.models import FAQ
+    from mysite.translations.jobs import translate_record
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    with SessionLocal() as db:
+        record = FAQ(question='Form merge question', answer='Form merge answer', translations={})
+        db.add(record)
+        db.commit()
+        record_id = record.id
+
+    edit_path = f'/admin/faq/edit/{record_id}'
+    opened = client.get(edit_path)
+    assert opened.status_code == 200
+
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        source = {'question': record.question, 'answer': record.answer}
+
+    def translate(values):
+        return {
+            lang: {field: f'{value} {lang}' for field, value in values.items()}
+            for lang in ('en', 'de', 'zh')
+        }
+
+    assert translate_record(FAQ, record_id, source, translate) == 'translated'
+
+    saved = client.post(
+        edit_path,
+        data={
+            'question': source['question'],
+            'answer': source['answer'],
+            'is_active': 'y',
+            'translations': '{}',
+            'save': 'Save',
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code in (302, 303), saved.text
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        assert record.translations['en']['question'] == 'Form merge question en'
+
+    cleared = client.post(
+        edit_path,
+        data={
+            'question': source['question'],
+            'answer': source['answer'],
+            'is_active': 'y',
+            'translations': '{"en":{"question":""}}',
+            'save': 'Save',
+        },
+        follow_redirects=False,
+    )
+    assert cleared.status_code in (302, 303), cleared.text
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        assert record.translations['en']['question'] == 'Form merge question en'
+        assert record.translations['en']['_manual_fields'] == []
+
+
 def test_seed_demo_is_repeatable_and_preserves_edits(client, customer_headers):
     from seed_demo import seed_demo
 

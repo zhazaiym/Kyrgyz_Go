@@ -93,6 +93,52 @@ def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
     assert module.candidate_schema(tmp_path) == ['second']
 
 
+@pytest.mark.parametrize(
+    ('separator', 'configured'),
+    [('space', '%(here)s/first %(here)s/second'), ('newline', '%(here)s/first\n %(here)s/second')],
+)
+def test_candidate_schema_supports_legacy_named_version_path_separator(
+    tmp_path, separator, configured
+):
+    module = load_deployment()
+    first = tmp_path / 'first'
+    second = tmp_path / 'second'
+    first.mkdir()
+    second.mkdir()
+    (first / '001.py').write_text("revision = 'first'\ndown_revision = None\n", encoding='utf-8')
+    (second / '002.py').write_text(
+        "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
+    )
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = %(here)s\n'
+        f'version_locations = {configured}\n'
+        f'version_path_separator = {separator}\n',
+        encoding='utf-8',
+    )
+
+    assert module.candidate_schema(tmp_path) == ['second']
+
+
+@pytest.mark.parametrize(
+    ('content', 'valid'),
+    [
+        ('ADMIN_ALLOWED_IPS=192.0.2.4,2001:db8::/32\n', True),
+        ('SECRET_KEY=value\n', False),
+        ('ADMIN_ALLOWED_IPS=\n', False),
+        ('ADMIN_ALLOWED_IPS=bad-network\n', False),
+    ],
+)
+def test_deploy_requires_explicit_valid_admin_allowlist(tmp_path, content, valid):
+    env_file = tmp_path / '.env'
+    env_file.write_text(content, encoding='utf-8')
+    module = load_deployment()
+    if valid:
+        assert len(module.validate_admin_allowlist(env_file)) == 2
+    else:
+        with pytest.raises(RuntimeError, match='ADMIN_ALLOWED_IPS'):
+            module.validate_admin_allowlist(env_file)
+
+
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'migration_package' / 'versions'

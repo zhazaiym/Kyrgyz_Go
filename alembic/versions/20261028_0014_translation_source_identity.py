@@ -187,7 +187,9 @@ def downgrade():
         values = {'id': row['id']}
         for field in TOUR_FIELDS:
             if hashes.get(field) != _field_hash(row[f'source_{field}']):
-                values[field] = row[f'source_{field}']
+                # Legacy readers treat any non-empty text as translated. Clear
+                # stale values instead of copying the source into translation.
+                values[field] = '' if field == 'title' else None
         if len(values) > 1:
             identity = values.pop('id')
             bind.execute(translation.update().where(translation.c.id == identity).values(**values))

@@ -2,18 +2,27 @@
 
 import ipaddress
 import json
+import logging
 import os
+
+from mysite.api.network_identity import client_network
+
+logger = logging.getLogger(__name__)
 
 
 def _allowed_networks():
     configured = os.getenv('ADMIN_ALLOWED_IPS', '127.0.0.1/32,::1/128')
     networks = []
-    for value in configured.split(','):
-        value = value.strip()
-        if value:
-            networks.append(ipaddress.ip_network(value, strict=False))
+    try:
+        for value in configured.split(','):
+            value = value.strip()
+            if value:
+                networks.append(ipaddress.ip_network(value, strict=False))
+    except ValueError:
+        logger.exception('Invalid ADMIN_ALLOWED_IPS; admin access is disabled')
+        return ()
     if not networks:
-        raise RuntimeError('ADMIN_ALLOWED_IPS must contain at least one IP or network')
+        logger.error('ADMIN_ALLOWED_IPS is empty; admin access is disabled')
     return tuple(networks)
 
 
@@ -30,8 +39,25 @@ class AdminAccessMiddleware:
             return await self.app(scope, receive, send)
         client = scope.get('client')
         try:
-            address = ipaddress.ip_address(client[0]) if client else None
-            allowed = address is not None and any(address in network for network in self.networks)
+            identity = client_network(client[0]) if client else None
+            raw_address = ipaddress.ip_address(client[0]) if client else None
+            address = (
+                ipaddress.ip_address(identity) if identity and '/' not in identity else raw_address
+            )
+            identity_network = (
+                (ipaddress.ip_network(identity, strict=False) if '/' in identity else None)
+                if identity
+                else None
+            )
+            allowed = address is not None and any(
+                address in network
+                or (
+                    identity_network is not None
+                    and identity_network.version == network.version
+                    and identity_network.subnet_of(network)
+                )
+                for network in self.networks
+            )
         except ValueError:
             allowed = False
         if allowed:

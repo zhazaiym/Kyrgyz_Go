@@ -13,6 +13,8 @@ def source_field_hash(value):
 def source_value_changed(old, new):
     old = '' if old is None or old == '' else old
     new = '' if new is None or new == '' else new
+    old = normalize_text(old)
+    new = normalize_text(new)
     return old != new
 
 

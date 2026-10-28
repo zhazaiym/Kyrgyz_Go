@@ -93,8 +93,9 @@ def test_deployment_failure_never_activates_a_new_schema_and_restores_exact_over
     override = tmp_path / 'override.yml'
     previous = 'services:\n  api:\n    image: old\n    environment:\n      KEEP: original\n'
     override.write_text(previous)
-    for name in ('docker-compose.yml', 'Caddyfile', '.env'):
+    for name in ('docker-compose.yml', 'Caddyfile'):
         (root / name).write_text('test fixture')
+    (root / '.env').write_text('ADMIN_ALLOWED_IPS=127.0.0.1/32\n')
     for name, value in [
         ('ROOT', root),
         ('RELEASES', releases),
@@ -323,6 +324,37 @@ def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, mo
             )
         assert attacker.post(route, json={**identity, 'password': password}).status_code == 429
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
+
+
+def test_admin_login_limit_caps_attempts_per_account_and_ip(client, admin_headers, monkeypatch):
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_333)
+    payload = {'username': 'test-admin', 'password': 'incorrect'}
+    for _ in range(5):
+        assert client.post('/admin/login/', json=payload).status_code == 401
+    assert client.post('/admin/login/', json=payload).status_code == 429
+
+
+def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client, monkeypatch):
+    import hashlib
+
+    email = 'a' * 242 + '@example.com'
+    assert len(email) == 254
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_334)
+    response = client.post('/auth/login', json={'email': email, 'password': 'NotThePassword123!'})
+    assert response.status_code == 401, response.text
+
+    expected = 'unknown:' + hashlib.sha256(email.encode()).hexdigest()
+    with SessionLocal() as db:
+        account_ids = [
+            row[0]
+            for row in db.query(rate_limit.RateLimitCounter.account_id)
+            .filter(rate_limit.RateLimitCounter.account_id.isnot(None))
+            .all()
+        ]
+    assert expected in account_ids
+    assert email not in account_ids
 
 
 def test_account_limits_use_one_insert_and_one_commit_for_both_counters(monkeypatch):

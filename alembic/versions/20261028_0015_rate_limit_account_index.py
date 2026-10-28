@@ -10,12 +10,15 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column('rate_limit_counters', sa.Column('scope', sa.String(64), nullable=True))
+    op.add_column(
+        'rate_limit_counters',
+        sa.Column('scope', sa.String(64), nullable=True, server_default=sa.text("''")),
+    )
     op.add_column('rate_limit_counters', sa.Column('account_id', sa.String(128), nullable=True))
     # Old rows contain only a one-way hash, so their account dimension cannot be recovered.
     # These are short-lived counters; clearing them once lets the next request repopulate metadata.
     op.execute(sa.text('DELETE FROM rate_limit_counters'))
-    op.alter_column('rate_limit_counters', 'scope', nullable=False)
+    op.alter_column('rate_limit_counters', 'scope', nullable=False, server_default=sa.text("''"))
     op.create_index(
         'ix_rate_limit_counters_scope_account', 'rate_limit_counters', ['scope', 'account_id']
     )

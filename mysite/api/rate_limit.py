@@ -30,6 +30,16 @@ def _counter_key(scope, principal):
     return hashlib.sha256(f'{scope}\0{principal}'.encode()).hexdigest()
 
 
+def _account_index(principal):
+    if not principal.startswith('account-ip:'):
+        return None
+    account_key = principal[len('account-ip:') :].split(':ip:', 1)[0]
+    if account_key.startswith('unknown:'):
+        identifier = account_key[len('unknown:') :]
+        account_key = 'unknown:' + hashlib.sha256(identifier.encode('utf-8')).hexdigest()
+    return account_key
+
+
 def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
     rows, bounds, identities, retries = [], {}, [], []
@@ -43,9 +53,7 @@ def consume_rate_limits(limits, *, current_time=None):
         bounds[key] = maximum + 1
         identities.append(key)
         retries.append(max(1, start + window - instant))
-        account_id = None
-        if principal.startswith('account-ip:'):
-            account_id = principal[len('account-ip:') :].split(':ip:', 1)[0]
+        account_id = _account_index(principal)
         rows.append(
             {
                 'key_hash': key,

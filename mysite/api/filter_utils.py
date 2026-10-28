@@ -40,8 +40,11 @@ def _display_field(model, field, lang):
         )
         return case(
             (
-                translated_hash == _source_hash_expression(original),
-                func.coalesce(func.nullif(translated, ''), original),
+                (translated_hash == _source_hash_expression(original))
+                & (func.btrim(func.coalesce(translated, '')) != '')
+                & (original.isnot(None))
+                & (original != ''),
+                translated,
             ),
             else_=original,
         )
@@ -53,8 +56,11 @@ def _display_field(model, field, lang):
     return case(
         (
             (func.json_typeof(translated) == 'string')
-            & (hashes == _source_hash_expression(original)),
-            func.coalesce(func.nullif(translated.as_string(), ''), original),
+            & (func.btrim(func.coalesce(translated.as_string(), '')) != '')
+            & (hashes == _source_hash_expression(original))
+            & (original.isnot(None))
+            & (original != ''),
+            translated.as_string(),
         ),
         else_=original,
     )

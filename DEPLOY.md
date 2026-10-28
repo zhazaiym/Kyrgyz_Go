@@ -24,7 +24,11 @@ set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
 `/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
 list of administrator IPs or CIDR networks. Set it to the fixed egress address
 of the administrator VPN or office network before deploying. The default allows
-only localhost, so remote admin login is denied until this is configured. With
+only localhost for local development. The deployment script refuses to deploy
+unless the server `.env` explicitly contains a valid `ADMIN_ALLOWED_IPS` value.
+For SSH port forwarding, the API sees the Docker bridge gateway as the client,
+not `127.0.0.1`; use the address observed by the API or connect through the
+allowlisted VPN. With
 100 unlisted attacker addresses, accepted admin requests are **0 attempts/minute**;
 if all administrators share one allowlisted VPN address, the existing admin
 login limiter permits at most **5 attempts/minute** from that address. Do not
@@ -66,7 +70,7 @@ The deployment workflow refuses schema changes and reports `migration_required`
 before building or replacing the running image. Review the migration, take a
 database backup, apply `alembic upgrade head` using the project deployment
 procedure, then deploy the matching image. This release adds migrations 0014
-and 0015; do not rely on the application container to apply them automatically.
+through 0016; do not rely on the application container to apply them automatically.
 
 ### Start and verify
 
