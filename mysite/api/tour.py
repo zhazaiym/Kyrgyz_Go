@@ -22,6 +22,11 @@ from mysite.database.schema import (
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
+from mysite.translations.source import (
+    TOUR_TRANSLATION_FIELDS,
+    source_field_hash,
+    source_value_changed,
+)
 from mysite.translations.translator import translate_tour
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])
@@ -29,10 +34,10 @@ tour_router = APIRouter(prefix='/tours', tags=['Tours'])
 logger = logging.getLogger(__name__)
 
 LANGUAGES = ['en', 'de', 'zh']
-TRANSLATED_FIELDS = ['title', 'description', 'included', 'excluded']
+TRANSLATED_FIELDS = TOUR_TRANSLATION_FIELDS
 
 
-def try_save_translations(tour_db: Tour, db: Session):
+def try_save_translations(tour_db: Tour):
     return schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
 
@@ -54,9 +59,14 @@ def get_localized_tour(
     translation_db = next((row for row in tour_db.translations if row.lang == lang), None)
 
     if translation_db is not None:
+        source_hashes = translation_db.source_hashes or {}
         for field in TRANSLATED_FIELDS if detail or include_description else ('title',):
             value = getattr(translation_db, field)
-            if isinstance(value, str) and value:
+            if (
+                isinstance(value, str)
+                and value
+                and source_hashes.get(field) == source_field_hash(getattr(tour_db, field))
+            ):
                 result[field] = value
 
     return result
@@ -78,7 +88,7 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
         db.add(tour_db)
         db.flush()
 
-        try_save_translations(tour_db, db)
+        try_save_translations(tour_db)
 
         db.commit()
         db.refresh(tour_db)
@@ -136,6 +146,10 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail='Тур табылган жок')
 
     data = tour.model_dump(exclude_unset=True)
+    source_changed = any(
+        field in data and source_value_changed(getattr(tour_db, field), data[field])
+        for field in TRANSLATED_FIELDS
+    )
     if data.get('country_id') is not None and db.get(Country, data['country_id']) is None:
         raise HTTPException(404, 'Country not found')
     minimum = data.get('min_people', tour_db.min_people)
@@ -155,12 +169,8 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
 
         db.flush()
 
-        if any(field in data for field in TRANSLATED_FIELDS):
-            db.query(TourTranslation).filter(TourTranslation.tour_id == tour_db.id).delete(
-                synchronize_session=False
-            )
-            db.flush()
-            try_save_translations(tour_db, db)
+        if source_changed:
+            try_save_translations(tour_db)
 
         db.commit()
         db.refresh(tour_db)

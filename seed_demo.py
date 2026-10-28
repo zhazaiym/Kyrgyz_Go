@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from mysite.database.db import SessionLocal
+from mysite.database.db import Base, SessionLocal
 from mysite.database.models import (
     FAQ,
     About,
@@ -28,6 +28,8 @@ from mysite.database.models import (
     TrekkingImage,
     TrekkingProgram,
 )
+from mysite.translations.content import CONTENT_FIELDS
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_field_hash
 
 
 def seed_demo(db):
@@ -127,7 +129,16 @@ def seed_demo(db):
         for lang, fields in content('title', english, german, chinese).items():
             existing = db.query(TourTranslation).filter_by(tour_id=tour.id, lang=lang).first()
             if existing is None:
-                db.add(TourTranslation(tour_id=tour.id, lang=lang, **fields))
+                source_hashes = {
+                    field: source_field_hash(getattr(tour, field))
+                    for field in TOUR_TRANSLATION_FIELDS
+                    if getattr(tour, field) not in (None, '')
+                }
+                db.add(
+                    TourTranslation(
+                        tour_id=tour.id, lang=lang, source_hashes=source_hashes, **fields
+                    )
+                )
                 created += 1
     get_or_create(
         Hotel,
@@ -645,6 +656,49 @@ def seed_demo(db):
                         f'测试: 行程 {number}',
                     ),
                 )
+    entities = {
+        mapper.class_.__tablename__: mapper.class_
+        for mapper in Base.registry.mappers
+        if hasattr(mapper.class_, '__tablename__')
+    }
+    for table_name, fields in CONTENT_FIELDS.items():
+        entity = entities.get(table_name)
+        if entity is None:
+            continue
+        for record in db.query(entity).all():
+            source = {field: getattr(record, field) for field in fields}
+            if not any(
+                isinstance(value, str) and value.startswith(('TEST:', 'ТЕСТ:'))
+                for value in source.values()
+            ):
+                continue
+            stored = dict(record.translations or {})
+            changed = False
+            for language in ('en', 'de', 'zh'):
+                values = stored.get(language)
+                if not isinstance(values, dict):
+                    continue
+                values = dict(values)
+                hashes = dict(values.get('_source_hashes', {}))
+                for field in fields:
+                    if isinstance(values.get(field), str) and values[field]:
+                        hashes.setdefault(field, source_field_hash(source[field]))
+                values['_source_hashes'] = hashes
+                stored[language] = values
+                changed = True
+            if changed:
+                record.translations = stored
+
+    demo_tours = db.query(Tour).filter(Tour.title.like('ТЕСТ:%')).all()
+    for tour in demo_tours:
+        for row in tour.translations:
+            hashes = dict(row.source_hashes or {})
+            for field in TOUR_TRANSLATION_FIELDS:
+                value = getattr(row, field)
+                if isinstance(value, str) and value:
+                    hashes.setdefault(field, source_field_hash(getattr(tour, field)))
+            row.source_hashes = hashes
+
     db.commit()
     return created
 

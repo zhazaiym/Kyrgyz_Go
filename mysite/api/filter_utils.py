@@ -1,9 +1,14 @@
 from fastapi import Query
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from mysite.database.models import Tour, TourTranslation
 from mysite.translations.content import CONTENT_FIELDS
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS
+
+
+def _source_hash_expression(column):
+    return func.md5(func.coalesce(cast(column, String), ''))
 
 
 class Pagination:
@@ -19,7 +24,7 @@ def _display_field(model, field, lang):
     if lang == 'ru':
         return original
     if model is Tour:
-        if field not in {'title', 'description', 'included', 'excluded'}:
+        if field not in TOUR_TRANSLATION_FIELDS:
             return original
         translated = (
             select(getattr(TourTranslation, field))
@@ -27,14 +32,28 @@ def _display_field(model, field, lang):
             .correlate(Tour)
             .scalar_subquery()
         )
-        return func.coalesce(func.nullif(translated, ''), original)
+        translated_hash = (
+            select(TourTranslation.source_hashes[field].as_string())
+            .where(TourTranslation.tour_id == Tour.id, TourTranslation.lang == lang)
+            .correlate(Tour)
+            .scalar_subquery()
+        )
+        return case(
+            (
+                translated_hash == _source_hash_expression(original),
+                func.coalesce(func.nullif(translated, ''), original),
+            ),
+            else_=original,
+        )
     if field not in CONTENT_FIELDS.get(model.__tablename__, ()):
         return original
     # JSON fields must follow the same non-empty-string fallback as localized().
     translated = model.translations[lang][field]
+    hashes = model.translations[lang]['_source_hashes'][field].as_string()
     return case(
         (
-            func.json_typeof(translated) == 'string',
+            (func.json_typeof(translated) == 'string')
+            & (hashes == _source_hash_expression(original)),
             func.coalesce(func.nullif(translated.as_string(), ''), original),
         ),
         else_=original,

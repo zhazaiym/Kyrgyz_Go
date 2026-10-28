@@ -7,8 +7,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from mysite.api.chat_service import (build_preview, confirm_booking_serialized, owned,
-                                     remove_optional_service)
+from mysite.api.chat_service import (
+    build_preview,
+    confirm_booking_serialized,
+    owned,
+    remove_optional_service,
+)
 from mysite.api.client_auth import client_by_token, current_client, login_required
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.chain.prompts import WELCOME_MESSAGE
@@ -86,7 +90,12 @@ def history(
 def preview(
     data: BookingAction, client: ChatClient = Depends(current_client), db: Session = Depends(get_db)
 ):
-    return build_preview(db, owned(db, data.session_id, client.id))
+    session = owned(db, data.session_id, client.id)
+    result = build_preview(db, session)
+    result['can_confirm'] = (
+        session.stage == 'awaiting_confirmation' and not result['missing_fields']
+    )
+    return result
 
 
 @chat_router.post('/booking/confirm')

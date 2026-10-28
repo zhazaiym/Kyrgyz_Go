@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import login_attempt_allowed, record_login_failure, record_login_success
+from mysite.api.rate_limit import enforce_login_attempt
 from mysite.api.selection_status import require_status_transition
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
@@ -90,23 +90,15 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     )
     is_active = bool(admin_db and admin_db.is_active)
     password_hash = admin_db.hashed_password if admin_db else dummy_admin_hash
-    allowed = login_attempt_allowed(
-        db, 'admin-login', request, account_key, ip_limit=20, account_limit=5, window_seconds=60
-    )
     db.close()
-    if not allowed:
-        raise HTTPException(status_code=401, detail='Логин же пароль туура эмес')
+    enforce_login_attempt('admin-login', request, account_key)
     valid = verify_password(admin.password, password_hash)
     if admin_id is None or not valid:
-        record_login_failure(
-            'admin-login', request, account_key, ip_limit=20, account_limit=5, window_seconds=60
-        )
         raise HTTPException(status_code=401, detail='Логин же пароль туура эмес')
 
     if not is_active:
         raise HTTPException(status_code=403, detail='Админ активдүү эмес')
 
-    record_login_success('admin-login', request, account_key, ip_limit=20, window_seconds=60)
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = jwt.encode({'sub': str(admin_id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {'access_token': token, 'token_type': 'bearer'}

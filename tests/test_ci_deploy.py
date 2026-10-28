@@ -74,6 +74,40 @@ def test_candidate_schema_uses_alembic_configured_version_locations(tmp_path):
     assert module.candidate_schema(tmp_path) == ['head']
 
 
+def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
+    module = load_deployment()
+    first = tmp_path / 'first'
+    second = tmp_path / 'second'
+    first.mkdir()
+    second.mkdir()
+    (first / '001.py').write_text("revision = 'first'\ndown_revision = None\n", encoding='utf-8')
+    (second / '002.py').write_text(
+        "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
+    )
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = %(here)s\n'
+        'version_locations = %(here)s/first, %(here)s/second\n',
+        encoding='utf-8',
+    )
+
+    assert module.candidate_schema(tmp_path) == ['second']
+
+
+def test_candidate_schema_supports_package_relative_script_location(tmp_path):
+    module = load_deployment()
+    versions = tmp_path / 'migration_package' / 'versions'
+    versions.mkdir(parents=True)
+    (tmp_path / 'migration_package' / '__init__.py').write_text('', encoding='utf-8')
+    (versions / '001.py').write_text(
+        "revision = 'package-head'\ndown_revision = None\n", encoding='utf-8'
+    )
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = migration_package:.\n', encoding='utf-8'
+    )
+
+    assert module.candidate_schema(tmp_path) == ['package-head']
+
+
 @pytest.mark.parametrize(
     'command', ['deploy main', 'deploy ../bad', 'sh', 'deploy ' + 'a' * 40 + '; whoami']
 )

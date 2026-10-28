@@ -13,7 +13,7 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
-from mysite.api.network_identity import client_network
+from mysite.api.network_identity import client_network, rate_limits_enabled
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -75,7 +75,7 @@ class ResourceLimitsMiddleware:
         self.http_counters = OrderedDict()
 
     def http_quota(self, address):
-        if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
+        if not rate_limits_enabled():
             return
         address = client_network(address)
         instant = time.monotonic()

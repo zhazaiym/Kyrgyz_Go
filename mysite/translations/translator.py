@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS
+
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / '.env')
 
@@ -21,7 +23,7 @@ model = ChatGoogleGenerativeAI(
 
 LANGUAGES = {'ru': 'Russian', 'en': 'English', 'de': 'German', 'zh': 'Simplified Chinese'}
 
-FIELDS = ['title', 'description', 'included', 'excluded']
+FIELDS = TOUR_TRANSLATION_FIELDS
 
 
 def translate_fields(source: dict):

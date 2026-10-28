@@ -1,6 +1,7 @@
 import ast
 import configparser
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -225,6 +226,20 @@ def candidate_schema(source):
 
     def resolve(value):
         value = value.replace('%(here)s', str(base))
+        if ':' in value and not re.match(r'^[A-Za-z]:[\\/]', value):
+            package, relative = value.split(':', 1)
+            local_package = base.joinpath(*package.split('.'))
+            if local_package.is_dir():
+                return local_package / relative
+            spec = importlib.util.find_spec(package)
+            if spec is None:
+                raise ValueError(f'Alembic package location not found: {package}')
+            roots = spec.submodule_search_locations
+            if roots:
+                return Path(next(iter(roots))) / relative
+            if spec.origin:
+                return Path(spec.origin).parent / relative
+            raise ValueError(f'Alembic package location has no filesystem path: {package}')
         path = Path(value)
         return path if path.is_absolute() else base / path
 
@@ -234,12 +249,18 @@ def candidate_schema(source):
         separator = values.get('path_separator')
         if separator == 'os':
             locations = configured.split(os.pathsep)
-        elif separator == 'space' or not separator:
+        elif separator == 'space':
             locations = shlex.split(configured)
         elif separator == 'newline':
             locations = configured.splitlines()
-        else:
+        elif separator:
             locations = configured.split(separator)
+        elif values.get('version_path_separator') == 'os':
+            locations = configured.split(os.pathsep)
+        elif values.get('version_path_separator'):
+            locations = configured.split(values['version_path_separator'])
+        else:
+            locations = re.split(r'[\s,]+', configured)
         version_paths = [resolve(item.strip()) for item in locations if item.strip()]
     else:
         version_paths = [script_location / 'versions']
@@ -253,7 +274,7 @@ def candidate_schema(source):
 
     revisions = {}
     for path in paths:
-        values = {}
+        revision_values = {}
         tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
         for node in tree.body:
             if isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -263,11 +284,11 @@ def candidate_schema(source):
                     else (node.target if isinstance(node, ast.AnnAssign) else None)
                 )
                 if isinstance(target, ast.Name) and target.id in {'revision', 'down_revision'}:
-                    values[target.id] = ast.literal_eval(node.value)
-        revision = values.get('revision')
+                    revision_values[target.id] = ast.literal_eval(node.value)
+        revision = revision_values.get('revision')
         if not isinstance(revision, str) or revision in revisions:
             raise ValueError(f'Invalid or duplicate Alembic revision in {path.name}')
-        parent = values.get('down_revision')
+        parent = revision_values.get('down_revision')
         revisions[revision] = set(parent if isinstance(parent, (tuple, list)) else [parent]) - {
             None
         }

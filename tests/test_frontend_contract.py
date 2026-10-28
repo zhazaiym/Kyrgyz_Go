@@ -131,11 +131,12 @@ def test_language_on_list_and_detail(client, customer_headers, model, path, fiel
         if 'price' in model.__table__.columns:
             payload = dict(payload, price=10)
         record = model(**payload, **{field: 'Original'})
-        record.translations = {
-            'en': {field: 'English'},
-            'de': {field: 'Deutsch'},
-            'zh': {field: 'Chinese'},
-        }
+        from mysite.translations.content import mark_manual_translations
+
+        record.translations = mark_manual_translations(
+            {'en': {field: 'English'}, 'de': {field: 'Deutsch'}, 'zh': {field: 'Chinese'}},
+            {field: 'Original'},
+        )
         db.add(record)
         db.commit()
         record_id = record.id
@@ -358,13 +359,17 @@ def test_sqladmin_preserves_manual_translation(client, admin_headers):
 
 
 def test_nested_tour_program_uses_requested_language(client, customer_headers):
+    from mysite.translations.content import mark_manual_translations
+
     with SessionLocal() as db:
         tour = models.Tour(title='Nested tour', price=10)
         program = models.TourProgram(
             tour=tour,
             day_number=1,
             title='Original program',
-            translations={'en': {'title': 'English program'}},
+            translations=mark_manual_translations(
+                {'en': {'title': 'English program'}}, {'title': 'Original program'}
+            ),
         )
         db.add_all([tour, program])
         db.commit()

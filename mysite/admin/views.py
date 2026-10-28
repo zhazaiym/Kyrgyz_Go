@@ -1,6 +1,5 @@
 from sqladmin import ModelView
 from sqlalchemy import select
-from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
@@ -27,22 +26,32 @@ from mysite.database.models import (
     TrekkingImage,
     TrekkingProgram,
 )
-from mysite.translations.content import CONTENT_FIELDS, generate_translations
+from mysite.translations.content import (
+    CONTENT_FIELDS,
+    generate_translations,
+    manual_translation_changed,
+    mark_manual_translations,
+)
 from mysite.translations.jobs import enqueue_translation
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_value_changed
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
         source_changed = is_created or any(
-            field in data and data[field] != getattr(model, field, None) for field in fields
+            field in data and source_value_changed(getattr(model, field, None), data[field])
+            for field in fields
         )
-        manual_translation = bool(data.get('translations')) and (
-            is_created or data['translations'] != model.translations
-        )
-        if source_changed and not manual_translation:
-            source = {field: data.get(field, getattr(model, field, None)) for field in fields}
-            data['translations'] = {}
+        source = {field: data.get(field, getattr(model, field, None)) for field in fields}
+        if 'translations' in data:
+            if manual_translation_changed(data['translations'], model.translations):
+                data['translations'] = mark_manual_translations(
+                    data['translations'], source, model.translations
+                )
+            else:
+                data['translations'] = model.translations or {}
+        if source_changed:
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
@@ -89,8 +98,6 @@ class TourAdmin(ModelView, model=Tour):
     form_excluded_columns = [Tour.duration_nights]
 
     async def on_model_change(self, data, model, is_created, request):
-        from mysite.api.tour import TRANSLATED_FIELDS
-
         days = data.get('duration_days')
 
         if days is not None:
@@ -103,17 +110,9 @@ class TourAdmin(ModelView, model=Tour):
             data['duration_nights'] = None
 
         request.state.tour_source_changed = is_created or any(
-            field in data and data[field] != getattr(model, field, None)
-            for field in TRANSLATED_FIELDS
+            field in data and source_value_changed(getattr(model, field, None), data[field])
+            for field in TOUR_TRANSLATION_FIELDS
         )
-        if request.state.tour_source_changed and model.id is not None:
-            session = object_session(model)
-            if session is not None:
-                from mysite.database.models import TourTranslation
-
-                session.query(TourTranslation).filter_by(tour_id=model.id).delete(
-                    synchronize_session=False
-                )
 
     async def after_model_change(self, data, model, is_created, request):
         if request.state.tour_source_changed:
@@ -121,14 +120,14 @@ class TourAdmin(ModelView, model=Tour):
 
     @staticmethod
     def _refresh_translations(tour_id):
-        from mysite.api.tour import TRANSLATED_FIELDS, translate_tour
+        from mysite.api.tour import translate_tour
         from mysite.database.db import SessionLocal
 
         with SessionLocal() as db:
             tour = db.get(Tour, tour_id)
             if tour is None:
                 return
-            source = {field: getattr(tour, field) for field in TRANSLATED_FIELDS}
+            source = {field: getattr(tour, field) for field in TOUR_TRANSLATION_FIELDS}
         enqueue_translation(Tour, tour_id, source, translate_tour)
 
 

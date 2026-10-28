@@ -2,8 +2,22 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
 
-from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
-                        Text, UniqueConstraint, event, inspect, select)
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+    inspect,
+    select,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -141,6 +155,8 @@ class TourTranslation(Base):
     description: Mapped[str | None] = mapped_column(Text)
     included: Mapped[str | None] = mapped_column(Text)
     excluded: Mapped[str | None] = mapped_column(Text)
+    source_hashes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    manual_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     tour: Mapped['Tour'] = relationship(back_populates='translations')
 
 

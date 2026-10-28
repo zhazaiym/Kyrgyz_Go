@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import enforce_request_limits
+from mysite.api.rate_limit import clear_account_login_attempt, enforce_request_limits
 from mysite.api.registration import normalize_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import SessionLocal, get_db
@@ -125,7 +125,7 @@ def _deliver_reset(email, raw_token, reset_id):
 
 
 @router.post('/reset-password')
-def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
+def reset_password(data: ResetPasswordInput, request: Request, db: Session = Depends(get_db)):
     with Session(bind=db.get_bind(), autoflush=False) as lookup:
         candidate = (
             lookup.query(PasswordResetToken).filter_by(token_hash=digest(data.token)).first()
@@ -174,6 +174,7 @@ def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
         PasswordResetToken.used_at.is_(None),
     ).update({'used_at': now()}, synchronize_session=False)
 
+    clear_account_login_attempt(db, 'client-login', request, f'client:{client.id}')
     db.commit()
 
     return {'ok': True, 'message': 'Пароль изменён. Войдите снова'}

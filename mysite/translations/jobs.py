@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session, object_session
 
 from mysite.database.db import Base, SessionLocal
 from mysite.database.models import Tour, TourTranslation
+from mysite.translations.source import (
+    TOUR_TRANSLATION_FIELDS,
+    source_field_hash,
+    source_value_changed,
+)
 
 logger = logging.getLogger(__name__)
 capacity = BoundedSemaphore(2)
@@ -88,14 +93,26 @@ def _translation_worker():
 
 
 def _translation_is_complete(translations, source):
-    if not any(source.values()):
+    if not any(value not in (None, '') for value in source.values()):
         return True
     for language in ('en', 'de', 'zh'):
         values = translations.get(language) if isinstance(translations, dict) else None
         if not isinstance(values, dict):
             return False
+        hashes = values.get('_source_hashes', {})
+        if not isinstance(hashes, dict):
+            return False
+        manual = values.get('_manual_fields', [])
+        manual_fields = set(manual if isinstance(manual, list) else [])
         for field, original in source.items():
-            if original not in (None, '') and not str(values.get(field, '')).strip():
+            if field in manual_fields:
+                continue
+            translated_value = values.get(field)
+            if original not in (None, '') and (
+                not isinstance(translated_value, str)
+                or not translated_value.strip()
+                or hashes.get(field) != source_field_hash(original)
+            ):
                 return False
     return True
 
@@ -166,10 +183,7 @@ def recover_missing_translations(batch_size=100):
             )
             identities = [tour.id for tour in tours]
             sources = {
-                tour.id: {
-                    field: getattr(tour, field)
-                    for field in ('title', 'description', 'included', 'excluded')
-                }
+                tour.id: {field: getattr(tour, field) for field in TOUR_TRANSLATION_FIELDS}
                 for tour in tours
             }
             rows = (
@@ -180,8 +194,9 @@ def recover_missing_translations(batch_size=100):
             translated = {}
             for row in rows:
                 translated.setdefault(row.tour_id, {})[row.lang] = {
-                    field: getattr(row, field)
-                    for field in ('title', 'description', 'included', 'excluded')
+                    **{field: getattr(row, field) for field in TOUR_TRANSLATION_FIELDS},
+                    '_source_hashes': row.source_hashes or {},
+                    '_manual_fields': row.manual_fields or [],
                 }
         if not tours:
             break
@@ -208,7 +223,9 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
             record = db.get(entity, identity)
             if record is None:
                 return 'missing'
-            if any(getattr(record, key) != value for key, value in source.items()):
+            if any(
+                source_value_changed(getattr(record, key), value) for key, value in source.items()
+            ):
                 return 'source_changed'
         translated = _valid_translation_result(translator(source), source)
         if not translated:
@@ -217,7 +234,9 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
             record = db.get(entity, identity, with_for_update=True)
             if record is None:
                 return 'missing'
-            if any(getattr(record, key) != value for key, value in source.items()):
+            if any(
+                source_value_changed(getattr(record, key), value) for key, value in source.items()
+            ):
                 return 'source_changed'
             if entity is Tour:
                 for language, values in translated.items():
@@ -225,16 +244,30 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                         db.query(TourTranslation).filter_by(tour_id=identity, lang=language).first()
                     )
                     if row is None:
-                        db.add(TourTranslation(tour_id=identity, lang=language, **values))
-                    else:
-                        for key, value in values.items():
-                            setattr(row, key, value)
+                        row = TourTranslation(tour_id=identity, lang=language)
+                        db.add(row)
+                    manual_fields = set(row.manual_fields or [])
+                    hashes = dict(row.source_hashes or {})
+                    for field, value in values.items():
+                        if field not in manual_fields:
+                            setattr(row, field, value)
+                            hashes[field] = source_field_hash(source[field])
+                    row.source_hashes = hashes
             else:
                 stored = dict(record.translations) if isinstance(record.translations, dict) else {}
                 for language, values in translated.items():
                     previous = stored.get(language)
                     previous = previous if isinstance(previous, dict) else {}
-                    stored[language] = {**previous, **values}
+                    previous = dict(previous)
+                    manual_fields = set(previous.get('_manual_fields', []))
+                    hashes = dict(previous.get('_source_hashes', {}))
+                    for field, value in values.items():
+                        if field not in manual_fields:
+                            previous[field] = value
+                            hashes[field] = source_field_hash(source[field])
+                    previous['_source_hashes'] = hashes
+                    previous['_manual_fields'] = sorted(manual_fields)
+                    stored[language] = previous
                 record.translations = stored
             db.commit()
         return 'translated'

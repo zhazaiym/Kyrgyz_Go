@@ -308,7 +308,7 @@ def test_account_lockout_blocks_untrusted_ips_but_allows_a_trusted_ip(
             assert (
                 attacker.post(route, json={**identity, 'password': 'incorrect'}).status_code == 401
             )
-        assert attacker.post(route, json={**identity, 'password': password}).status_code == 401
+        assert attacker.post(route, json={**identity, 'password': password}).status_code == 429
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
 
 
@@ -367,7 +367,24 @@ def test_failed_authentication_does_not_rollback_the_callers_pending_changes(cli
         pending = m.About(title='Pending caller change')
         db.add(pending)
         with pytest.raises(HTTPException):
-            client_auth.authenticate_client(db, email, 'incorrect', email_only=True)
+            client_auth.authenticate_client(
+                db,
+                email,
+                'incorrect',
+                email_only=True,
+                request=Request(
+                    {
+                        'type': 'http',
+                        'http_version': '1.1',
+                        'method': 'POST',
+                        'scheme': 'http',
+                        'path': '/auth/login',
+                        'headers': [],
+                        'client': ('198.51.100.14', 54321),
+                        'server': ('testserver', 80),
+                    }
+                ),
+            )
         assert pending in db.new
 
 

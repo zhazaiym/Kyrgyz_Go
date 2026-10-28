@@ -1,22 +1,25 @@
 """Atomic database limits for account actions and chat, shared across workers."""
 
 import hashlib
-import os
 import time
 from collections import OrderedDict
 from threading import Lock
 
 from fastapi import HTTPException, Request
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 
-from mysite.api.network_identity import client_network
+from mysite.api.network_identity import rate_limits_enabled, request_network
 from mysite.database.db import SessionLocal
 from mysite.database.rate_limit_models import RateLimitCounter
 
 _cache_lock = Lock()
 _blocked = OrderedDict()
 _cleanup_after = 0
+LOGIN_LIMITS = {
+    'client-login': {'ip': 30, 'account_ip': 8, 'window': 60},
+    'admin-login': {'ip': 20, 'account_ip': 5, 'window': 60},
+}
 
 
 def _current_epoch():
@@ -27,7 +30,7 @@ def _counter_key(scope, principal):
     return hashlib.sha256(f'{scope}\0{principal}'.encode()).hexdigest()
 
 
-def consume_rate_limits(limits, *, current_time=None, clear=()):
+def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
     rows, bounds, identities, retries = [], {}, [], []
     for scope, principal, maximum, window in limits:
@@ -62,9 +65,6 @@ def consume_rate_limits(limits, *, current_time=None, clear=()):
             },
         ).returning(table.c.key_hash, table.c.request_count)
         counts = dict(db.execute(statement).all())
-        clear_keys = [_counter_key(scope, principal) for scope, principal in clear]
-        if clear_keys:
-            db.execute(delete(table).where(table.c.key_hash.in_(clear_keys)))
         global _cleanup_after
         with _cache_lock:
             cleanup = instant >= _cleanup_after
@@ -91,7 +91,7 @@ def _limited(retry):
 
 
 def enforce_rate_limits(limits):
-    if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
+    if not rate_limits_enabled():
         return
     instant = _current_epoch()
     with _cache_lock:
@@ -118,76 +118,28 @@ def enforce_rate_limit(scope, principal, *, max_requests, window_seconds):
     enforce_rate_limits([(scope, principal, max_requests, window_seconds)])
 
 
-def login_attempt_allowed(
-    db, scope, request, account_key, *, ip_limit, account_limit, window_seconds
-):
-    if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
-        return True
-    instant = _current_epoch()
-    address = client_network(request.client.host if request.client else 'unknown')
-    failed_principal = f'failed-account:{account_key}'
-    trusted_principal = f'{scope}:{account_key}\0ip:{address}'
-    trusted_window = 7 * 86_400
-    entries = [
-        (scope, f'ip:{address}', ip_limit, window_seconds),
-        (scope, failed_principal, account_limit, window_seconds),
-        ('successful-login', trusted_principal, 1, trusted_window),
-    ]
-    keys = {
-        _counter_key(item_scope, principal): (window, maximum)
-        for item_scope, principal, maximum, window in entries
-    }
-    table = RateLimitCounter.__table__
-    rows = db.execute(
-        select(table.c.key_hash, table.c.window_start, table.c.request_count).where(
-            table.c.key_hash.in_(keys)
-        )
-    ).all()
-    counts = {key: (start, count) for key, start, count in rows}
-
-    def current_count(entry):
-        item_scope, principal, _maximum, window = entry
-        key = _counter_key(item_scope, principal)
-        row = counts.get(key)
-        start = instant // window * window
-        return row[1] if row and row[0] == start else 0
-
-    ip_count = current_count(entries[0])
-    if ip_count >= ip_limit:
-        start = instant // window_seconds * window_seconds
-        _limited(max(1, start + window_seconds - instant))
-    if current_count(entries[1]) < account_limit:
-        return True
-    trusted = counts.get(_counter_key('successful-login', trusted_principal))
-    trusted_start = instant // trusted_window * trusted_window
-    return bool(trusted and trusted[0] == trusted_start and trusted[1] > 0)
-
-
-def record_login_failure(scope, request, account_key, *, ip_limit, account_limit, window_seconds):
-    if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
-        return
-    address = client_network(request.client.host if request.client else 'unknown')
-    limits = [
-        (scope, f'ip:{address}', ip_limit, window_seconds),
-        (scope, f'failed-account:{account_key}', account_limit, window_seconds),
-    ]
-    results = consume_rate_limits(limits)
-    rejected = [retry for limit, (count, retry) in zip(limits, results) if count > limit[2]]
-    if rejected:
-        _limited(max(rejected))
-
-
-def record_login_success(scope, request, account_key, *, ip_limit, window_seconds):
-    if os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() in {'0', 'false', 'no'}:
-        return
-    address = client_network(request.client.host if request.client else 'unknown')
-    consume_rate_limits(
+def enforce_login_attempt(scope, request, account_key):
+    """Atomically cap login attempts per IP and account/IP pair; never lock an account."""
+    policy = LOGIN_LIMITS[scope]
+    address = request_network(request)
+    enforce_rate_limits(
         [
-            (scope, f'ip:{address}', ip_limit, window_seconds),
-            ('successful-login', f'{scope}:{account_key}\0ip:{address}', 1, 7 * 86_400),
-        ],
-        clear=[(scope, f'failed-account:{account_key}')],
+            (scope, f'ip:{address}', policy['ip'], policy['window']),
+            (
+                scope,
+                f'account-ip:{account_key}:ip:{address}',
+                policy['account_ip'],
+                policy['window'],
+            ),
+        ]
     )
+
+
+def clear_account_login_attempt(db, scope, request, account_key):
+    """Clear this account/IP pair after a verified password reset."""
+    address = request_network(request)
+    key = _counter_key(scope, f'account-ip:{account_key}:ip:{address}')
+    db.execute(delete(RateLimitCounter).where(RateLimitCounter.key_hash == key))
 
 
 def enforce_request_limits(
@@ -199,7 +151,7 @@ def enforce_request_limits(
     identity_limit: int,
     window_seconds: int,
 ):
-    address = client_network(request.client.host if request.client else 'unknown')
+    address = request_network(request)
     principal = f'identity:{identity.strip().casefold()}'
     enforce_rate_limits(
         [

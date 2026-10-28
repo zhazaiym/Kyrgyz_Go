@@ -131,6 +131,9 @@ def test_public_tour_category_cannot_bypass_private_details(
     ],
 )
 def test_search_and_sort_use_displayed_language_before_pagination(client, kind, path, field):
+    from mysite.translations.content import mark_manual_translations
+    from mysite.translations.source import source_field_hash
+
     marker = 'Localized' + uuid4().hex[:10]
     with SessionLocal() as db:
         region = m.Region(name='Base region')
@@ -158,13 +161,21 @@ def test_search_and_sort_use_displayed_language_before_pagination(client, kind, 
                 'tour': m.Tour,
             }[kind]
             if kind != 'tour':
-                attributes['translations'] = {'en': {field: marker + ' ' + translated}}
+                original = original + marker
+                attributes['translations'] = mark_manual_translations(
+                    {'en': {field: marker + ' ' + translated}}, {field: original}
+                )
             row = model(**attributes)
             db.add(row)
             db.flush()
             if kind == 'tour':
                 db.add(
-                    m.TourTranslation(tour_id=row.id, lang='en', title=marker + ' ' + translated)
+                    m.TourTranslation(
+                        tour_id=row.id,
+                        lang='en',
+                        title=marker + ' ' + translated,
+                        source_hashes={'title': source_field_hash(row.title)},
+                    )
                 )
             rows.append(row)
         db.commit()

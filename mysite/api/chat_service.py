@@ -385,6 +385,8 @@ def build_preview(db, s):
         'revision': s.revision,
         'data': state,
         'missing_fields': missing,
+        # Internal callers use this to decide whether the AI has collected a
+        # complete request. Public preview endpoints additionally gate it on stage.
         'can_confirm': not missing,
     }
 
@@ -402,6 +404,7 @@ def recover_confirmation(db, session, message=None):
     session.stage = 'collecting'
     session.revision += 1
     preview = build_preview(db, session)
+    preview['can_confirm'] = False
     answer = invalid_preview_text(session.state or {})
     if message is not None:
         db.add(ChatMessage(session_id=session.id, role='user', content=message))

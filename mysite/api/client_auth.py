@@ -9,12 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mysite.api.password_work import BoundedPasswords
-from mysite.api.rate_limit import (
-    enforce_request_limits,
-    login_attempt_allowed,
-    record_login_failure,
-    record_login_success,
-)
+from mysite.api.rate_limit import enforce_login_attempt, enforce_request_limits
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import get_db
@@ -83,7 +78,7 @@ def issue_token(db: Session, client: ChatClient):
 
 
 def authenticate_client(
-    db: Session, identifier: str, password: str, *, email_only=False, request: Request | None = None
+    db: Session, identifier: str, password: str, *, request: Request, email_only=False
 ):
     field = ChatClient.email if email_only or '@' in identifier else ChatClient.username
     with Session(bind=db.get_bind(), autoflush=False) as lookup:
@@ -95,44 +90,15 @@ def authenticate_client(
             else (f'unknown:{identifier.strip().casefold()}')
         )
         verified_hash = client.password_hash if client else dummy_password_hash
-        if request is not None and not login_attempt_allowed(
-            lookup,
-            'client-login',
-            request,
-            account_key,
-            ip_limit=30,
-            account_limit=8,
-            window_seconds=60,
-        ):
-            raise login_required('Неверный email или пароль')
+    enforce_login_attempt('client-login', request, account_key)
     # Argon2 must not hold a row lock or a pooled connection. Recheck the hash
     # under the short token-issuance lock so a concurrent reset still wins.
     valid = passwords.verify(password, verified_hash)
     if client_id is None or not valid:
-        if request is not None:
-            record_login_failure(
-                'client-login',
-                request,
-                account_key,
-                ip_limit=30,
-                account_limit=8,
-                window_seconds=60,
-            )
         raise login_required('Неверный email или пароль')
     client = db.get(ChatClient, client_id, with_for_update=True, populate_existing=True)
     if client is None or client.password_hash != verified_hash:
-        if request is not None:
-            record_login_failure(
-                'client-login',
-                request,
-                account_key,
-                ip_limit=30,
-                account_limit=8,
-                window_seconds=60,
-            )
         raise login_required('Неверный email или пароль')
-    if request is not None:
-        record_login_success('client-login', request, account_key, ip_limit=30, window_seconds=60)
     return client
 
 
