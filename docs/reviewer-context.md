@@ -169,3 +169,90 @@ Verification completed on 2026-10-28:
 - `git diff --check`: **passed**.
 
 Migrations 0014 through 0016 require the documented manual application before this release is deployed. A request to GitHub Support for cache removal has not been sent.
+
+---
+
+## Цикл 8: follow-up к `edefb05` (2026-10-28)
+
+База: `edefb05dbcf30b9d0407fcbb03c126ec961edc5d`, ветка `main`.
+Диапазон проверки: `edefb05..HEAD` после фиксации follow-up. Публикация в main
+выполняется по отдельному поручению пользователя после успешных проверок.
+Проверено последнее заключение: «ПРИНЯТО С ЗАМЕЧАНИЯМИ». Блок A и принятые
+A1-A8 не открываются повторно. Нумерация ниже соответствует находкам **цикла 8**.
+
+| Находка | Статус и реализация | Подтверждающие тесты |
+| --- | --- | --- |
+| 1 | Исправлено. SQL проверяет непустой перевод через `btrim` с явным набором всех 29 пробельных символов Python `str.strip()`. Правило не зависит от локали PostgreSQL. Оно общее для туров и JSON-переводов, поиска и сортировки. | `test_sql_whitespace_matches_python_strip_independent_of_locale`; `test_tour_display_and_search_fall_back_for_whitespace_translation` (ASCII, U+00A0, U+2007, U+202F, U+0085, U+3000, U+2028, U+001C). |
+| 2 | Исправлено вместе с 6. Самописный парсер `.env` удалён; deploy валидирует `services.api.environment.ADMIN_ALLOWED_IPS` из настоящего `docker compose config --format json`. Последний `export`, комментарии и Compose overrides учитывает сам Compose. | `test_deploy_validates_effective_compose_admin_policy`. |
+| 3 | Исправлено. Отклоняются сети шире IPv4 /16 и IPv6 /32, включая /0, обе /1, IPv6 2000::/3. Это верхняя граница допуска, а не рекомендация разрешать столь большие сети. Для админов по-прежнему нужны конкретные адреса/VPN. | `test_deploy_requires_explicit_valid_admin_allowlist`; `test_deploy_validates_effective_compose_admin_policy`. |
+| 4 | Исправлено. Проверка ищет префикс `unknown:` + начало исходного email; ожидаемый полный SHA-256 account_id также проверяется. | `test_unknown_254_character_email_is_not_stored_as_rate_limit_identity`. |
+| 5 | Исправлено. Оба варианта `space`, современный и legacy, используют буквальный `split(' ')`, без shlex. Апостроф в имени каталога не интерпретируется как кавычка. | `test_candidate_schema_space_separator_keeps_apostrophes_literal`; `test_candidate_schema_supports_legacy_named_version_path_separator`. |
+| 6 | Исправлено как корневая причина 2 и 8. Перед любым build/backup/активацией deploy проверяет эффективную среду API. Валидация не выводит JSON со значениями секретов. | `test_deploy_validates_effective_compose_admin_policy`; `test_deployment_failure_never_activates_a_new_schema_and_restores_exact_override` использует mock итогового Compose JSON. |
+| 7 | Исправлено. Из admin middleware удалена избыточная ветка `identity_network/subnet_of`. IPv4-mapped IPv6 продолжает нормализоваться через `client_network`; для native IPv6 проверяется фактический адрес в сети. | `test_admin_allowlist_normalizes_ipv4_mapped_ipv6`; `test_admin_allowlist_accepts_native_ipv6_network_identity`. |
+| 8 | Исправлено. Тест сравнивает конкретную победившую сеть, а при отказе конкретную причину. Настоящий Compose читает `ADMIN_ALLOWED_IPS= # cleared` как непустую строку `# cleared`, поэтому ожидается ошибка `invalid IP or network`, а не `must set`. Отдельный случай настоящего пустого присваивания проверяет `must set`. | `test_deploy_validates_effective_compose_admin_policy`. |
+| 9 | Исправлено. В `.env.example` присваивание закомментировано: копирование примера сохраняет localhost fallback. Явная пустая строка по-прежнему закрывает админку; deploy требует явной эффективной настройки. | `test_environment_example_keeps_local_admin_fallback`; `test_environment_example_documents_required_settings`. |
+| 10 | Документировано. В `DEPLOY.md` запрещены REST/SQLAdmin-правки каталога между миграциями и активацией соответствующего образа. Это процедура обслуживания, а не новая миграция или фоновый пересчёт данных. | Автоматического теста организационного запрета нет. В этом цикле рабочая БД не мигрировалась, релиз не активировался. |
+| 11 | Исправлено. Downgrade 0014 принимает совпадение как с исходным сырым хешем 0014, так и с нормализованным хешем новых версий. Upgrade 0014 сохраняет замороженный прежний алгоритм. Актуальные CRLF-переводы сохраняются, устаревшие очищаются. Код приложения миграция не импортирует. | `test_translation_migrations_preserve_current_normalized_hashes_and_leave_stale_hashes`; `test_translation_migration_downgrade_removes_stale_values`. |
+| 12 | Исправлено. Пустое/пробельное явно переданное поле очищается вместе с хешем и manual-флагом даже при совпадении с уже сохранёнными пробелами. Сравнение формы замечает такую очистку; после удаления повторное сохранение не ставит ту же задачу вновь. | `test_sqladmin_saved_whitespace_translation_is_cleared_and_enqueued_only_once` через реальные GET/POST SQLAdmin со spy enqueue; `test_whitespace_manual_translation_is_treated_as_explicit_clear`. |
+| 13 | Исправлено. Добавлен реальный migration-тест с en/de, CRLF, одиночным CR, CR-CRLF и четырьмя полями тура. Текущие сырые хеши обновляются, устаревший de.title сохраняет старый хеш и остаётся неготовым. Тот же тест проверяет downgrade после записи CRLF новым приложением. | `test_translation_migrations_preserve_current_normalized_hashes_and_leave_stale_hashes`. |
+| 14 | Частично исправлено. Выборка переводов туров в 0016 ограничена исходниками с CR. SQL больше не делает regexp_replace; используется btrim с точным Unicode-набором. Коррелированные подзапросы не переписывались без сравнительного benchmark. | `test_translation_migrations_preserve_current_normalized_hashes_and_leave_stale_hashes`; `test_sql_whitespace_matches_python_strip_independent_of_locale`. |
+
+Дополнение к тестовому окружению: `test_rendered_compose_reserves_separate_api_and_caddy_addresses`
+теперь игнорирует унаследованный `COMPOSE_FILE`, чтобы проверять свой fixture,
+а не чужую конфигурацию машины. Docker CLI и Compose подключены к тестовому
+контейнеру без Docker socket; проверки рендеринга действительно выполнялись,
+а не пропускались.
+
+### Принятые отложенные пункты
+
+- C3: render-time baseline SQLAdmin отложен как отдельное изменение формы. Непроверенный локальный черновик, начатый до получения цикла 8, сохранён в `/tmp/kyrgyzgo-deferred-form-baseline.patch` и не включён в итоговые изменения.
+- C9: отсутствие JSON-ключа остаётся no-op для сохранности переводов worker. Очистка через пустую строку работает и описана в `API.md`; отдельной подсказки внутри SQLAdmin пока нет.
+- C11: выборочная регенерация одного поля/языка отложена, поскольку меняет контракт общих задач перевода.
+- C12: одновременное изменение исходника и ручного перевода требует доверенного состояния открытой формы, рассматривается вместе с C3.
+- GitHub cache removal: открыт. Запрос в GitHub Support не отправлялся: отправка внешнего обращения от имени владельца не поручена. Удаление веток и синхронизация main/master уже приняты; заново они не выполнялись.
+
+### Проверки этого цикла
+
+Изолированный контейнер с рабочей копией исходников, временные базы `test_kyrgyzgo_*`.
+Использовались синтетические Gemini/SECRET_KEY, внешние AI-вызовы тестами отключены.
+Рабочие таблицы PostgreSQL тестами не очищались и не мигрировались.
+
+```text
+ruff check .
+All checks passed!
+
+pytest -q -ra
+502 passed in 157.72s (0:02:37)
+```
+
+Первый целевой прогон выявил два неверных тестовых ожидания: `# cleared`
+в Compose и унаследованный COMPOSE_FILE. Они исправлены; итоговый полный
+прогон выше зелёный, без skip. Ruff-format/isort применены только к связанным
+изменённым файлам. `git diff --check` проходит.
+
+### Условия проверки уже работающего edefb05
+
+В этом цикле деплоя, изменения production `.env`, рестартов и миграций не было.
+Работающий ранее установленный образ остаётся `kyrgyzgo-api:main-edefb05`.
+Из предыдущего bootstrap `.env` сохранён без изменений; эффективный
+`ADMIN_ALLOWED_IPS=127.0.0.1/32,::1/128` задан в отдельном Compose override,
+а не добавлен в `.env`. Доступ с произвольного публичного адреса не открыт.
+
+Проверки по условию 4 проведены на работающем сервере:
+
+- Публичный `GET /admin/`: 403.
+- Loopback из allowlist: `/admin/` перенаправляет на вход, `GET /admin/login`: 200.
+- Карточка существующего тестового тура с клиентским токеном на `lang=en`: 200 и английский `TEST:` title.
+- `GET /faqs/?lang=en`: 200 и английский текст.
+- `GET /tours/?lang=en&search=<английское название>`: 200 и нужный id в выдаче.
+
+Проверка входа создала временный login token и затем отозвала его; каталог,
+заявки и существующие учётные данные не изменялись. Новые правки цикла 8
+предназначены для публикации в main; на работающий сервер в этом цикле они не устанавливались.
+
+### Документация для фронтенда
+
+Добавлен `API.md`: 137 операций текущего OpenAPI, 91 JSON-схема, скрытые
+совместимые/снятые маршруты, HTTP/WS авторизация, стадии чата, revision,
+подтверждение заявки, ошибки, фильтры и пагинация. Документ сопоставлен
+с OpenAPI и кодом динамических ответов. Длинные тире в нём отсутствуют.

@@ -1,5 +1,8 @@
 import importlib.util
 import io
+import json
+import shutil
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -120,28 +123,112 @@ def test_candidate_schema_supports_legacy_named_version_path_separator(
 
 
 @pytest.mark.parametrize(
-    ('content', 'valid', 'expected_count'),
+    ('value', 'expected', 'error'),
     [
-        ('ADMIN_ALLOWED_IPS=192.0.2.4,2001:db8::/32\n', True, 2),
-        ('SECRET_KEY=value\n', False, 0),
-        ('ADMIN_ALLOWED_IPS=\n', False, 0),
-        ('ADMIN_ALLOWED_IPS=bad-network\n', False, 0),
-        ('ADMIN_ALLOWED_IPS=0.0.0.0/0\n', False, 0),
-        ('ADMIN_ALLOWED_IPS=::/0\n', False, 0),
-        ('ADMIN_ALLOWED_IPS=192.0.2.1/32 # first\nADMIN_ALLOWED_IPS=198.51.100.1/32\n', True, 1),
-        ('ADMIN_ALLOWED_IPS="192.0.2.1/32" # comment\n', True, 1),
-        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS= # cleared\n', False, 0),
+        ('192.0.2.4,2001:db8::/32', ['192.0.2.4/32', '2001:db8::/32'], None),
+        (None, None, 'must set'),
+        ('', None, 'must set'),
+        ('bad-network', None, 'invalid IP or network'),
+        *[
+            (network, None, 'too broad')
+            for network in (
+                '0.0.0.0/0',
+                '::/0',
+                '0.0.0.0/1',
+                '128.0.0.0/1',
+                '::/1',
+                '8000::/1',
+                '2000::/3',
+                '10.0.0.0/8',
+                '2001:db8::/31',
+            )
+        ],
+        ('192.0.0.0/16,2001:db8::/32', ['192.0.0.0/16', '2001:db8::/32'], None),
     ],
 )
-def test_deploy_requires_explicit_valid_admin_allowlist(tmp_path, content, valid, expected_count):
-    env_file = tmp_path / '.env'
-    env_file.write_text(content, encoding='utf-8')
+def test_deploy_requires_explicit_valid_admin_allowlist(value, expected, error):
+    rendered = json.dumps({'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': value}}}})
     module = load_deployment()
-    if valid:
-        assert len(module.validate_admin_allowlist(env_file)) == expected_count
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            module.validate_admin_allowlist(rendered)
     else:
-        with pytest.raises(RuntimeError, match='ADMIN_ALLOWED_IPS'):
-            module.validate_admin_allowlist(env_file)
+        assert [str(network) for network in module.validate_admin_allowlist(rendered)] == expected
+
+
+@pytest.mark.skipif(shutil.which('docker') is None, reason='Docker Compose CLI unavailable')
+@pytest.mark.parametrize(
+    ('content', 'override', 'expected', 'error'),
+    [
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32 # first\nADMIN_ALLOWED_IPS=198.51.100.1/32\n',
+            None,
+            ['198.51.100.1/32'],
+            None,
+        ),
+        ('ADMIN_ALLOWED_IPS="192.0.2.1/32" # comment\n', None, ['192.0.2.1/32'], None),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS= # cleared\n',
+            None,
+            None,
+            'invalid IP or network',
+        ),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS=\n', None, None, 'must set'),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nexport ADMIN_ALLOWED_IPS=0.0.0.0/0\n',
+            None,
+            None,
+            'too broad',
+        ),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nexport ADMIN_ALLOWED_IPS=198.51.100.2/32\n',
+            None,
+            ['198.51.100.2/32'],
+            None,
+        ),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\n', '203.0.113.7/32', ['203.0.113.7/32'], None),
+    ],
+)
+def test_deploy_validates_effective_compose_admin_policy(
+    tmp_path, content, override, expected, error
+):
+    (tmp_path / '.env').write_text(content)
+    compose = 'services:\n  api:\n    image: busybox\n    env_file: [.env]\n'
+    if override is not None:
+        compose += f'    environment:\n      ADMIN_ALLOWED_IPS: {override}\n'
+    path = tmp_path / 'compose.yml'
+    path.write_text(compose)
+    rendered = subprocess.check_output(
+        [
+            'docker',
+            'compose',
+            '--env-file',
+            str(tmp_path / '.env'),
+            '-f',
+            str(path),
+            'config',
+            '--format',
+            'json',
+        ],
+        text=True,
+    )
+    module = load_deployment()
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            module.validate_admin_allowlist(rendered)
+    else:
+        assert [str(network) for network in module.validate_admin_allowlist(rendered)] == expected
+
+
+@pytest.mark.parametrize('separator_key', ['path_separator', 'version_path_separator'])
+def test_candidate_schema_space_separator_keeps_apostrophes_literal(tmp_path, separator_key):
+    versions = tmp_path / "author's_versions"
+    versions.mkdir()
+    (versions / '001.py').write_text("revision = 'head'\ndown_revision = None\n")
+    (tmp_path / 'alembic.ini').write_text(
+        f"[alembic]\nscript_location = %(here)s\nversion_locations = %(here)s/author's_versions\n{separator_key} = space\n"
+    )
+    assert load_deployment().candidate_schema(tmp_path) == ['head']
 
 
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):

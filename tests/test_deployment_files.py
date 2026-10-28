@@ -35,7 +35,6 @@ def test_environment_example_documents_required_settings():
         'GEMINI_MODEL',
         'CORS_ALLOWED_ORIGINS',
         'CHAT_ALLOWED_ORIGINS',
-        'ADMIN_ALLOWED_IPS',
     }
     names = {
         line.split('=', 1)[0].strip()
@@ -43,14 +42,8 @@ def test_environment_example_documents_required_settings():
         if line.strip() and not line.lstrip().startswith('#') and '=' in line
     }
     assert required <= names
-    assert (
-        next(
-            line.split('=', 1)[1].strip()
-            for line in example.splitlines()
-            if line.strip().startswith('ADMIN_ALLOWED_IPS=')
-        )
-        == ''
-    )
+    assert '# ADMIN_ALLOWED_IPS=' in example
+    assert 'ADMIN_ALLOWED_IPS' not in names
 
 
 def test_local_runtime_artifacts_are_ignored():

@@ -4,21 +4,17 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
-from sqlalchemy import text
+import pytest
+from sqlalchemy import select, text
 
-from mysite.database.db import SessionLocal
-from mysite.database.models import About
 from mysite.admin.views import LocalizedAdminMixin
-from mysite.translations.content import (
-    localized,
-    manual_translation_changed,
-    manual_translation_needs_refresh,
-    mark_manual_translations,
-)
+from mysite.api.tour import get_localized_tour
+from mysite.database.db import SessionLocal
+from mysite.database.models import About, Tour
+from mysite.translations.content import (localized, manual_translation_changed,
+                                         manual_translation_needs_refresh, mark_manual_translations)
 from mysite.translations.jobs import _translation_is_complete, translate_record
 from mysite.translations.source import source_field_hash, translation_ready
-from mysite.database.models import Tour
-from mysite.api.tour import get_localized_tour
 
 
 def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
@@ -238,7 +234,10 @@ def test_translation_readiness_uses_same_whitespace_and_source_rules():
     assert not _translation_is_complete(whitespace, source)
 
 
-def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
+@pytest.mark.parametrize(
+    'blank', ['\n\t', '\u00a0', '\u2007', '\u202f', '\u0085', '\u3000', '\u2028', '\x1c']
+)
+def test_tour_display_and_search_fall_back_for_whitespace_translation(client, blank):
     from mysite.database import models
 
     marker = 'WhitespaceTourFallback'
@@ -253,7 +252,7 @@ def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
             ),
             {
                 'tour_id': tour.id,
-                'blank': '\n\t',
+                'blank': blank,
                 'hashes': '{"title":"' + source_field_hash(marker) + '"}',
             },
         )
@@ -261,10 +260,28 @@ def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
         db.commit()
         tour = db.get(models.Tour, tour_id)
         assert get_localized_tour(tour, db, 'en')['title'] == marker
+        from mysite.api.filter_utils import _display_field
+
+        assert (
+            db.scalar(select(_display_field(Tour, 'title', 'en')).where(Tour.id == tour_id))
+            == marker
+        )
 
     response = client.get('/tours/', params={'lang': 'en', 'search': marker})
     assert response.status_code == 200, response.text
     assert any(item['id'] == tour_id and item['title'] == marker for item in response.json())
+
+
+def test_sql_whitespace_matches_python_strip_independent_of_locale():
+    from sqlalchemy import literal
+
+    from mysite.api.filter_utils import _has_non_whitespace
+
+    values = [chr(code) for code in range(0x3100) if chr(code).isspace()]
+    values += [''.join(values), '', '\u200b', ' \u00a0text\u202f ']
+    with SessionLocal() as db:
+        for value in values:
+            assert db.scalar(select(_has_non_whitespace(literal(value)))) == bool(value.strip())
 
 
 def test_sqladmin_crlf_is_normalized_before_translation_change_detection():
@@ -337,3 +354,80 @@ def test_stale_manual_field_falls_back_to_source_then_can_be_regenerated():
         record = db.get(About, identity)
         assert localized(record, 'en')['title'] == 'Current title (en)'
         assert 'title' not in record.translations['en']['_manual_fields']
+
+
+def test_translation_migrations_preserve_current_normalized_hashes_and_leave_stale_hashes():
+    from tests.postgres_support import temporary_database
+
+    script = r"""
+import hashlib
+import json
+import os
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+from mysite.translations.source import source_field_hash, translation_ready
+config = Config('alembic.ini')
+command.upgrade(config, '20261028_0015')
+engine = create_engine(os.environ['DATABASE_URL'])
+fields = ('title', 'description', 'included', 'excluded')
+source = dict(zip(fields, ('Title\r\nTail', 'Description\rTail', 'Included\r\r\nTail', 'Excluded\rTail')))
+raw_hash = lambda value: hashlib.md5(value.encode(), usedforsecurity=False).hexdigest()
+try:
+    with engine.begin() as c:
+        identity = c.execute(text(
+            'INSERT INTO tours (title, description, included, excluded, price, price_unit, min_people, '
+            'tour_type, is_active, created_at, updated_at) VALUES '
+            "(:title, :description, :included, :excluded, 1, 'per_person', 1, 'classic', true, now(), now()) RETURNING id"
+        ), source).scalar_one()
+        stale_hash = raw_hash('Earlier source')
+        for lang in ('en', 'de'):
+            hashes = {field: raw_hash(value) for field, value in source.items()}
+            if lang == 'de':
+                hashes['title'] = stale_hash
+            c.execute(text(
+                'INSERT INTO tour_translations (tour_id, lang, title, description, included, excluded, source_hashes) '
+                'VALUES (:id, :lang, :title, :description, :included, :excluded, CAST(:hashes AS json))'
+            ), dict(id=identity, lang=lang, hashes=json.dumps(hashes), **{f: f'{lang} {f}' for f in fields}))
+    command.upgrade(config, 'head')
+    with engine.begin() as c:
+        current = c.execute(text('SELECT title, description, included, excluded FROM tours WHERE id=:id'), {'id':identity}).mappings().one()
+        for field, value in source.items():
+            assert current[field] == value.replace('\r\n','\n').replace('\r','\n')
+        rows = c.execute(text('SELECT * FROM tour_translations WHERE tour_id=:id'), {'id':identity}).mappings().all()
+        for row in rows:
+            for field in fields:
+                if row['lang'] == 'de' and field == 'title':
+                    assert row['source_hashes'][field] == stale_hash
+                    assert not translation_ready(row[field], stale_hash, current[field])
+                else:
+                    assert row['source_hashes'][field] == source_field_hash(current[field])
+                    assert translation_ready(row[field], row['source_hashes'][field], current[field])
+        # New application writes CRLF with a normalized hash. Downgrade must
+        # retain these current values while still removing the stale German title.
+        c.execute(text('UPDATE tours SET title=:title, description=:description, included=:included, excluded=:excluded WHERE id=:id'), dict(source,id=identity))
+        for raw in (False, True):
+            title = 'About\r\nTitle'
+            hashes = {'title': raw_hash(title) if raw else source_field_hash(title)}
+            c.execute(text(
+                'INSERT INTO abouts (title, experience_years, travelers_count, branches_count, destinations_count, routes_count, is_active, translations) '
+                'VALUES (:title,1,1,1,1,1,true,CAST(:translations AS json))'
+            ), {'title':title, 'translations':json.dumps({'en':{'title':'Current about', '_source_hashes':hashes}})})
+    command.downgrade(config, '20261028_0013')
+    with engine.connect() as c:
+        rows = c.execute(text('SELECT * FROM tour_translations WHERE tour_id=:id'), {'id':identity}).mappings().all()
+        for row in rows:
+            for field in fields:
+                assert row[field] == ('' if row['lang']=='de' and field=='title' else f"{row['lang']} {field}")
+        for translated in c.execute(text('SELECT translations FROM abouts')).scalars():
+            assert translated['en']['title'] == 'Current about'
+finally:
+    engine.dispose()
+"""
+    with temporary_database() as url:
+        env = {**os.environ, 'DATABASE_URL': url}
+        env.pop('GEMINI_API_KEY', None)
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', script], env=env, capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stdout + result.stderr

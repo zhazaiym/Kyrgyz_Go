@@ -6,7 +6,6 @@ import ipaddress
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -251,7 +250,7 @@ def candidate_schema(source):
         if separator == 'os':
             locations = configured.split(os.pathsep)
         elif separator == 'space':
-            locations = shlex.split(configured)
+            locations = configured.split(' ')
         elif separator == 'newline':
             locations = configured.splitlines()
         elif separator:
@@ -259,7 +258,7 @@ def candidate_schema(source):
         elif values.get('version_path_separator') == 'os':
             locations = configured.split(os.pathsep)
         elif values.get('version_path_separator') == 'space':
-            locations = shlex.split(configured)
+            locations = configured.split(' ')
         elif values.get('version_path_separator') == 'newline':
             locations = configured.splitlines()
         elif values.get('version_path_separator'):
@@ -307,28 +306,15 @@ def candidate_schema(source):
     return sorted(heads)
 
 
-def validate_admin_allowlist(env_path):
-    """Require a valid explicit admin network policy in the production env file."""
+def validate_admin_allowlist(rendered_config):
+    """Validate the effective API policy resolved by Docker Compose."""
     try:
-        lines = Path(env_path).read_text(encoding='utf-8').splitlines()
-    except OSError as exc:
-        raise RuntimeError('Production .env is unavailable; configure ADMIN_ALLOWED_IPS') from exc
-    configured = ''
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#') or '=' not in stripped:
-            continue
-        key, value = stripped.split('=', 1)
-        if key.strip() == 'ADMIN_ALLOWED_IPS':
-            value = value.strip()
-            if value.startswith(("'", '"')):
-                quote = value[0]
-                end = value.find(quote, 1)
-                configured = value[1:end] if end >= 0 else value
-            else:
-                configured = value.split(' #', 1)[0].rstrip()
-    if not configured:
-        raise RuntimeError('Production .env must set ADMIN_ALLOWED_IPS before deployment')
+        config = json.loads(rendered_config)
+        configured = config['services']['api'].get('environment', {}).get('ADMIN_ALLOWED_IPS')
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RuntimeError('Cannot read ADMIN_ALLOWED_IPS from rendered Compose config') from exc
+    if not isinstance(configured, str) or not configured.strip():
+        raise RuntimeError('Production API must set ADMIN_ALLOWED_IPS before deployment')
     try:
         networks = [
             ipaddress.ip_network(item.strip(), strict=False) for item in configured.split(',')
@@ -339,8 +325,10 @@ def validate_admin_allowlist(env_path):
         ) from exc
     if not networks:
         raise RuntimeError('Production ADMIN_ALLOWED_IPS must contain at least one network')
-    if any(network.prefixlen == 0 for network in networks):
-        raise RuntimeError('Production ADMIN_ALLOWED_IPS cannot allow the entire internet')
+    if any(network.prefixlen < (16 if network.version == 4 else 32) for network in networks):
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS is too broad; require IPv4 /16 or IPv6 /32 or narrower'
+        )
     return networks
 
 
@@ -373,8 +361,7 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        validate_admin_allowlist(ROOT / '.env')
-        compose_output('config', '--quiet')
+        validate_admin_allowlist(compose_output('config', '--format', 'json'))
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
             stdout=subprocess.DEVNULL,

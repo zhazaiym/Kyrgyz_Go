@@ -14,7 +14,9 @@ def _source_hash_expression(column):
 
 
 def _has_non_whitespace(expression):
-    return func.regexp_replace(func.coalesce(expression, ''), '[[:space:]]', '', 'g') != ''
+    # Frozen Python str.strip() whitespace set, independent of PostgreSQL locale.
+    whitespace = '\t\n\v\f\r\x1c\x1d\x1e\x1f \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000'
+    return func.length(func.btrim(func.coalesce(expression, ''), whitespace)) > 0
 
 
 class Pagination:

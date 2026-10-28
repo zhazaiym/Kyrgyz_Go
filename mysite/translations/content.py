@@ -1,19 +1,14 @@
 """Stored catalogue translations; public reads never call the translation service."""
 
 import json
-
 from typing import Annotated
 
 from fastapi import Query
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
-from mysite.translations.source import (
-    normalize_text,
-    source_field_hash,
-    source_value_changed,
-    translation_ready,
-)
+from mysite.translations.source import (normalize_text, source_field_hash, source_value_changed,
+                                        translation_ready)
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
@@ -101,12 +96,12 @@ def mark_manual_translations(translations, source, existing=None, *, compared_to
                 continue
             value = normalize_text(raw_value)
             old_value = normalize_text(baseline.get(field))
+            if not value.strip():
+                previous.pop(field, None)
+                hashes.pop(field, None)
+                manual.discard(field)
+                continue
             if value != old_value:
-                if not value.strip():
-                    previous.pop(field, None)
-                    hashes.pop(field, None)
-                    manual.discard(field)
-                    continue
                 current_hash = source_field_hash(source[field])
                 form_hash = submitted_hashes.get(field, hashes.get(field))
                 if field in previous and form_hash != current_hash:
@@ -143,7 +138,10 @@ def manual_translation_changed(incoming, existing):
                 continue
             if field.startswith('_'):
                 continue
-            if normalize_text(values.get(field)) != normalize_text(previous.get(field)):
+            value = normalize_text(values.get(field))
+            if (isinstance(value, str) and not value.strip() and previous.get(field)) or (
+                value != normalize_text(previous.get(field))
+            ):
                 return True
     return False
 

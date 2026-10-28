@@ -39,6 +39,7 @@ def test_rendered_compose_reserves_separate_api_and_caddy_addresses(tmp_path):
         'CADDY_PROXY_IP': '172.30.240.2',
         'PROXY_SUBNET': '172.30.240.0/28',
     }
+    env.pop('COMPOSE_FILE', None)
     result = subprocess.run(
         ['docker', 'compose', '--profile', 'https', 'config', '--format', 'json'],
         cwd=tmp_path,
@@ -110,7 +111,15 @@ def test_deployment_failure_never_activates_a_new_schema_and_restores_exact_over
         ci_deploy.shutil, 'disk_usage', lambda path: SimpleNamespace(free=10 * 1024**3)
     )
     monkeypatch.setattr(
-        ci_deploy, 'compose_output', lambda *args: 'old-container' if args[0] == 'ps' else ''
+        ci_deploy,
+        'compose_output',
+        lambda *args: (
+            'old-container'
+            if args[0] == 'ps'
+            else json.dumps(
+                {'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': '127.0.0.1/32'}}}}
+            )
+        ),
     )
     monkeypatch.setattr(
         ci_deploy,
@@ -354,7 +363,7 @@ def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client
             .all()
         ]
     assert expected in account_ids
-    assert not any(value.startswith(email[:64]) for value in account_ids)
+    assert not any(value.startswith('unknown:' + email[:64]) for value in account_ids)
 
 
 def test_account_index_parses_principal_from_the_last_address_delimiter():
