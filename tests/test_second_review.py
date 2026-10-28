@@ -1,4 +1,5 @@
 import io
+import ipaddress
 import json
 import os
 import shutil
@@ -71,11 +72,18 @@ def test_dockerfile_is_shipped_and_legacy_digest_probe_handles_missing_file(monk
     ) == ci_deploy.dockerfile_runtime_digest(source)
 
 
-def test_pr_cannot_share_the_production_deployment_concurrency_group():
-    workflow = Path('.github/workflows/deploy.yml').read_text()
-    assert 'concurrency:' not in workflow.split('jobs:', 1)[0]
-    assert 'concurrency:' not in workflow.split('  deploy:', 1)[0]
-    assert '      group: kyrgyzgo-production' in workflow.split('  deploy:', 1)[1]
+def test_no_github_actions_job_can_deploy_to_production():
+    workflow = Path('.github/workflows/ci.yml').read_text()
+    assert '  deploy:' not in workflow
+    assert 'kyrgyzgo-production' not in workflow
+    assert 'DEPLOY_SSH_KEY' not in workflow
+
+
+def test_activation_override_preserves_admin_policy():
+    module = load_deployment()
+    networks = [ipaddress.ip_network('192.0.2.10/32')]
+    override = module.compose_override('kyrgyzgo-api:manual-123', ','.join(map(str, networks)))
+    assert 'ADMIN_ALLOWED_IPS: "192.0.2.10/32"' in override
 
 
 def test_schema_changing_image_cannot_be_automatically_activated():

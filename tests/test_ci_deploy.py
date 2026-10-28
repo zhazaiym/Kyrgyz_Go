@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import ipaddress
 import json
 import shutil
 import subprocess
@@ -315,22 +316,53 @@ def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
 
 def test_compose_override_preserves_api_service_and_production_network():
     module = load_deployment()
-    override = module.compose_override('kyrgyzgo-api:ci-123')
+    override = module.compose_override('kyrgyzgo-api:manual-123', '192.0.2.10/32')
 
     assert '  api:\n' in override
-    assert '    image: kyrgyzgo-api:ci-123\n' in override
+    assert '    image: kyrgyzgo-api:manual-123\n' in override
+    assert '      ADMIN_ALLOWED_IPS: "192.0.2.10/32"\n' in override
     assert '      - kyrgyzgo_network\n' in override
     assert '    external: true\n' in override
     assert '    name: kyrgyz_go_kyrgyzgo_network\n' in override
     assert '  backend:\n' not in override
 
 
-def test_workflow_separates_tests_and_main_deployment():
-    workflow = Path('.github/workflows/deploy.yml').read_text()
+def test_activation_override_preserves_allowlist_and_validates_after_write(monkeypatch, tmp_path):
+    module = load_deployment()
+    override_path = tmp_path / 'deploy.override.yml'
+    monkeypatch.setattr(module, 'OVERRIDE', override_path)
+    expected_networks = [ipaddress.ip_network('192.0.2.10/32')]
+    calls = []
+
+    def compose_output(*arguments):
+        assert arguments == ('config', '--format', 'json')
+        assert override_path.exists()
+        assert 'ADMIN_ALLOWED_IPS: "192.0.2.10/32"' in override_path.read_text()
+        calls.append('resolved-config')
+        return json.dumps(
+            {'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': '192.0.2.10/32'}}}}
+        )
+
+    def compose(*arguments):
+        calls.append(arguments)
+
+    monkeypatch.setattr(module, 'compose_output', compose_output)
+    monkeypatch.setattr(module, 'compose', compose)
+
+    module.install_override('kyrgyzgo-api:manual-123', expected_networks)
+
+    assert calls == ['resolved-config', ('config', '--quiet')]
+
+
+def test_github_actions_runs_ci_without_deployment():
+    workflow = Path('.github/workflows/ci.yml').read_text()
     assert 'pull_request:' in workflow
-    assert 'needs: test' in workflow
-    assert "github.ref == 'refs/heads/main'" in workflow
-    assert "github.event_name != 'pull_request'" in workflow
-    assert 'StrictHostKeyChecking=yes' in workflow
-    assert 'cancel-in-progress: false' in workflow
-    assert 'secrets.DEPLOY_SSH_KEY' in workflow
+    assert 'branches:' in workflow and '- main' in workflow
+    assert '  test:' in workflow
+    assert '  deploy:' not in workflow
+    assert 'DEPLOY_SSH_KEY' not in workflow
+    assert 'DEPLOY_HOST' not in workflow
+    assert 'docker compose up' not in workflow
+
+    assert not Path('.github/workflows/deploy.yml').exists()
+    assert not Path('.github/workflows/check-ssh.yml').exists()

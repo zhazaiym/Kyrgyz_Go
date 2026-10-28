@@ -69,8 +69,8 @@ def run(arguments, **options):
     return subprocess.run(arguments, check=True, **options)
 
 
-def output(arguments):
-    return subprocess.check_output(arguments, text=True).strip()
+def output(arguments, **options):
+    return subprocess.check_output(arguments, text=True, **options).strip()
 
 
 def runtime_digest(contents):
@@ -146,11 +146,13 @@ def deployed_runtime_digest(container, name):
     return output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe])
 
 
-def compose_override(image):
+def compose_override(image, admin_allowlist):
     return (
         'services:\n'
         '  api:\n'
         f'    image: {image}\n'
+        '    environment:\n'
+        f'      ADMIN_ALLOWED_IPS: {json.dumps(admin_allowlist)}\n'
         f'    networks:\n'
         f'      - {PRODUCTION_NETWORK_KEY}\n'
         'networks:\n'
@@ -193,8 +195,24 @@ def compose_output(*arguments):
             '-f',
             str(OVERRIDE),
             *arguments,
-        ]
+        ],
+        cwd=ROOT,
     )
+
+
+def install_override(image, admin_networks):
+    """Write the image override, then validate the resolved Compose policy."""
+    admin_allowlist = ','.join(map(str, admin_networks))
+    temporary = OVERRIDE.with_suffix('.pending')
+    temporary.write_text(compose_override(image, admin_allowlist), encoding='utf-8')
+    temporary.replace(OVERRIDE)
+
+    resolved_networks = validate_admin_allowlist(
+        compose_output('config', '--format', 'json')
+    )
+    if resolved_networks != admin_networks:
+        raise RuntimeError('ADMIN_ALLOWED_IPS changed while preparing the new image')
+    compose('config', '--quiet')
 
 
 def require_same_schema(current, candidate):
@@ -361,7 +379,9 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        validate_admin_allowlist(compose_output('config', '--format', 'json'))
+        admin_networks = validate_admin_allowlist(
+            compose_output('config', '--format', 'json')
+        )
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
             stdout=subprocess.DEVNULL,
@@ -454,10 +474,7 @@ def deploy(revision, source):
         )
         state['status'] = 'activating'
         try:
-            temporary = OVERRIDE.with_suffix('.pending')
-            temporary.write_text(compose_override(image))
-            temporary.replace(OVERRIDE)
-            compose('config', '--quiet')
+            install_override(image, admin_networks)
             compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
             with urllib.request.urlopen('https://13.53.40.37/', timeout=30) as response:
                 if response.status != 200:
