@@ -7,6 +7,7 @@ Alembic migrations must not depend on importable application code or API secrets
 import hashlib
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = '20261028_0014'
@@ -45,6 +46,15 @@ LANGUAGES = ('en', 'de', 'zh')
 def _field_hash(value):
     normalized = '' if value is None or value == '' else value
     return hashlib.md5(str(normalized).encode('utf-8'), usedforsecurity=False).hexdigest()
+
+
+def _matches_source(stored_hash, source):
+    # Accept the original 0014 identity and the normalized identity used by
+    # later application versions, without importing mutable application code.
+    normalized = (
+        source.replace('\r\n', '\n').replace('\r', '\n') if isinstance(source, str) else source
+    )
+    return stored_hash in (_field_hash(source), _field_hash(normalized))
 
 
 def upgrade():
@@ -150,7 +160,7 @@ def downgrade():
                 hashes = values.get('_source_hashes', {})
                 hashes = hashes if isinstance(hashes, dict) else {}
                 for field in fields:
-                    if field in values and hashes.get(field) != _field_hash(source[field]):
+                    if field in values and not _matches_source(hashes.get(field), source[field]):
                         values.pop(field, None)
                         changed = True
                 values.pop('_source_hashes', None)
@@ -186,7 +196,7 @@ def downgrade():
         hashes = row['source_hashes'] or {}
         values = {'id': row['id']}
         for field in TOUR_FIELDS:
-            if hashes.get(field) != _field_hash(row[f'source_{field}']):
+            if not _matches_source(hashes.get(field), row[f'source_{field}']):
                 # Legacy readers treat any non-empty text as translated. Clear
                 # stale values instead of copying the source into translation.
                 values[field] = '' if field == 'title' else None

@@ -3,6 +3,7 @@
 import hashlib
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = '20261028_0016'
@@ -118,9 +119,13 @@ def upgrade():
         'tours', sa.column('id', sa.Integer), *(sa.column(f, sa.Text) for f in TOUR_FIELDS)
     )
     joined = translation.join(tour, translation.c.tour_id == tour.c.id)
-    selected = sa.select(
-        *translation.c, *(tour.c[field].label(f'source_{field}') for field in TOUR_FIELDS)
-    ).select_from(joined)
+    selected = (
+        sa.select(
+            *translation.c, *(tour.c[field].label(f'source_{field}') for field in TOUR_FIELDS)
+        )
+        .select_from(joined)
+        .where(sa.or_(*(tour.c[field].like('%\r%') for field in TOUR_FIELDS)))
+    )
     updates = []
     for row in bind.execute(selected).mappings().yield_per(500):
         hashes = dict(row['source_hashes'] or {})

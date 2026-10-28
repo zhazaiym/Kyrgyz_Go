@@ -644,3 +644,61 @@ def test_seed_completes_every_content_field_and_translation(client):
         db.refresh(hotel)
         assert hotel.translations['en']['address'] == 'Manual address'
         assert hotel.main_image == 'https://example.invalid/my-manual-image.jpg'
+
+
+def test_sqladmin_saved_whitespace_translation_is_cleared_and_enqueued_only_once(
+    client, admin_headers, monkeypatch
+):
+    import json
+
+    from mysite.database.models import FAQ
+    from mysite.translations.source import source_field_hash
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    translations = {
+        'en': {
+            'question': '\u00a0\n\t',
+            'answer': 'Preserved answer',
+            '_source_hashes': {
+                'question': source_field_hash('Whitespace question'),
+                'answer': source_field_hash('Whitespace answer'),
+            },
+            '_manual_fields': ['question'],
+        }
+    }
+    with SessionLocal() as db:
+        record = FAQ(
+            question='Whitespace question', answer='Whitespace answer', translations=translations
+        )
+        db.add(record)
+        db.commit()
+        identity = record.id
+    path = f'/admin/faq/edit/{identity}'
+    assert client.get(path).status_code == 200
+    enqueued = []
+    monkeypatch.setattr(
+        'mysite.admin.views.enqueue_translation', lambda *args: enqueued.append(args)
+    )
+    data = {
+        'question': 'Whitespace question',
+        'answer': 'Whitespace answer',
+        'is_active': 'y',
+        'translations': json.dumps(translations),
+        'save': 'Save',
+    }
+    for _ in range(2):
+        response = client.post(path, data=data, follow_redirects=False)
+        assert response.status_code in (302, 303), response.text
+    assert len(enqueued) == 1
+    assert enqueued[0][0] is FAQ and enqueued[0][1] == identity
+    with SessionLocal() as db:
+        saved = db.get(FAQ, identity).translations['en']
+        assert 'question' not in saved
+        assert 'question' not in saved['_source_hashes']
+        assert 'question' not in saved['_manual_fields']
+        assert saved['answer'] == 'Preserved answer'
+    client.get('/admin/logout')

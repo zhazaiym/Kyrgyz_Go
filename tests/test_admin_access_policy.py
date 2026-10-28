@@ -4,6 +4,14 @@ from mysite.api.admin_access import AdminAccessMiddleware, _allowed_networks
 from mysite.api.network_identity import client_network
 
 
+def test_environment_example_keeps_local_admin_fallback(monkeypatch):
+    from dotenv import dotenv_values
+
+    assert 'ADMIN_ALLOWED_IPS' not in dotenv_values('.env.example')
+    monkeypatch.delenv('ADMIN_ALLOWED_IPS', raising=False)
+    assert [str(network) for network in _allowed_networks()] == ['127.0.0.1/32', '::1/128']
+
+
 def test_invalid_admin_allowlist_fails_closed_without_disabling_public_paths(monkeypatch):
     monkeypatch.setenv('ADMIN_ALLOWED_IPS', 'not-a-network')
     assert _allowed_networks() == ()

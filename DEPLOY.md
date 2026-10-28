@@ -24,11 +24,15 @@ set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
 `/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
 list of administrator IPs or CIDR networks. Set it to the fixed egress address
 of the administrator VPN or office network before deploying. `.env.example`
-leaves this setting empty so deployment cannot silently use a sample policy.
-For local development, explicitly set `127.0.0.1/32,::1/128`. If the variable is
-unset, the application fallback allows only localhost. The deployment script
-refuses to deploy unless the server `.env` explicitly contains a valid, non-global
-`ADMIN_ALLOWED_IPS` value.
+comments this setting out, so copying the example keeps the localhost-only
+application fallback for local development. An explicitly empty value denies
+all administrative access. Production must configure the administrator addresses
+in `.env` or the Compose environment. The deployment script validates the effective
+`services.api.environment.ADMIN_ALLOWED_IPS` from `docker compose config --format json`,
+including overrides, interpolation, `export` assignments and inline comments.
+Missing, empty and invalid values are rejected, as are networks broader than
+IPv4 `/16` or IPv6 `/32`. Prefer individual IPs or the smallest actual VPN subnet;
+these prefix limits are a deployment guard, not a recommended allowlist size.
 For SSH port forwarding, the API sees the Docker bridge gateway as the client,
 not `127.0.0.1`; use the address observed by the API or connect through the
 allowlisted VPN. With
@@ -74,6 +78,9 @@ before building or replacing the running image. Review the migration, take a
 database backup, apply `alembic upgrade head` using the project deployment
 procedure, then deploy the matching image. This release adds migrations 0014
 through 0016; do not rely on the application container to apply them automatically.
+Pause catalogue writes through REST and SQLAdmin during this maintenance window.
+Apply the migrations and immediately activate the matching image before reopening
+catalogue writes, so an old application cannot store raw CRLF hashes after normalization.
 
 ### Start and verify
 

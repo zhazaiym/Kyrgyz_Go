@@ -44,20 +44,7 @@ class AdminAccessMiddleware:
             address = (
                 ipaddress.ip_address(identity) if identity and '/' not in identity else raw_address
             )
-            identity_network = (
-                (ipaddress.ip_network(identity, strict=False) if '/' in identity else None)
-                if identity
-                else None
-            )
-            allowed = address is not None and any(
-                address in network
-                or (
-                    identity_network is not None
-                    and identity_network.version == network.version
-                    and identity_network.subnet_of(network)
-                )
-                for network in self.networks
-            )
+            allowed = address is not None and any(address in network for network in self.networks)
         except ValueError:
             allowed = False
         if allowed:
