@@ -10,29 +10,11 @@ from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin as AdminModel
 
-from .views import (
-    AboutAdmin,
-    AboutSectionAdmin,
-    AdminAdmin,
-    ChatRequestAdmin,
-    ContactAdmin,
-    DistrictAdmin,
-    FAQAdmin,
-    HelicopterImageAdmin,
-    HelicopterTourAdmin,
-    HotelAdmin,
-    HotelImageAdmin,
-    RegionAdmin,
-    TourAdmin,
-    TourCategoryAdmin,
-    TourImageAdmin,
-    TourProgramAdmin,
-    TransportAdmin,
-    TransportImageAdmin,
-    TrekkingAdmin,
-    TrekkingImageAdmin,
-    TrekkingProgramAdmin,
-)
+from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ChatRequestAdmin, ContactAdmin,
+                    DistrictAdmin, FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
+                    HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
+                    TourProgramAdmin, TransportAdmin, TransportImageAdmin, TrekkingAdmin,
+                    TrekkingImageAdmin, TrekkingProgramAdmin)
 
 
 class AdminAuthBackend(AuthenticationBackend):

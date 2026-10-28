@@ -13,20 +13,13 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.db import get_db
 from mysite.database.models import Country, Tour, TourCategory, TourTranslation
-from mysite.database.schema import (
-    TourDetailSchema,
-    TourInputSchema,
-    TourOutSchema,
-    TourUpdateSchema,
-)
+from mysite.database.schema import (TourDetailSchema, TourInputSchema, TourOutSchema,
+                                    TourUpdateSchema)
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
-from mysite.translations.source import (
-    TOUR_TRANSLATION_FIELDS,
-    source_value_changed,
-    translation_ready,
-)
+from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, source_value_changed,
+                                        translation_ready)
 from mysite.translations.translator import translate_tour
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])

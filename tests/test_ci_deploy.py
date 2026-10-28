@@ -393,7 +393,10 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
         encoding='utf-8',
     )
     override.write_text(
-        'services:\n  api:\n    environment:\n      ADMIN_ALLOWED_IPS: 192.0.2.10/32\n',
+        'services:\n'
+        '  api:\n'
+        '    environment:\n'
+        '      ADMIN_ALLOWED_IPS: 192.0.2.10/32\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(module, 'ROOT', root)
@@ -416,10 +419,14 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
     monkeypatch.setattr(module, 'output', real_output)
     monkeypatch.setattr(module, 'run', real_run)
 
-    current = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+    current = module.validate_admin_allowlist(
+        module.compose_output('config', '--format', 'json')
+    )
     assert [str(network) for network in current] == ['192.0.2.10/32']
     module.install_override('kyrgyzgo-api:manual-test', current)
-    resolved = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+    resolved = module.validate_admin_allowlist(
+        module.compose_output('config', '--format', 'json')
+    )
 
     assert resolved == current
     assert calls[0][0] == 'config'

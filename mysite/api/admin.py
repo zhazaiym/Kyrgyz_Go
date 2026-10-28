@@ -17,12 +17,8 @@ from mysite.api.rate_limit import enforce_login_attempt
 from mysite.api.selection_status import require_status_transition
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
-from mysite.database.schema import (
-    AdminLoginSchema,
-    AdminOutSchema,
-    TokenSchema,
-    TravelRequestOutSchema,
-)
+from mysite.database.schema import (AdminLoginSchema, AdminOutSchema, TokenSchema,
+                                    TravelRequestOutSchema)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 

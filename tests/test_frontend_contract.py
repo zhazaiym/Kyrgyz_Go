@@ -416,7 +416,9 @@ def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_updat
                 row.translations = {
                     'en': {
                         'question': latest_translation,
-                        '_source_hashes': {'question': source_field_hash(source['question'])},
+                        '_source_hashes': {
+                            'question': source_field_hash(source['question'])
+                        },
                     }
                 }
                 worker_db.commit()
@@ -436,7 +438,12 @@ def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_updat
     }
     response = client.post(
         edit_path,
-        data={**source, 'is_active': 'y', 'translations': json.dumps(stale_form), 'save': 'Save'},
+        data={
+            **source,
+            'is_active': 'y',
+            'translations': json.dumps(stale_form),
+            'save': 'Save',
+        },
         follow_redirects=False,
     )
 

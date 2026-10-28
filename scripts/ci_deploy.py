@@ -211,7 +211,9 @@ def install_override(image, admin_networks):
     temporary.write_text(compose_override(image, admin_allowlist), encoding='utf-8')
     temporary.replace(OVERRIDE)
 
-    resolved_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
+    resolved_networks = validate_admin_allowlist(
+        compose_output('config', '--format', 'json')
+    )
     if resolved_networks != admin_networks:
         raise RuntimeError('ADMIN_ALLOWED_IPS changed while preparing the new image')
     compose('config', '--quiet')
@@ -389,7 +391,9 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        admin_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
+        admin_networks = validate_admin_allowlist(
+            compose_output('config', '--format', 'json')
+        )
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
             stdout=subprocess.DEVNULL,
