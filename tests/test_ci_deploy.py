@@ -93,6 +93,31 @@ def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
     assert module.candidate_schema(tmp_path) == ['second']
 
 
+@pytest.mark.parametrize('separator', ['space', 'newline'])
+def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
+    module = load_deployment()
+    first = tmp_path / 'first'
+    second = tmp_path / 'second'
+    first.mkdir()
+    second.mkdir()
+    (first / '001.py').write_text("revision = 'first'\ndown_revision = None\n", encoding='utf-8')
+    (second / '002.py').write_text(
+        "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
+    )
+    locations = (
+        '%(here)s/first %(here)s/second'
+        if separator == 'space'
+        else '%(here)s/first\n    %(here)s/second'
+    )
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = %(here)s\n'
+        f'version_locations = {locations}\nversion_path_separator = {separator}\n',
+        encoding='utf-8',
+    )
+
+    assert module.candidate_schema(tmp_path) == ['second']
+
+
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'migration_package' / 'versions'
@@ -196,3 +221,15 @@ def test_workflow_separates_tests_and_main_deployment():
     assert 'StrictHostKeyChecking=yes' in workflow
     assert 'cancel-in-progress: false' in workflow
     assert 'secrets.DEPLOY_SSH_KEY' in workflow
+
+
+def test_caddy_restricts_admin_routes_to_the_configured_vpn_ip_range():
+    caddy = Path('Caddyfile').read_text(encoding='utf-8')
+    compose = Path('docker-compose.yml').read_text(encoding='utf-8')
+    example_env = Path('.env.example').read_text(encoding='utf-8')
+
+    assert 'path /admin*' in caddy
+    assert 'not remote_ip {$ADMIN_ALLOWED_CIDR}' in caddy
+    assert 'respond @admin_outside_vpn 403' in caddy
+    assert 'ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR:-127.0.0.1/32}' in compose
+    assert 'ADMIN_ALLOWED_CIDR=127.0.0.1/32' in example_env

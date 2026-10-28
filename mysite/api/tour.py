@@ -24,8 +24,10 @@ from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
 from mysite.translations.source import (
     TOUR_TRANSLATION_FIELDS,
-    source_field_hash,
+    active_manual_fields,
+    normalize_text,
     source_value_changed,
+    translation_is_ready,
 )
 from mysite.translations.translator import translate_tour
 
@@ -62,11 +64,7 @@ def get_localized_tour(
         source_hashes = translation_db.source_hashes or {}
         for field in TRANSLATED_FIELDS if detail or include_description else ('title',):
             value = getattr(translation_db, field)
-            if (
-                isinstance(value, str)
-                and value
-                and source_hashes.get(field) == source_field_hash(getattr(tour_db, field))
-            ):
+            if translation_is_ready(value, getattr(tour_db, field), source_hashes.get(field)):
                 result[field] = value
 
     return result
@@ -146,6 +144,10 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail='Тур табылган жок')
 
     data = tour.model_dump(exclude_unset=True)
+    data = {
+        field: normalize_text(value) if field in TRANSLATED_FIELDS else value
+        for field, value in data.items()
+    }
     source_changed = any(
         field in data and source_value_changed(getattr(tour_db, field), data[field])
         for field in TRANSLATED_FIELDS
@@ -166,6 +168,14 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
     try:
         for key, value in data.items():
             setattr(tour_db, key, value)
+
+        if source_changed:
+            source = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
+            for translation in tour_db.translations:
+                translation.source_hashes = translation.source_hashes or {}
+                translation.manual_fields = active_manual_fields(
+                    translation.manual_fields or [], translation.source_hashes, source
+                )
 
         db.flush()
 

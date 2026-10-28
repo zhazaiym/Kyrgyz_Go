@@ -29,7 +29,11 @@ from mysite.database.models import (
     TrekkingProgram,
 )
 from mysite.translations.content import CONTENT_FIELDS
-from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_field_hash
+from mysite.translations.source import (
+    TOUR_TRANSLATION_FIELDS,
+    attach_source_hashes,
+    source_field_hash,
+)
 
 
 def seed_demo(db):
@@ -40,6 +44,10 @@ def seed_demo(db):
         record = db.query(model).filter(getattr(model, key) == value).first()
         if record is None:
             record = model(**{key: value}, **values)
+            fields = CONTENT_FIELDS.get(model.__tablename__, ())
+            if fields and 'translations' in values:
+                source = {field: getattr(record, field) for field in fields}
+                record.translations = attach_source_hashes(record.translations, source)
             db.add(record)
             db.flush()
             created += 1
@@ -672,22 +680,7 @@ def seed_demo(db):
                 for value in source.values()
             ):
                 continue
-            stored = dict(record.translations or {})
-            changed = False
-            for language in ('en', 'de', 'zh'):
-                values = stored.get(language)
-                if not isinstance(values, dict):
-                    continue
-                values = dict(values)
-                hashes = dict(values.get('_source_hashes', {}))
-                for field in fields:
-                    if isinstance(values.get(field), str) and values[field]:
-                        hashes.setdefault(field, source_field_hash(source[field]))
-                values['_source_hashes'] = hashes
-                stored[language] = values
-                changed = True
-            if changed:
-                record.translations = stored
+            record.translations = attach_source_hashes(record.translations, source)
 
     demo_tours = db.query(Tour).filter(Tour.title.like('ТЕСТ:%')).all()
     for tour in demo_tours:

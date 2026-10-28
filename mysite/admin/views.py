@@ -31,27 +31,46 @@ from mysite.translations.content import (
     generate_translations,
     manual_translation_changed,
     mark_manual_translations,
+    release_stale_manual_translations,
 )
 from mysite.translations.jobs import enqueue_translation
-from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_value_changed
+from mysite.translations.source import (
+    TOUR_TRANSLATION_FIELDS,
+    normalize_text,
+    source_field_hash,
+    source_value_changed,
+)
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
-        source_changed = is_created or any(
-            field in data and source_value_changed(getattr(model, field, None), data[field])
+        for field in fields:
+            if isinstance(data.get(field), str):
+                data[field] = normalize_text(data[field])
+        changed_fields = {
+            field
             for field in fields
-        )
+            if field in data and source_value_changed(getattr(model, field, None), data[field])
+        }
+        source_changed = is_created or bool(changed_fields)
         source = {field: data.get(field, getattr(model, field, None)) for field in fields}
+        translations_changed = False
         if 'translations' in data:
-            if manual_translation_changed(data['translations'], model.translations):
+            translations_changed = manual_translation_changed(
+                data['translations'], model.translations
+            )
+            if translations_changed:
                 data['translations'] = mark_manual_translations(
                     data['translations'], source, model.translations
                 )
             else:
                 data['translations'] = model.translations or {}
         if source_changed:
+            data['translations'] = release_stale_manual_translations(
+                data.get('translations', model.translations), source
+            )
+        if source_changed or translations_changed:
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
@@ -109,10 +128,26 @@ class TourAdmin(ModelView, model=Tour):
         else:
             data['duration_nights'] = None
 
-        request.state.tour_source_changed = is_created or any(
-            field in data and source_value_changed(getattr(model, field, None), data[field])
-            for field in TOUR_TRANSLATION_FIELDS
-        )
+        changed_fields = set()
+        for field in TOUR_TRANSLATION_FIELDS:
+            if isinstance(data.get(field), str):
+                data[field] = normalize_text(data[field])
+            if field in data and source_value_changed(getattr(model, field, None), data[field]):
+                changed_fields.add(field)
+        request.state.tour_source_changed = is_created or bool(changed_fields)
+        if changed_fields:
+            source = {
+                field: data.get(field, getattr(model, field, None))
+                for field in TOUR_TRANSLATION_FIELDS
+            }
+            for translation in model.translations:
+                hashes = translation.source_hashes or {}
+                translation.manual_fields = [
+                    field
+                    for field in (translation.manual_fields or [])
+                    if field not in changed_fields
+                    and hashes.get(field) == source_field_hash(source.get(field))
+                ]
 
     async def after_model_change(self, data, model, is_created, request):
         if request.state.tour_source_changed:

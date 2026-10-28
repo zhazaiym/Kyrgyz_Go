@@ -71,3 +71,39 @@ finally:
             text=True,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_translation_migration_is_self_contained_and_downgrade_hides_stale_values():
+    script = '''
+import hashlib
+import json
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+
+config = Config('alembic.ini')
+command.upgrade(config, '20261028_0014')
+engine = create_engine(__import__('os').environ['DATABASE_URL'])
+old_hash = hashlib.md5(b'Old source', usedforsecurity=False).hexdigest()
+translations = {'en': {'title': 'Stale English', '_source_hashes': {'title': old_hash}, '_manual_fields': ['title']}}
+with engine.begin() as connection:
+    connection.execute(text("""INSERT INTO abouts
+        (title, description, experience_years, travelers_count, branches_count,
+         destinations_count, routes_count, is_active, translations)
+        VALUES ('Old source', NULL, 6, 28000, 3, 20, 100, TRUE, CAST(:translations AS json))"""),
+        {'translations': json.dumps(translations)})
+    connection.execute(text("UPDATE abouts SET title='New source'"))
+command.downgrade(config, '20261028_0013')
+with engine.connect() as connection:
+    stored = connection.scalar(text('SELECT translations FROM abouts'))
+    assert 'title' not in stored['en']
+    assert '_source_hashes' not in stored['en']
+engine.dispose()
+'''
+    with temporary_database() as url:
+        env = {key: value for key, value in os.environ.items() if not key.startswith('GEMINI_')}
+        env['DATABASE_URL'] = url
+        result = subprocess.run(
+            [sys.executable, '-B', '-c', script], env=env, capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stdout + result.stderr

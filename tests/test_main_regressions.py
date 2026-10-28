@@ -4,7 +4,7 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy import event
 
 from mysite.api import chat_service, password_reset, travel_selection
@@ -129,18 +129,6 @@ def test_concurrent_password_resets_allow_one_winner(client, monkeypatch, differ
                 password_reset.reset_password(
                     password_reset.ResetPasswordInput(
                         token=token, new_password=f'WinningPassword{index}!'
-                    ),
-                    Request(
-                        {
-                            'type': 'http',
-                            'http_version': '1.1',
-                            'method': 'POST',
-                            'scheme': 'http',
-                            'path': '/account/reset-password',
-                            'headers': [],
-                            'client': ('198.51.100.15', 54321),
-                            'server': ('testserver', 80),
-                        }
                     ),
                     db,
                 )

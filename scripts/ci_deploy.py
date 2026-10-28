@@ -257,6 +257,10 @@ def candidate_schema(source):
             locations = configured.split(separator)
         elif values.get('version_path_separator') == 'os':
             locations = configured.split(os.pathsep)
+        elif values.get('version_path_separator') == 'space':
+            locations = shlex.split(configured)
+        elif values.get('version_path_separator') == 'newline':
+            locations = configured.splitlines()
         elif values.get('version_path_separator'):
             locations = configured.split(values['version_path_separator'])
         else:

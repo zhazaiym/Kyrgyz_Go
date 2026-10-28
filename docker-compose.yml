@@ -37,6 +37,7 @@ services:
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:-13.53.40.37}
+      ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR:-127.0.0.1/32}
     networks:
       proxy:
         ipv4_address: ${CADDY_PROXY_IP:-172.30.240.2}

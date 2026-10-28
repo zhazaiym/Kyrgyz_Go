@@ -1,6 +1,6 @@
 from fastapi import Query
-from sqlalchemy import String, case, cast, func, or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import String, and_, case, cast, func, or_
+from sqlalchemy.orm import aliased, selectinload
 
 from mysite.database.models import Tour, TourTranslation
 from mysite.translations.content import CONTENT_FIELDS
@@ -19,29 +19,21 @@ class Pagination:
         self.offset = offset
 
 
-def _display_field(model, field, lang):
+def _display_field(model, field, lang, tour_translation=None):
     original = getattr(model, field)
     if lang == 'ru':
         return original
     if model is Tour:
-        if field not in TOUR_TRANSLATION_FIELDS:
+        if field not in TOUR_TRANSLATION_FIELDS or tour_translation is None:
             return original
-        translated = (
-            select(getattr(TourTranslation, field))
-            .where(TourTranslation.tour_id == Tour.id, TourTranslation.lang == lang)
-            .correlate(Tour)
-            .scalar_subquery()
-        )
-        translated_hash = (
-            select(TourTranslation.source_hashes[field].as_string())
-            .where(TourTranslation.tour_id == Tour.id, TourTranslation.lang == lang)
-            .correlate(Tour)
-            .scalar_subquery()
-        )
+        translated = getattr(tour_translation, field)
+        translated_hash = tour_translation.source_hashes[field].as_string()
         return case(
             (
-                translated_hash == _source_hash_expression(original),
-                func.coalesce(func.nullif(translated, ''), original),
+                (translated_hash == _source_hash_expression(original))
+                & (translated.is_not(None))
+                & (func.btrim(cast(translated, String)) != ''),
+                translated,
             ),
             else_=original,
         )
@@ -53,8 +45,9 @@ def _display_field(model, field, lang):
     return case(
         (
             (func.json_typeof(translated) == 'string')
+            & (func.btrim(translated.as_string()) != '')
             & (hashes == _source_hash_expression(original)),
-            func.coalesce(func.nullif(translated.as_string(), ''), original),
+            translated.as_string(),
         ),
         else_=original,
     )
@@ -62,7 +55,13 @@ def _display_field(model, field, lang):
 
 def filtered_list(db, model, filters, pagination, active_only=False, lang='ru'):
     query = db.query(model)
+    tour_translation = None
     if model is Tour and lang != 'ru':
+        tour_translation = aliased(TourTranslation)
+        query = query.outerjoin(
+            tour_translation,
+            and_(tour_translation.tour_id == Tour.id, tour_translation.lang == lang),
+        )
         query = query.options(selectinload(Tour.translations))
 
     if active_only:
@@ -79,13 +78,15 @@ def filtered_list(db, model, filters, pagination, active_only=False, lang='ru'):
         query = query.filter(
             or_(
                 *[
-                    _display_field(model, field, lang).ilike(f'%{escaped}%', escape='\\')
+                    _display_field(model, field, lang, tour_translation).ilike(
+                        f'%{escaped}%', escape='\\'
+                    )
                     for field in fields
                 ]
             )
         )
     for item in getattr(filters, 'order_by', None) or []:
-        expression = _display_field(model, item.lstrip('+-'), lang)
+        expression = _display_field(model, item.lstrip('+-'), lang, tour_translation)
         query = query.order_by(expression.desc() if item.startswith('-') else expression.asc())
     query = query.order_by(model.id.asc())
 

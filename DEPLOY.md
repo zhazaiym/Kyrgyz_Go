@@ -20,6 +20,13 @@ environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
+The included Caddy proxy also restricts every `/admin*` route to
+`ADMIN_ALLOWED_CIDR`. Keep the default localhost-only range until you configure
+the fixed egress address of the administrator VPN. A request from any of 100
+other public IPs is denied at the proxy (0 password attempts reach the app);
+the admitted VPN egress is then subject to the existing five-attempts-per-minute
+account/IP limit (up to 10 attempts across a fixed-window boundary). Do not make
+this range public or set it to `0.0.0.0/0`.
 
 Database addressing:
 
@@ -111,6 +118,10 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
+    Set `ADMIN_ALLOWED_CIDR` to the fixed public egress address of the admin
+    VPN. The example defaults to `127.0.0.1/32`, so remote admin access is
+    intentionally denied until configured. If using Nginx instead, add an
+    equivalent `allow <VPN-CIDR>; deny all;` rule for `/admin`.
    Compose gives Caddy this fixed address on a dedicated proxy network. If
    `172.30.240.0/28` overlaps an existing network, change `PROXY_SUBNET`,
    `CADDY_PROXY_IP`, `API_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`

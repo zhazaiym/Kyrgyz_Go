@@ -191,6 +191,11 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     sid = client.post(
         f'/travel-selections/{identity}/start-chat/', headers=headers(account)
     ).json()['session_id']
+    initial_preview = client.post(
+        '/booking/preview', headers=headers(account), json={'session_id': sid}
+    )
+    assert initial_preview.status_code == 200
+    assert not initial_preview.json()['can_confirm']
     with SessionLocal() as db:
         row = db.get(ChatSession, sid)
         row.state = complete(row.state)
@@ -210,8 +215,8 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     removed = client.delete(f'/chat/{sid}/services/{kind}', headers=headers(account))
     assert removed.status_code == 200
     assert f'valid_{kind}' not in removed.json()['booking_preview']['missing_fields']
-    assert removed.json()['stage'] == 'collecting'
-    assert not removed.json()['booking_preview']['can_confirm']
+    assert removed.json()['stage'] == 'awaiting_confirmation'
+    assert removed.json()['booking_preview']['can_confirm']
     with SessionLocal() as db:
         assert f'{kind}_id' not in db.get(ChatSession, sid).state
     stranger, _ = register(client)
@@ -223,7 +228,7 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
         headers=headers(account),
         json={'session_id': sid, 'revision': removed.json()['revision'], 'confirmed': True},
     )
-    assert confirmed.status_code == 409
+    assert confirmed.status_code == 200
 
 
 def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):
@@ -290,11 +295,12 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
 
 
 @pytest.mark.parametrize('admin', [False, True])
-def test_account_lockout_blocks_untrusted_ips_but_allows_a_trusted_ip(
+def test_login_limit_blocks_one_ip_without_locking_the_account(
     client, admin_headers, monkeypatch, admin
 ):
     account, email = register(client)
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_800_000_000)
     identity = {'username': 'test-admin'} if admin else {'email': email}
     route = '/admin/login/' if admin else '/auth/login'
     attempts = 5 if admin else 8

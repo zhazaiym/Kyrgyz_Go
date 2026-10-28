@@ -91,11 +91,7 @@ def preview(
     data: BookingAction, client: ChatClient = Depends(current_client), db: Session = Depends(get_db)
 ):
     session = owned(db, data.session_id, client.id)
-    result = build_preview(db, session)
-    result['can_confirm'] = (
-        session.stage == 'awaiting_confirmation' and not result['missing_fields']
-    )
-    return result
+    return build_preview(db, session)
 
 
 @chat_router.post('/booking/confirm')

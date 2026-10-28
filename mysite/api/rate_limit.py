@@ -33,7 +33,9 @@ def _counter_key(scope, principal):
 def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
     rows, bounds, identities, retries = [], {}, [], []
-    for scope, principal, maximum, window in limits:
+    for item in limits:
+        scope, principal, maximum, window = item[:4]
+        group_hash = _counter_key('rate-limit-group', item[4]) if len(item) > 4 else None
         if maximum < 1 or window < 1:
             raise ValueError('Rate limits must be positive')
         start = instant // window * window
@@ -43,7 +45,9 @@ def consume_rate_limits(limits, *, current_time=None):
         bounds[key] = maximum + 1
         identities.append(key)
         retries.append(max(1, start + window - instant))
-        rows.append({'key_hash': key, 'window_start': start, 'request_count': 1})
+        rows.append(
+            {'key_hash': key, 'window_start': start, 'request_count': 1, 'group_hash': group_hash}
+        )
     table = RateLimitCounter.__table__
     with SessionLocal() as db:
         statement = postgresql_insert(table).values(rows)
@@ -52,6 +56,7 @@ def consume_rate_limits(limits, *, current_time=None):
             index_elements=[table.c.key_hash],
             set_={
                 'window_start': statement.excluded.window_start,
+                'group_hash': statement.excluded.group_hash,
                 'request_count': case(
                     (
                         table.c.window_start == statement.excluded.window_start,
@@ -130,16 +135,21 @@ def enforce_login_attempt(scope, request, account_key):
                 f'account-ip:{account_key}:ip:{address}',
                 policy['account_ip'],
                 policy['window'],
+                account_key,
             ),
         ]
     )
 
 
-def clear_account_login_attempt(db, scope, request, account_key):
-    """Clear this account/IP pair after a verified password reset."""
-    address = request_network(request)
-    key = _counter_key(scope, f'account-ip:{account_key}:ip:{address}')
-    db.execute(delete(RateLimitCounter).where(RateLimitCounter.key_hash == key))
+def clear_account_login_attempt(db, scope, account_key):
+    """Clear every account/IP counter and local cooldown after a verified reset."""
+    group_hash = _counter_key('rate-limit-group', account_key)
+    db.execute(delete(RateLimitCounter).where(RateLimitCounter.group_hash == group_hash))
+    prefix = f'account-ip:{account_key}:ip:'
+    with _cache_lock:
+        for blocked in list(_blocked):
+            if blocked[0] == scope and blocked[1].startswith(prefix):
+                _blocked.pop(blocked, None)
 
 
 def enforce_request_limits(
