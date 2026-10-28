@@ -194,8 +194,17 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     with SessionLocal() as db:
         row = db.get(ChatSession, sid)
         row.state = complete(row.state)
-        row.stage = 'awaiting_confirmation'
+        row.stage = 'collecting'
         identity = next(item['id'] for item in services if item['kind'] == kind)
+        db.commit()
+    collecting_preview = client.post(
+        '/booking/preview', headers=headers(account), json={'session_id': sid}
+    )
+    assert collecting_preview.status_code == 200
+    assert not collecting_preview.json()['can_confirm']
+    with SessionLocal() as db:
+        row = db.get(ChatSession, sid)
+        row.stage = 'awaiting_confirmation'
         db.get(m.Hotel if kind == 'hotel' else m.Transport, identity).is_active = False
         db.commit()
     response = client.post(
@@ -210,8 +219,14 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     removed = client.delete(f'/chat/{sid}/services/{kind}', headers=headers(account))
     assert removed.status_code == 200
     assert f'valid_{kind}' not in removed.json()['booking_preview']['missing_fields']
-    assert removed.json()['stage'] == 'collecting'
-    assert not removed.json()['booking_preview']['can_confirm']
+    assert removed.json()['stage'] == 'awaiting_confirmation'
+    assert removed.json()['booking_preview']['can_confirm']
+    from mysite.api.booking_text import booking_text
+
+    assert (
+        removed.json()['answer']
+        != booking_text(removed.json()['booking_preview']['data'])['service_removed']
+    )
     with SessionLocal() as db:
         assert f'{kind}_id' not in db.get(ChatSession, sid).state
     stranger, _ = register(client)
@@ -223,7 +238,8 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
         headers=headers(account),
         json={'session_id': sid, 'revision': removed.json()['revision'], 'confirmed': True},
     )
-    assert confirmed.status_code == 409
+    assert confirmed.status_code == 200
+    assert confirmed.json()['status'] == 'submitted'
 
 
 def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):
@@ -289,20 +305,17 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
         assert socket.receive_json()['code'] == 'invalid_message'
 
 
-@pytest.mark.parametrize('admin', [False, True])
-def test_account_lockout_blocks_untrusted_ips_but_allows_a_trusted_ip(
-    client, admin_headers, monkeypatch, admin
-):
+def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, monkeypatch):
     account, email = register(client)
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
-    identity = {'username': 'test-admin'} if admin else {'email': email}
-    route = '/admin/login/' if admin else '/auth/login'
-    attempts = 5 if admin else 8
+    identity = {'email': email}
+    route = '/auth/login'
+    attempts = 8
     with (
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
         TestClient(app, client=('198.51.100.131', 1)) as owner,
     ):
-        password = 'StrongAdminPassword123!' if admin else PASSWORD
+        password = PASSWORD
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
         for _ in range(attempts):
             assert (

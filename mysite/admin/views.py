@@ -1,5 +1,8 @@
+from copy import deepcopy
+
 from sqladmin import ModelView
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
@@ -33,21 +36,33 @@ from mysite.translations.content import (
     mark_manual_translations,
 )
 from mysite.translations.jobs import enqueue_translation
-from mysite.translations.source import TOUR_TRANSLATION_FIELDS, source_value_changed
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS, normalize_text, source_value_changed
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
+        form_translation_snapshot = deepcopy(model.translations)
+        session = object_session(model)
+        if not is_created and session is not None:
+            # Serialize this form save with translation workers and merge against
+            # the submitted snapshot instead of overwriting a worker's newer JSON.
+            await run_in_threadpool(session.refresh, model, with_for_update=True)
+        for field in fields:
+            if field in data:
+                data[field] = normalize_text(data[field])
         source_changed = is_created or any(
             field in data and source_value_changed(getattr(model, field, None), data[field])
             for field in fields
         )
         source = {field: data.get(field, getattr(model, field, None)) for field in fields}
         if 'translations' in data:
-            if manual_translation_changed(data['translations'], model.translations):
+            if manual_translation_changed(data['translations'], form_translation_snapshot):
                 data['translations'] = mark_manual_translations(
-                    data['translations'], source, model.translations
+                    data['translations'],
+                    source,
+                    model.translations,
+                    compared_to=form_translation_snapshot,
                 )
             else:
                 data['translations'] = model.translations or {}
@@ -98,6 +113,9 @@ class TourAdmin(ModelView, model=Tour):
     form_excluded_columns = [Tour.duration_nights]
 
     async def on_model_change(self, data, model, is_created, request):
+        for field in TOUR_TRANSLATION_FIELDS:
+            if field in data:
+                data[field] = normalize_text(data[field])
         days = data.get('duration_days')
 
         if days is not None:

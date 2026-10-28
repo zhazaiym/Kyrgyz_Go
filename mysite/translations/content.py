@@ -8,7 +8,12 @@ from fastapi import Query
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
-from mysite.translations.source import source_field_hash, source_value_changed
+from mysite.translations.source import (
+    normalize_text,
+    source_field_hash,
+    source_value_changed,
+    translation_ready,
+)
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
@@ -58,16 +63,14 @@ def localized(record, lang='ru'):
         source_hashes = {}
     for field in CONTENT_FIELDS[record.__tablename__]:
         value = translation.get(field)
-        if (
-            isinstance(value, str)
-            and value
-            and source_hashes.get(field) == source_field_hash(getattr(record, field))
-        ):
+        if translation_ready(value, source_hashes.get(field), getattr(record, field)):
+            if getattr(record, field) in (None, ''):
+                continue
             result[field] = value
     return result
 
 
-def mark_manual_translations(translations, source, existing=None):
+def mark_manual_translations(translations, source, existing=None, *, compared_to=None):
     if isinstance(translations, str):
         try:
             translations = json.loads(translations) if translations.strip() else {}
@@ -76,22 +79,54 @@ def mark_manual_translations(translations, source, existing=None):
     if not isinstance(translations, dict):
         return existing if isinstance(existing, dict) else {}
     result = dict(existing) if isinstance(existing, dict) else {}
+    comparison = compared_to if isinstance(compared_to, dict) else result
     for language in ('en', 'de', 'zh'):
         values = translations.get(language)
         if not isinstance(values, dict):
+            if language in comparison:
+                result.pop(language, None)
             continue
         previous = result.get(language)
         previous = dict(previous) if isinstance(previous, dict) else {}
+        baseline = comparison.get(language)
+        baseline = baseline if isinstance(baseline, dict) else {}
         hashes = previous.get('_source_hashes')
         hashes = dict(hashes) if isinstance(hashes, dict) else {}
+        submitted_hashes = values.get('_source_hashes', {})
+        submitted_hashes = submitted_hashes if isinstance(submitted_hashes, dict) else {}
         old_manual = previous.get('_manual_fields', [])
         manual = set(old_manual if isinstance(old_manual, list) else [])
-        for field, value in values.items():
-            if field not in source or not isinstance(value, str):
+        incoming_fields = {field for field in values if field in source}
+        baseline_fields = {field for field in baseline if field in source}
+        for field in baseline_fields - incoming_fields:
+            previous.pop(field, None)
+            hashes.pop(field, None)
+            manual.discard(field)
+        for field in source:
+            if field not in incoming_fields and field not in baseline_fields:
+                previous.pop(field, None)
+                hashes.pop(field, None)
+                manual.discard(field)
+        for field, raw_value in values.items():
+            if field not in source or not isinstance(raw_value, str):
                 continue
-            previous[field] = value
-            hashes[field] = source_field_hash(source[field])
-            manual.add(field)
+            value = normalize_text(raw_value)
+            old_value = normalize_text(baseline.get(field))
+            if value != old_value:
+                if not value:
+                    previous.pop(field, None)
+                    hashes.pop(field, None)
+                    manual.discard(field)
+                    continue
+                current_hash = source_field_hash(source[field])
+                form_hash = submitted_hashes.get(field, hashes.get(field))
+                if field in previous and form_hash != current_hash:
+                    # The form carries a translation for an older source revision.
+                    # Preserve it as stale so the current source remains visible.
+                    continue
+                previous[field] = value
+                hashes[field] = current_hash
+                manual.add(field)
         previous['_source_hashes'] = hashes
         previous['_manual_fields'] = sorted(manual)
         result[language] = previous
@@ -119,7 +154,7 @@ def manual_translation_changed(incoming, existing):
         for field in fields:
             if field.startswith('_'):
                 continue
-            if values.get(field) != previous.get(field):
+            if normalize_text(values.get(field)) != normalize_text(previous.get(field)):
                 return True
     return False
 

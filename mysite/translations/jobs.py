@@ -13,6 +13,7 @@ from mysite.translations.source import (
     TOUR_TRANSLATION_FIELDS,
     source_field_hash,
     source_value_changed,
+    translation_ready,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,14 +106,12 @@ def _translation_is_complete(translations, source):
         manual = values.get('_manual_fields', [])
         manual_fields = set(manual if isinstance(manual, list) else [])
         for field, original in source.items():
-            if field in manual_fields:
-                continue
             translated_value = values.get(field)
-            if original not in (None, '') and (
-                not isinstance(translated_value, str)
-                or not translated_value.strip()
-                or hashes.get(field) != source_field_hash(original)
+            if field in manual_fields and translation_ready(
+                translated_value, hashes.get(field), original
             ):
+                continue
+            if not translation_ready(translated_value, hashes.get(field), original):
                 return False
     return True
 
@@ -249,9 +248,15 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                     manual_fields = set(row.manual_fields or [])
                     hashes = dict(row.source_hashes or {})
                     for field, value in values.items():
-                        if field not in manual_fields:
-                            setattr(row, field, value)
-                            hashes[field] = source_field_hash(source[field])
+                        existing = getattr(row, field)
+                        if field in manual_fields and translation_ready(
+                            existing, hashes.get(field), source[field]
+                        ):
+                            continue
+                        manual_fields.discard(field)
+                        setattr(row, field, value)
+                        hashes[field] = source_field_hash(source[field])
+                    row.manual_fields = sorted(manual_fields)
                     row.source_hashes = hashes
             else:
                 stored = dict(record.translations) if isinstance(record.translations, dict) else {}
@@ -262,9 +267,13 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                     manual_fields = set(previous.get('_manual_fields', []))
                     hashes = dict(previous.get('_source_hashes', {}))
                     for field, value in values.items():
-                        if field not in manual_fields:
-                            previous[field] = value
-                            hashes[field] = source_field_hash(source[field])
+                        if field in manual_fields and translation_ready(
+                            previous.get(field), hashes.get(field), source[field]
+                        ):
+                            continue
+                        manual_fields.discard(field)
+                        previous[field] = value
+                        hashes[field] = source_field_hash(source[field])
                     previous['_source_hashes'] = hashes
                     previous['_manual_fields'] = sorted(manual_fields)
                     stored[language] = previous

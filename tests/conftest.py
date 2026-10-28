@@ -24,6 +24,7 @@ def _cleanup_database():
 atexit.register(_cleanup_database)
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-isolated-tests')
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used-for-network-calls')
+os.environ.setdefault('ADMIN_ALLOWED_IPS', '127.0.0.1/32,::1/128')
 os.environ['ADMIN_COOKIE_SECURE'] = 'false'
 
 command.upgrade(Config('alembic.ini'), 'head')
@@ -83,7 +84,7 @@ def offline_catalogue_translations(monkeypatch):
 
 @pytest.fixture(scope='session')
 def client():
-    with TestClient(app) as test_client:
+    with TestClient(app, client=('127.0.0.1', 50000)) as test_client:
         yield test_client
 
     engine.dispose()

@@ -21,6 +21,15 @@ environment with `env_file`.
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
 
+`/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
+list of administrator IPs or CIDR networks. Set it to the fixed egress address
+of the administrator VPN or office network before deploying. The default allows
+only localhost, so remote admin login is denied until this is configured. With
+100 unlisted attacker addresses, accepted admin requests are **0 attempts/minute**;
+if all administrators share one allowlisted VPN address, the existing admin
+login limiter permits at most **5 attempts/minute** from that address. Do not
+allowlist arbitrary public addresses.
+
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -52,6 +61,12 @@ Back up an existing database before deployment. Every API container start runs
 created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
+
+The deployment workflow refuses schema changes and reports `migration_required`
+before building or replacing the running image. Review the migration, take a
+database backup, apply `alembic upgrade head` using the project deployment
+procedure, then deploy the matching image. This release adds migrations 0014
+and 0015; do not rely on the application container to apply them automatically.
 
 ### Start and verify
 
