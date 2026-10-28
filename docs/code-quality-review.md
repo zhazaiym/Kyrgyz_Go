@@ -75,3 +75,29 @@ CRUD-обработчики похожи, но используют разные
 `backups/exact-duplicates-audit.json`, `backups/cleanup-pytest.txt`.
 Открытые функциональные и инфраструктурные вопросы перечислены в
 [полной диагностике](full-project-audit.md).
+
+## Дополнительная очистка
+
+- Удалены неиспользуемые `mysite.chain.agent.to_text` и `LANGUAGES` из
+  переводчика. Удалены одно-вызовные обёртки `try_save_translations` и
+  `invalid_preview_text`; вызовы идут прямо в используемые функции.
+- Общий запрос списка заявок вынесен в `mysite.database.travel_request_queries`
+  и используется обоими сохранёнными admin API.
+- Все текущие UTC timestamps используют `token_utils.utcnow`; нормализация
+  значений для хеширования и сравнения источника выполняется одним helper.
+- SQLAdmin загружает `translate_tour` напрямую из переводчика, а не импортирует
+  API-router при сохранении тура. Импорт SQLAlchemy перенесён из функции в
+  `selection_status.py` на уровень модуля.
+- Удалены две недостижимые проверки: поиск «конфликтующих» подборок при
+  уникальном `travel_selections.session_id` и null-проверка полей заявки,
+  которую уже выполняет `StorageInput` по nullable-правилам таблицы.
+- `/auth/*` и `/account/*` оставлены: это разные формы регистрации и ответов.
+  `/admin/requests/*` и `/travel-requests/*` тоже оставлены как совместимые
+  API-поверхности; их общий запрос списка теперь один.
+
+Проверка после очистки: `pytest -q` — **514 passed in 189.49s**;
+`ruff check .` — `All checks passed!`; `git diff --check` — без ошибок.
+`scripts.format_code --check` — **0 files need formatting**. В локальной `.venv`
+не хватало `isort==7.0.0` из `requirements-dev.txt`; пакет установлен.
+Базовый Python 3.12 доступен командам с разрешённым доступом к системе, но
+не доступен из ограниченного sandbox режима.

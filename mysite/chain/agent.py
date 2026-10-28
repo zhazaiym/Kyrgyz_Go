@@ -165,18 +165,6 @@ agent_llm = llm.bind_tools(READ_TOOLS)
 tool_map = {t.name: t for t in READ_TOOLS}
 
 
-def to_text(content):
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        return ' '.join(
-            x if isinstance(x, str) else x.get('text', '')
-            for x in content
-            if isinstance(x, str) or (isinstance(x, dict) and isinstance(x.get('text'), str))
-        ).strip()
-    return ''
-
-
 def stream_text(content):
     if isinstance(content, str):
         return content

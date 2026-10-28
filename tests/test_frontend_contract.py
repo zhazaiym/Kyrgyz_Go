@@ -416,9 +416,7 @@ def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_updat
                 row.translations = {
                     'en': {
                         'question': latest_translation,
-                        '_source_hashes': {
-                            'question': source_field_hash(source['question'])
-                        },
+                        '_source_hashes': {'question': source_field_hash(source['question'])},
                     }
                 }
                 worker_db.commit()
@@ -438,12 +436,7 @@ def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_updat
     }
     response = client.post(
         edit_path,
-        data={
-            **source,
-            'is_active': 'y',
-            'translations': json.dumps(stale_form),
-            'save': 'Save',
-        },
+        data={**source, 'is_active': 'y', 'translations': json.dumps(stale_form), 'save': 'Save'},
         follow_redirects=False,
     )
 
@@ -605,7 +598,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(
         tour.title = 'After admin edit'
         db.commit()
         monkeypatch.setattr(
-            'mysite.api.tour.translate_tour',
+            'mysite.admin.views.translate_tour',
             lambda source: {
                 lang: dict(source, title='Fresh English') for lang in ('en', 'de', 'zh')
             },
@@ -619,7 +612,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(
     def fail(source):
         raise RuntimeError('Translation provider unavailable')
 
-    monkeypatch.setattr('mysite.api.tour.translate_tour', fail)
+    monkeypatch.setattr('mysite.admin.views.translate_tour', fail)
     with SessionLocal() as db:
         tour = db.get(models.Tour, tour_id)
         asyncio.run(view.on_model_change({'title': 'New source'}, tour, False, request))

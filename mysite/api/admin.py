@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import jwt
@@ -19,6 +19,8 @@ from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
 from mysite.database.schema import (AdminLoginSchema, AdminOutSchema, TokenSchema,
                                     TravelRequestOutSchema)
+from mysite.database.token_utils import utcnow
+from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -95,7 +97,7 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     if not is_active:
         raise HTTPException(status_code=403, detail='Админ активдүү эмес')
 
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = jwt.encode({'sub': str(admin_id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {'access_token': token, 'token_type': 'bearer'}
 
@@ -115,13 +117,7 @@ def list_travel_requests(
     db: Session = Depends(get_db),
     pagination: Pagination = Depends(),
 ):
-    return (
-        db.query(TravelRequest)
-        .order_by(TravelRequest.id.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-        .all()
-    )
+    return query_travel_requests(db, pagination.offset, pagination.limit)
 
 
 @admin_router.get('/requests/{request_id}/', response_model=TravelRequestOutSchema)

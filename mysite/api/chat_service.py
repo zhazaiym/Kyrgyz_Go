@@ -9,7 +9,7 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from mysite.api.booking_text import booking_text, invalid_preview_text, preview_text
+from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
@@ -405,7 +405,7 @@ def recover_confirmation(db, session, message=None):
     session.stage = 'collecting'
     session.revision += 1
     preview = build_preview(db, session)
-    answer = invalid_preview_text(session.state or {})
+    answer = booking_text(session.state or {})['invalid_preview']
     if message is not None:
         db.add(ChatMessage(session_id=session.id, role='user', content=message))
     db.add(ChatMessage(session_id=session.id, role='assistant', content=answer))
@@ -438,17 +438,13 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
     st = preview['data']
-    selections = (
+    selection = (
         db.query(TravelSelection)
         .filter(TravelSelection.session_id == s.id)
         .populate_existing()
         .with_for_update()
-        .limit(2)
-        .all()
+        .first()
     )
-    if len(selections) > 1:
-        raise HTTPException(409, 'Chat is linked to conflicting selections; contact the manager')
-    selection = selections[0] if selections else None
     if selection and processing_status(selection, linked_request(db, selection)) in (
         'cancelled',
         'completed',

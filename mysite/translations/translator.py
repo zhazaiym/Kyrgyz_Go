@@ -21,10 +21,6 @@ model = ChatGoogleGenerativeAI(
     max_retries=1,
 )
 
-LANGUAGES = {'ru': 'Russian', 'en': 'English', 'de': 'German', 'zh': 'Simplified Chinese'}
-
-FIELDS = TOUR_TRANSLATION_FIELDS
-
 
 def translate_fields(source: dict):
     if not any(source.values()):
@@ -63,4 +59,4 @@ def translate_fields(source: dict):
 
 
 def translate_tour(data: dict):
-    return translate_fields({field: data.get(field) for field in FIELDS})
+    return translate_fields({field: data.get(field) for field in TOUR_TRANSLATION_FIELDS})

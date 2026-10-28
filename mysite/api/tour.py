@@ -30,10 +30,6 @@ LANGUAGES = ['en', 'de', 'zh']
 TRANSLATED_FIELDS = TOUR_TRANSLATION_FIELDS
 
 
-def try_save_translations(tour_db: Tour):
-    return schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
-
-
 def get_localized_tour(
     tour_db: Tour, db: Session, lang: str, detail: bool = False, include_description: bool = False
 ):
@@ -80,7 +76,7 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
         db.add(tour_db)
         db.flush()
 
-        try_save_translations(tour_db)
+        schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
         db.commit()
         db.refresh(tour_db)
@@ -162,7 +158,7 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         db.flush()
 
         if source_changed:
-            try_save_translations(tour_db)
+            schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
         db.commit()
         db.refresh(tour_db)
