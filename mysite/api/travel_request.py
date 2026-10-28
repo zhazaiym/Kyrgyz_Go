@@ -9,6 +9,7 @@ from mysite.database.chat_models import ChatBookingLink
 from mysite.database.db import get_db
 from mysite.database.models import TravelRequest
 from mysite.database.schema import TravelRequestOutSchema, TravelRequestUpdateSchema
+from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
 
 travel_request_router = APIRouter(prefix='/travel-requests', tags=['Travel Requests'])
 
@@ -22,13 +23,7 @@ def create_travel_request():
     '/', response_model=list[TravelRequestOutSchema], dependencies=[Depends(get_current_admin)]
 )
 def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination = Depends()):
-    return (
-        db.query(TravelRequest)
-        .order_by(TravelRequest.id.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-        .all()
-    )
+    return query_travel_requests(db, pagination.offset, pagination.limit)
 
 
 @travel_request_router.get(
@@ -61,10 +56,6 @@ def update_travel_request(
     data = request.model_dump(exclude_unset=True)
     if 'status' in data:
         require_status_transition(request_db.status, data['status'])
-
-    for field in ('name', 'phone', 'status'):
-        if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
 
     for key, value in data.items():
         setattr(request_db, key, value)

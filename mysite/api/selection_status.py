@@ -1,6 +1,7 @@
 """After submission, the linked request is the source of processing status."""
 
 from fastapi import HTTPException
+from sqlalchemy import func, select
 
 from mysite.database.chat_models import ChatBookingLink
 from mysite.database.models import TravelRequest
@@ -16,8 +17,6 @@ def require_status_transition(current, proposed):
 
 def requests_for_selections(db, selections):
     """Get the latest request for every session in one bounded query."""
-    from sqlalchemy import func, select
-
     session_ids = {row.session_id for row in selections if row.session_id}
     if not session_ids:
         return {}

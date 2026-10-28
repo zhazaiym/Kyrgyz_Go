@@ -1,6 +1,6 @@
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,7 +13,7 @@ from mysite.api.rate_limit import enforce_login_attempt, enforce_request_limits
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import get_db
-from mysite.database.token_utils import digest
+from mysite.database.token_utils import digest, utcnow
 
 router = APIRouter(tags=['Client authentication'])
 passwords = BoundedPasswords()
@@ -61,9 +61,7 @@ def issue_token(db: Session, client: ChatClient):
     raw = secrets.token_urlsafe(40)
     db.add(
         ChatLoginToken(
-            client_id=client.id,
-            token_hash=digest(raw),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            client_id=client.id, token_hash=digest(raw), expires_at=utcnow() + timedelta(days=7)
         )
     )
     db.commit()
@@ -148,7 +146,7 @@ def client_by_token(db: Session, token: str):
     expires = access.expires_at
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
-    if expires <= datetime.now(timezone.utc):
+    if expires <= utcnow():
         raise login_required('Сессия входа истекла. Войдите снова')
     client = db.get(ChatClient, access.client_id)
     if not client:
