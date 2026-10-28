@@ -84,4 +84,3 @@ jobs:
               print(f"::error title=pytest diagnostics::{detail[:3500]}")
           sys.exit(result.returncode)
           PY
-
