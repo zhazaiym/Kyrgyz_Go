@@ -23,9 +23,12 @@ set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
 
 `/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
 list of administrator IPs or CIDR networks. Set it to the fixed egress address
-of the administrator VPN or office network before deploying. The default allows
-only localhost for local development. The deployment script refuses to deploy
-unless the server `.env` explicitly contains a valid `ADMIN_ALLOWED_IPS` value.
+of the administrator VPN or office network before deploying. `.env.example`
+leaves this setting empty so deployment cannot silently use a sample policy.
+For local development, explicitly set `127.0.0.1/32,::1/128`. If the variable is
+unset, the application fallback allows only localhost. The deployment script
+refuses to deploy unless the server `.env` explicitly contains a valid, non-global
+`ADMIN_ALLOWED_IPS` value.
 For SSH port forwarding, the API sees the Docker bridge gateway as the client,
 not `127.0.0.1`; use the address observed by the API or connect through the
 allowlisted VPN. With

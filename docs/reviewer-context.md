@@ -127,3 +127,45 @@ Verification completed on 2026-10-28:
 - `git diff --check`: **passed**.
 
 Migrations 0014 through 0016 require the existing manual deployment procedure before this application version is deployed.
+
+---
+
+## Follow-up for review `0871c18..worktree` (2026-10-28)
+
+### Required block A
+
+- **A7 — implemented:** migration 0016 now updates `tours.<field>` directly, normalizes every tour row containing CR (including tours without translation rows), and updates a translation hash only when it matched the old raw source hash. `test_translation_migration_downgrade_removes_stale_values` covers a tour with CRLF in title/description and a matching translation hash, plus a tour without translations; it verifies normalized source and a still-ready English translation.
+- **A8 — implemented:** `source_field_hash()` and the SQL hash expression normalize CRLF and lone CR to LF. REST writes that only change line endings therefore keep translations valid without enqueueing a replacement. Test: `test_tour_rest_put_only_normalizing_line_endings_keeps_translation` (PUT and localized GET); `test_translation_readiness_uses_same_whitespace_and_source_rules` checks equal hashes.
+
+### Required block B
+
+- **B4 — implemented:** SQL filtering now removes all POSIX whitespace before testing a translation, matching Python `str.strip()`. Test: `test_tour_display_and_search_fall_back_for_whitespace_translation` uses newline/tab content and checks SQL search and display fallback.
+- **B5 — implemented:** deployment rejects `0.0.0.0/0` and `::/0`. Test: `test_deploy_requires_explicit_valid_admin_allowlist`.
+- **B6 — implemented:** `.env` parsing uses the last assignment and strips unquoted or quoted trailing comments. Tests: `test_deploy_requires_explicit_valid_admin_allowlist` covers repeated assignments, inline comments, quotes, and a final empty assignment.
+- **B7 — implemented:** the SQLAdmin explicit-clear test spies on `enqueue_translation`, verifies exactly one enqueue, and confirms only the cleared translation is removed from stored JSON. Test: `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues`.
+- **B8 — implemented:** migration test includes tour source fields and verifies translated readiness after upgrade, as listed for A7.
+- **B13 — implemented:** `.env.example` leaves `ADMIN_ALLOWED_IPS` blank and explains explicit local/production setup. Test: `test_environment_example_documents_required_settings`.
+
+### Optional block C
+
+- **C3 — partially addressed:** the required empty-form/worker-write case is covered by `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues`; a render-time baseline for a form that already displayed translations is not implemented, so a later worker update can still race with an edited stale value.
+- **C9 — not implemented:** absent JSON keys remain no-ops to protect worker updates; admins can clear a field by setting it to an empty string, which is covered by the SQLAdmin integration test.
+- **C10 — implemented:** whitespace-only manual translations follow the same explicit-clear path as refresh detection. Test: `test_whitespace_manual_translation_is_treated_as_explicit_clear`.
+- **C11 — not implemented:** clearing one field still regenerates the record's full translation set; selective-field job support is deferred to avoid changing the shared worker contract in this blocker cycle.
+- **C12 — not implemented:** simultaneous source and manual-translation edits lack a trusted render-time baseline; this remains grouped with C3 for a dedicated SQLAdmin form-state change.
+- **C14 — implemented:** native IPv6 `/64` allowlist behavior is covered by `test_admin_allowlist_accepts_native_ipv6_network_identity`.
+- **C15 — implemented:** migration 0016 scans only localized rows whose source fields contain CR.
+- **C16 — implemented:** the unknown-email test verifies a successful hashed account index and checks that no stored account key begins with the raw identifier prefix; test: `test_unknown_254_character_email_is_not_stored_as_rate_limit_identity`.
+- **C17 — not implemented:** `shlex.split` is retained for legacy `space` separators so quoted version paths containing spaces remain supported.
+- **C18 — implemented:** account index extraction now splits at the final `:ip:` boundary; test: `test_account_index_parses_principal_from_the_last_address_delimiter`.
+
+The active `master` branch is intentionally retained and synchronized to `main` by merge commits so both branches keep their histories and code trees match. GitHub Support has not been contacted about cached historical database objects.
+
+Verification completed on 2026-10-28:
+
+- `TEST_DATABASE_URL=postgresql+psycopg2://postgres@127.0.0.1:5432/postgres python -m pytest -q`: **477 passed in 163.36s**. Tests created and dropped a temporary PostgreSQL database.
+- `ruff check .`: **passed**.
+- `ruff format --check` on the 12 changed Python files: **passed**.
+- `git diff --check`: **passed**.
+
+Migrations 0014 through 0016 require the documented manual application before this release is deployed. A request to GitHub Support for cache removal has not been sent.

@@ -102,7 +102,7 @@ def mark_manual_translations(translations, source, existing=None, *, compared_to
             value = normalize_text(raw_value)
             old_value = normalize_text(baseline.get(field))
             if value != old_value:
-                if not value:
+                if not value.strip():
                     previous.pop(field, None)
                     hashes.pop(field, None)
                     manual.discard(field)

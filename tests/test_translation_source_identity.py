@@ -12,6 +12,7 @@ from mysite.admin.views import LocalizedAdminMixin
 from mysite.translations.content import (
     localized,
     manual_translation_changed,
+    manual_translation_needs_refresh,
     mark_manual_translations,
 )
 from mysite.translations.jobs import _translation_is_complete, translate_record
@@ -29,6 +30,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 import hashlib
+from mysite.translations.source import source_field_hash, translation_ready
 
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0013')
@@ -47,8 +49,22 @@ try:
             "('Old tour', 1, 'per_person', 1, 'classic', true, now(), now())"
         ))
         connection.execute(text(
+            "INSERT INTO tours (title, description, price, price_unit, min_people, tour_type, "
+            "is_active, created_at, updated_at) VALUES "
+            "(:title, :description, 1, 'per_person', 1, 'classic', true, now(), now())"
+        ), {'title': 'CRLF\\r\\nTour', 'description': 'First\\r\\nSecond'})
+        connection.execute(text(
+            "INSERT INTO tours (title, description, price, price_unit, min_people, tour_type, "
+            "is_active, created_at, updated_at) VALUES "
+            "(:title, :description, 1, 'per_person', 1, 'classic', true, now(), now())"
+        ), {'title': 'No translation\\r\\nTour', 'description': 'Still\\r\\nnormalized'})
+        connection.execute(text(
             "INSERT INTO tour_translations (tour_id, lang, title) "
             "VALUES (1, 'en', 'Old tour translation')"
+        ))
+        connection.execute(text(
+            "INSERT INTO tour_translations (tour_id, lang, title, description) "
+            "VALUES (2, 'en', 'English title', 'English description')"
         ))
     command.upgrade(config, 'head')
     with engine.begin() as connection:
@@ -63,6 +79,22 @@ try:
         expected = hashlib.md5('Old\\nsource'.encode(), usedforsecurity=False).hexdigest()
         assert translated['en']['_source_hashes']['title'] == expected
         assert connection.scalar(text("SELECT title FROM abouts WHERE id=1")) == 'Old\\nsource'
+        tour = connection.execute(
+            text("SELECT title, description FROM tours WHERE id=2")
+        ).mappings().one()
+        tour_translation = connection.execute(
+            text("SELECT title, description, source_hashes FROM tour_translations WHERE tour_id=2")
+        ).mappings().one()
+        assert tour['title'] == 'CRLF\\nTour'
+        assert tour['description'] == 'First\\nSecond'
+        assert tour_translation['source_hashes']['title'] == source_field_hash('CRLF\\nTour')
+        assert tour_translation['source_hashes']['description'] == source_field_hash('First\\nSecond')
+        assert translation_ready(
+            tour_translation['title'],
+            tour_translation['source_hashes']['title'],
+            tour['title'],
+        )
+        assert connection.scalar(text("SELECT title FROM tours WHERE id=3")) == 'No translation\\nTour'
     with engine.begin() as connection:
         connection.execute(text("UPDATE abouts SET title = 'New source' WHERE id = 1"))
         connection.execute(text("UPDATE tours SET title = 'New tour' WHERE id = 1"))
@@ -187,6 +219,7 @@ def test_admin_merge_keeps_translation_written_after_form_was_loaded():
 
 
 def test_translation_readiness_uses_same_whitespace_and_source_rules():
+    assert source_field_hash('line one\r\nline two') == source_field_hash('line one\nline two')
     assert not translation_ready('   ', source_field_hash('source'), 'source')
     assert not translation_ready('translated', source_field_hash('old'), 'source')
     assert translation_ready('translated', source_field_hash('source'), 'source')
@@ -216,9 +249,13 @@ def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
         db.execute(
             text(
                 'INSERT INTO tour_translations (tour_id, lang, title, source_hashes, manual_fields) '
-                "VALUES (:tour_id, 'en', '   ', CAST(:hashes AS json), '[]')"
+                "VALUES (:tour_id, 'en', :blank, CAST(:hashes AS json), '[]')"
             ),
-            {'tour_id': tour.id, 'hashes': '{"title":"' + source_field_hash(marker) + '"}'},
+            {
+                'tour_id': tour.id,
+                'blank': '\n\t',
+                'hashes': '{"title":"' + source_field_hash(marker) + '"}',
+            },
         )
         tour_id = tour.id
         db.commit()
@@ -233,6 +270,23 @@ def test_tour_display_and_search_fall_back_for_whitespace_translation(client):
 def test_sqladmin_crlf_is_normalized_before_translation_change_detection():
     existing = {'en': {'description': 'line one\nline two'}}
     assert not manual_translation_changed({'en': {'description': 'line one\r\nline two'}}, existing)
+
+
+def test_whitespace_manual_translation_is_treated_as_explicit_clear():
+    source = {'title': 'Source'}
+    existing = {
+        'en': {
+            'title': 'Existing translation',
+            '_source_hashes': {'title': source_field_hash('Source')},
+            '_manual_fields': ['title'],
+        }
+    }
+    incoming = {'en': {'title': '\n\t'}}
+
+    assert manual_translation_needs_refresh(incoming, existing)
+    cleared = mark_manual_translations(incoming, source, existing, compared_to=existing)
+    assert 'title' not in cleared['en']
+    assert cleared['en']['_manual_fields'] == []
 
 
 def test_sqladmin_lf_and_crlf_source_are_equal_and_do_not_schedule_translation():

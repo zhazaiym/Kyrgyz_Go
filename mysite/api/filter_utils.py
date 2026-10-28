@@ -8,7 +8,13 @@ from mysite.translations.source import TOUR_TRANSLATION_FIELDS
 
 
 def _source_hash_expression(column):
-    return func.md5(func.coalesce(cast(column, String), ''))
+    source_text = func.coalesce(cast(column, String), '')
+    normalized = func.replace(func.replace(source_text, '\r\n', '\n'), '\r', '\n')
+    return func.md5(normalized)
+
+
+def _has_non_whitespace(expression):
+    return func.regexp_replace(func.coalesce(expression, ''), '[[:space:]]', '', 'g') != ''
 
 
 class Pagination:
@@ -41,7 +47,7 @@ def _display_field(model, field, lang):
         return case(
             (
                 (translated_hash == _source_hash_expression(original))
-                & (func.btrim(func.coalesce(translated, '')) != '')
+                & _has_non_whitespace(translated)
                 & (original.isnot(None))
                 & (original != ''),
                 translated,
@@ -56,7 +62,7 @@ def _display_field(model, field, lang):
     return case(
         (
             (func.json_typeof(translated) == 'string')
-            & (func.btrim(func.coalesce(translated.as_string(), '')) != '')
+            & _has_non_whitespace(translated.as_string())
             & (hashes == _source_hash_expression(original))
             & (original.isnot(None))
             & (original != ''),

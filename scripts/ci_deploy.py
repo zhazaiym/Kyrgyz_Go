@@ -320,8 +320,13 @@ def validate_admin_allowlist(env_path):
             continue
         key, value = stripped.split('=', 1)
         if key.strip() == 'ADMIN_ALLOWED_IPS':
-            configured = value.strip().strip('"').strip("'")
-            break
+            value = value.strip()
+            if value.startswith(("'", '"')):
+                quote = value[0]
+                end = value.find(quote, 1)
+                configured = value[1:end] if end >= 0 else value
+            else:
+                configured = value.split(' #', 1)[0].rstrip()
     if not configured:
         raise RuntimeError('Production .env must set ADMIN_ALLOWED_IPS before deployment')
     try:
@@ -334,6 +339,8 @@ def validate_admin_allowlist(env_path):
         ) from exc
     if not networks:
         raise RuntimeError('Production ADMIN_ALLOWED_IPS must contain at least one network')
+    if any(network.prefixlen == 0 for network in networks):
+        raise RuntimeError('Production ADMIN_ALLOWED_IPS cannot allow the entire internet')
     return networks
 
 
