@@ -79,4 +79,11 @@ The local checkout was already current with `origin/main` at `7a139dc`. This sec
 - **C15 — deferred:** helper/constant cleanup is unrelated to the required correctness/security fixes.
 - **C16 — implemented with B5:** `build_preview()` returns internal `complete` separately from stage-aware public `can_confirm`.
 
-Tests and lint were not run in this session. The project dependencies and the required isolated PostgreSQL test environment are not available here; the test names above describe added regression coverage, not executed results. Migrations 0014 and 0015 must be manually applied before deploying this code because the deployment workflow blocks automatic schema changes.
+Verification completed on 2026-10-28:
+
+- `TEST_DATABASE_URL=postgresql+psycopg2://postgres@127.0.0.1:5432/postgres python -m pytest -q`: **456 passed in 163.33s**. The test helper created and dropped its own temporary PostgreSQL database.
+- Ruff lint on the changed Python files: **passed**.
+- Ruff format check on the changed Python files: **17 files already formatted**.
+- `git diff --check`: **passed**.
+
+Migrations 0014 and 0015 must be manually applied before deploying this code because the deployment workflow blocks automatic schema changes.
