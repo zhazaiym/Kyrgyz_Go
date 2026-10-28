@@ -1,15 +1,31 @@
 """Independent WebSocket transport; chat business logic resides in chat_service.py."""
+
 import asyncio
+import json
 import logging
 import os
 import uuid
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from mysite.api.client_auth import client_by_token
-from mysite.database.db import SessionLocal
+from langchain_core.exceptions import ModelError
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
+
 from mysite.api.chat_service import owned, process_message
+from mysite.api.client_auth import client_by_token
+from mysite.api.network_identity import client_network
+from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limit
+from mysite.database.db import SessionLocal
 
 router = APIRouter(tags=['KYRGYZGO AI WebSocket'])
 log = logging.getLogger(__name__)
+
+
+class AuthenticationFrame(BaseModel):
+    type: Literal['auth']
+    token: str = Field(strict=True, min_length=1, max_length=256)
 
 
 def public_http_error(exc: HTTPException):
@@ -22,6 +38,8 @@ def public_http_error(exc: HTTPException):
         return 'authentication_failed', 'Не удалось подтвердить вход.', True
     if exc.status_code == 409:
         return 'booking_conflict', detail, False
+    if exc.status_code == 503:
+        return 'ai_busy', 'AI сейчас занят. Повторите запрос немного позже.', False
     return 'request_invalid', detail, False
 
 
@@ -32,18 +50,61 @@ def authenticate_session(session_id, token):
         return client.id
 
 
+async def receive_json_text(websocket):
+    frame = await websocket.receive()
+    if frame['type'] == 'websocket.disconnect':
+        raise WebSocketDisconnect(frame.get('code', 1000))
+    text = frame.get('text')
+    if not isinstance(text, str):
+        raise ValueError('A JSON text frame is required')
+    return json.loads(text)
+
+
+async def unavailable(websocket):
+    await websocket.send_json(
+        {
+            'type': 'error',
+            'code': 'service_unavailable',
+            'message': 'Сервис временно недоступен. Повторите подключение позже.',
+        }
+    )
+    await websocket.close(code=1011)
+
+
 @router.websocket('/ws/chat/{session_id}')
 async def socket(websocket: WebSocket, session_id: str):
-    allowed = {v.strip() for v in os.getenv('CHAT_ALLOWED_ORIGINS',
-              'http://127.0.0.1:3000;http://localhost:3000').split(';') if v.strip()}
+    allowed = {
+        v.strip()
+        for v in os.getenv(
+            'CHAT_ALLOWED_ORIGINS', 'http://127.0.0.1:3000;http://localhost:3000'
+        ).split(';')
+        if v.strip()
+    }
     if websocket.headers.get('origin') not in allowed:
         await websocket.close(code=1008)
         return
+    client_address = getattr(websocket, 'client', None)
+    remote_address = client_network(client_address.host if client_address else 'unknown')
+    try:
+        await asyncio.to_thread(
+            enforce_rate_limit,
+            'websocket-handshake',
+            f'ip:{remote_address}',
+            max_requests=30,
+            window_seconds=60,
+        )
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
+    except SQLAlchemyError:
+        log.exception('WebSocket handshake limiter failed')
+        await websocket.accept()
+        await unavailable(websocket)
+        return
     await websocket.accept()
     try:
-        first = await asyncio.wait_for(websocket.receive_json(), timeout=30)
-        token = (first.get('token') if isinstance(first, dict)
-                 and first.get('type') == 'auth' else None)
+        first = await asyncio.wait_for(receive_json_text(websocket), timeout=30)
+        token = AuthenticationFrame.model_validate(first).token
         client_id = await asyncio.to_thread(authenticate_session, session_id, token)
         await websocket.send_json({'type': 'connected', 'session_id': session_id})
     except HTTPException as exc:
@@ -52,83 +113,135 @@ async def socket(websocket: WebSocket, session_id: str):
         await websocket.close(code=1008)
         return
     except (asyncio.TimeoutError, ValueError, TypeError):
-        await websocket.send_json({
-            'type': 'error', 'code': 'authentication_failed',
-            'message': 'Не удалось подтвердить вход.'
-        })
+        await websocket.send_json(
+            {
+                'type': 'error',
+                'code': 'authentication_failed',
+                'message': 'Не удалось подтвердить вход.',
+            }
+        )
         await websocket.close(code=1008)
         return
     except WebSocketDisconnect:
         return
-    except Exception:
+    except (SQLAlchemyError, ValueError, TypeError, KeyError, RuntimeError, OSError):
         log.exception('WebSocket authentication failure')
-        await websocket.close(code=1011)
+        await unavailable(websocket)
         return
 
     # Sequential execution on each connection. Service layer also serializes same session locally.
+    invalid_messages = 0
+    throttled_messages = 0
     while True:
         try:
-            data = await websocket.receive_json()
+            data = await receive_json_text(websocket)
         except WebSocketDisconnect:
             return
         except ValueError:
-            await websocket.send_json({
-                'type': 'error', 'code': 'invalid_message',
-                'message': 'Некорректный JSON.'
-            })
+            invalid_messages += 1
+            await websocket.send_json(
+                {'type': 'error', 'code': 'invalid_message', 'message': 'Некорректный JSON.'}
+            )
+            if invalid_messages >= 3:
+                await websocket.close(code=1008)
+                return
             continue
-        message = data.get('message') if isinstance(data, dict) and data.get('type') == 'message' else None
+        message = (
+            data.get('message')
+            if isinstance(data, dict) and data.get('type') == 'message'
+            else None
+        )
         if not isinstance(message, str) or not 1 <= len(message.strip()) <= 2000:
-            await websocket.send_json({
-                'type': 'error', 'code': 'invalid_message',
-                'message': 'Введите сообщение (1–2000 символов).'
-            })
+            invalid_messages += 1
+            await websocket.send_json(
+                {
+                    'type': 'error',
+                    'code': 'invalid_message',
+                    'message': 'Введите сообщение (1–2000 символов).',
+                }
+            )
+            if invalid_messages >= 3:
+                await websocket.close(code=1008)
+                return
             continue
+        try:
+            await asyncio.to_thread(enforce_chat_message_limits, client_id)
+        except HTTPException as exc:
+            throttled_messages += 1
+            retry_after = int(exc.headers.get('Retry-After', '60'))
+            await websocket.send_json(
+                {
+                    'type': 'error',
+                    'code': 'rate_limited',
+                    'message': 'Слишком много сообщений. Повторите позже.',
+                    'retry_after': retry_after,
+                }
+            )
+            if throttled_messages >= 3:
+                await websocket.close(code=1008)
+                return
+            continue
+        except SQLAlchemyError:
+            log.exception('WebSocket message limiter failed')
+            await unavailable(websocket)
+            return
+        invalid_messages = 0
+        throttled_messages = 0
         await websocket.send_json({'type': 'typing', 'status': True})
         message_id = str(uuid.uuid4())
         await websocket.send_json({'type': 'message_start', 'message_id': message_id})
 
         async def send_chunk(chunk: str, current_message_id=message_id):
             if chunk:
-                await websocket.send_json({
-                    'type': 'message_delta',
-                    'message_id': current_message_id,
-                    'delta': chunk,
-                })
+                await websocket.send_json(
+                    {'type': 'message_delta', 'message_id': current_message_id, 'delta': chunk}
+                )
 
         try:
             result = await asyncio.wait_for(
-                process_message(session_id, client_id, token, message.strip(),
-                                on_chunk=send_chunk), timeout=180)
+                process_message(session_id, client_id, token, message.strip(), on_chunk=send_chunk),
+                timeout=180,
+            )
             if result.get('booking_preview'):
-                await websocket.send_json({
-                    'type': 'booking_preview', **result['booking_preview']
-                })
-            await websocket.send_json({
-                'type': 'message_end', 'message_id': message_id,
-                'revision': result['revision'],
-                'booking_intent': result['booking_intent'],
-                'stage': result.get('stage', 'consultation')
-            })
+                await websocket.send_json({'type': 'booking_preview', **result['booking_preview']})
+            await websocket.send_json(
+                {
+                    'type': 'message_end',
+                    'message_id': message_id,
+                    'revision': result['revision'],
+                    'booking_intent': result['booking_intent'],
+                    'stage': result.get('stage', 'consultation'),
+                }
+            )
             if result.get('booking_submitted'):
-                await websocket.send_json({
-                    'type': 'booking_submitted', **result['booking_submitted']
-                })
+                await websocket.send_json(
+                    {'type': 'booking_submitted', **result['booking_submitted']}
+                )
         except HTTPException as exc:
             code, error_message, close = public_http_error(exc)
-            await websocket.send_json({
-                'type': 'error', 'code': code, 'message': error_message
-            })
+            await websocket.send_json({'type': 'error', 'code': code, 'message': error_message})
             if close:
                 await websocket.close(code=1008)
                 return
         except asyncio.TimeoutError:
             log.warning('AI timed out for session %s', session_id)
-            await websocket.send_json({
-                'type': 'error', 'code': 'ai_timeout',
-                'message': 'Ответ занимает слишком много времени. Попробуйте ещё раз.'
-            })
-        except Exception as exc:
+            await websocket.send_json(
+                {
+                    'type': 'error',
+                    'code': 'ai_timeout',
+                    'message': 'Ответ занимает слишком много времени. Попробуйте ещё раз.',
+                }
+            )
+        except (
+            ModelError,
+            ChatGoogleGenerativeAIError,
+            SQLAlchemyError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            OSError,
+        ) as exc:
             log.exception('Chat processing failed for session %s', session_id)
             error_name = type(exc).__name__
             error_text = str(exc)
@@ -141,9 +254,7 @@ async def socket(websocket: WebSocket, session_id: str):
             else:
                 code = 'internal_error'
                 message = 'Не удалось обработать запрос. Попробуйте ещё раз.'
-            await websocket.send_json({
-                'type': 'error', 'code': code, 'message': message
-            })
+            await websocket.send_json({'type': 'error', 'code': code, 'message': message})
         finally:
             try:
                 await websocket.send_json({'type': 'typing', 'status': False})

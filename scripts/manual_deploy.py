@@ -1,7 +1,6 @@
 import argparse
 import hashlib
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
@@ -10,18 +9,21 @@ import sys
 import tarfile
 import tempfile
 import uuid
+from pathlib import Path
 
 from .ci_deploy import ALLOWED_FILES, validate_members
 
-
 RUNTIME_FILES = tuple(sorted(ALLOWED_FILES))
 HOST = 'ubuntu@13.53.40.37'
-HOST_KEY = ('13.53.40.37 ssh-ed25519 '
-            'AAAAC3NzaC1lZDI1NTE5AAAAIPgDjdsROqk/hlhi8y+IUEgOouCvGWamJkQH7n1tFpSo\n')
-DATABASE_SUFFIXES = tuple(extension + sidecar
-                          for extension in ('.db', '.sqlite', '.sqlite3')
-                          for sidecar in ('', '-wal', '-shm', '-journal'))
-PRIVATE_SUFFIXES = ('.pem', '.key', '.pyc', '.pyo', *DATABASE_SUFFIXES)
+HOST_KEY = (
+    '13.53.40.37 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPgDjdsROqk/hlhi8y+IUEgOouCvGWamJkQH7n1tFpSo\n'
+)
+DATABASE_SUFFIXES = tuple(
+    extension + sidecar
+    for extension in ('.db', '.sqlite', '.sqlite3')
+    for sidecar in ('', '-wal', '-shm', '-journal')
+)
+PRIVATE_SUFFIXES = ('.pem', '.key', '.pyc', '.pyo', '.dump', '.sql', *DATABASE_SUFFIXES)
 
 
 def create_archive(root, destination):
@@ -41,7 +43,7 @@ def create_archive(root, destination):
             raise FileNotFoundError('Missing source directory: ' + name)
         for path in sorted(directory.rglob('*')):
             relative = path.relative_to(root)
-            if any(part in {'__pycache__', '.git'} or part.startswith('.env') for part in relative.parts):
+            if any(part == '__pycache__' or part.startswith('.') for part in relative.parts):
                 continue
             if path.name.lower().endswith(PRIVATE_SUFFIXES):
                 continue
@@ -59,18 +61,35 @@ def create_archive(root, destination):
 
 
 def ssh_arguments(executable, key, known_hosts):
-    return [str(executable), '-T', '-i', str(key), '-o', 'BatchMode=yes',
-            '-o', 'StrictHostKeyChecking=yes',
-            '-o', 'UserKnownHostsFile="' + known_hosts.as_posix() + '"',
-            '-o', 'ConnectTimeout=20', '-o', 'ServerAliveInterval=15',
-            '-o', 'ServerAliveCountMax=20', HOST]
+    return [
+        str(executable),
+        '-T',
+        '-i',
+        str(key),
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'StrictHostKeyChecking=yes',
+        '-o',
+        'UserKnownHostsFile="' + known_hosts.as_posix() + '"',
+        '-o',
+        'ConnectTimeout=20',
+        '-o',
+        'ServerAliveInterval=15',
+        '-o',
+        'ServerAliveCountMax=20',
+        HOST,
+    ]
 
 
 def upload_archive(arguments, archive, snapshot):
     if not re.fullmatch('[0-9a-f]{40}', snapshot):
         raise ValueError('Invalid snapshot digest')
-    command = ('SSH_ORIGINAL_COMMAND=' + shlex.quote('deploy ' + snapshot)
-               + ' /usr/bin/python3 /usr/local/lib/kyrgyzgo/ci_deploy.py')
+    command = (
+        'SSH_ORIGINAL_COMMAND='
+        + shlex.quote('deploy ' + snapshot)
+        + ' /usr/bin/python3 /usr/local/lib/kyrgyzgo/ci_deploy.py'
+    )
     with archive.open('rb') as source:
         subprocess.run([*arguments, command], stdin=source, check=True)
 
@@ -78,7 +97,9 @@ def upload_archive(arguments, archive, snapshot):
 def main():
     parser = argparse.ArgumentParser(description='Upload the working source tree directly over SSH')
     parser.add_argument('--key', type=Path, default=Path.home() / '.ssh/kyrgyzgo_ec2_deploy')
-    parser.add_argument('--check', action='store_true', help='Validate packaging and SSH without deployment')
+    parser.add_argument(
+        '--check', action='store_true', help='Validate packaging and SSH without deployment'
+    )
     parser.add_argument('--skip-tests', action='store_true', help='Explicitly skip local tests')
     options = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -96,9 +117,17 @@ def main():
     if not options.check and not options.skip_tests:
         cache = root / '.pytest_cache'
         cache.mkdir(exist_ok=True)
-        subprocess.run([sys.executable, '-m', 'pytest', '-q',
-                        '--basetemp=' + str(cache / ('manual-' + uuid.uuid4().hex))],
-                       cwd=root, check=True)
+        subprocess.run(
+            [
+                sys.executable,
+                '-m',
+                'pytest',
+                '-q',
+                '--basetemp=' + str(cache / ('manual-' + uuid.uuid4().hex)),
+            ],
+            cwd=root,
+            check=True,
+        )
     with tempfile.TemporaryDirectory(prefix='kyrgyzgo-deploy-') as temporary:
         archive = Path(temporary) / 'source.tar.gz'
         known_hosts = Path(temporary) / 'known_hosts'
@@ -107,9 +136,11 @@ def main():
         snapshot = hashlib.sha256(archive.read_bytes()).hexdigest()[:40]
         arguments = ssh_arguments(executable, key, known_hosts)
         print('Source snapshot:', snapshot, flush=True)
-        preflight = ("test -r /usr/local/lib/kyrgyzgo/ci_deploy.py && "
-                     "test \"$(sudo -n docker inspect --format '{{.State.Health.Status}}' "
-                     "kyrgyzgo_backend)\" = healthy && df -h /")
+        preflight = (
+            'test -r /usr/local/lib/kyrgyzgo/ci_deploy.py && '
+            "test \"$(sudo -n docker inspect --format '{{.State.Health.Status}}' "
+            'kyrgyzgo_backend)" = healthy && df -h /'
+        )
         subprocess.run([*arguments, preflight], check=True)
         if options.check:
             print('CHECK PASSED: source archive and SSH validated; no deployment performed.')

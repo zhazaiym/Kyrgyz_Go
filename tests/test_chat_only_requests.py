@@ -9,9 +9,11 @@ def test_direct_submission_is_retired_without_creating_request(client, customer_
     with SessionLocal() as db:
         before = db.query(TravelRequest).count()
     for headers in ({}, customer_headers):
-        response = client.post(path, headers=headers, json={
-            'name': 'Must not be saved', 'phone': '+996700000001', 'tour_id': 1,
-        })
+        response = client.post(
+            path,
+            headers=headers,
+            json={'name': 'Must not be saved', 'phone': '+996700000001', 'tour_id': 1},
+        )
         assert response.status_code == 410
         assert response.json()['detail']['code'] == 'booking_requires_chat'
         assert response.json()['detail']['chat_session_url'] == '/chat/session'
@@ -20,9 +22,9 @@ def test_direct_submission_is_retired_without_creating_request(client, customer_
 
 
 def test_admin_only_has_chat_requests_view(client, admin_headers):
-    client.post('/admin/login', data={
-        'username': 'test-admin', 'password': 'StrongAdminPassword123!',
-    })
+    client.post(
+        '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
+    )
     try:
         page = client.get('/admin/')
         assert page.status_code == 200

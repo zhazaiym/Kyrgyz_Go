@@ -18,6 +18,36 @@ already configured. Set a long random `SECRET_KEY` and real database credentials
 The image excludes `.env` and local database files; Compose injects the runtime
 environment with `env_file`.
 
+Admin cookies are Secure by default. For local HTTP development explicitly
+set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
+
+`/admin` and `/admin/*` are restricted by `ADMIN_ALLOWED_IPS`, a comma-separated
+list of administrator IPs or CIDR networks. Set it to the fixed egress address
+of the administrator VPN or office network before deploying. `.env.example`
+comments this setting out, so copying the example keeps the localhost-only
+application fallback for local development. An explicitly empty value denies
+all administrative access. Production must configure the administrator addresses
+in `.env` or the Compose environment. The deployment script validates the effective
+`services.api.environment.ADMIN_ALLOWED_IPS` from `docker compose config --format json`,
+including overrides, interpolation, `export` assignments and inline comments.
+Missing, empty and invalid values are rejected, as are networks broader than
+IPv4 `/16` or IPv6 `/32`. Prefer individual IPs or the smallest actual VPN subnet;
+these prefix limits are a deployment guard, not a recommended allowlist size.
+For SSH port forwarding, the API sees the Docker bridge gateway as the client,
+not `127.0.0.1`; use the address observed by the API or connect through the
+allowlisted VPN. With
+100 unlisted attacker addresses, accepted admin requests are **0 attempts/minute**;
+if all administrators share one allowlisted VPN address, the existing admin
+login limiter permits at most **5 attempts/minute** from that address. Do not
+allowlist arbitrary public addresses.
+
+The manual deployment helper carries this effective value into its generated
+`/home/ubuntu/kyrgyzgo-deploy.override.yml`. After the first deployment, that
+override is authoritative: change `ADMIN_ALLOWED_IPS` there on the server, then
+run the manual deployment so the helper validates and preserves the new value.
+Editing `.env` alone will not override a value already set in that Compose
+override.
+
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -28,7 +58,7 @@ Database addressing:
   private IP or DNS name. The database must accept connections from the Docker
   host. Configure PostgreSQL `listen_addresses`, `pg_hba.conf`, and the firewall
   for the actual client network; keep port 5432 restricted to trusted clients.
-- Without Docker: the current `127.0.0.1` URL is correct for a local PostgreSQL
+- Without Docker: use the commented `127.0.0.1` URL for a local PostgreSQL
   server. URL-encode special characters in database credentials.
 
 Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
@@ -47,9 +77,25 @@ Do not set `*` for CORS origins when using credentials.
 Back up an existing database before deployment. Every API container start runs
 `alembic upgrade head` and starts Uvicorn only if migrations succeed. A database
 created outside Alembic needs its schema reviewed and baselined first; do not
-blindly stamp a populated PostgreSQL database. The legacy SQLite procedure is
-documented below. Do not scale this service to multiple replicas without moving
-migrations to a separate deployment step and reviewing chat session locking.
+blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
+migrations to a separate deployment step.
+
+GitHub Actions runs checks and tests only; it never connects to EC2 or deploys.
+Production updates are started manually by an administrator using
+`scripts/deploy.ps1` from a workstation or the server's documented Docker
+commands. The manual deploy script refuses schema changes and reports
+`migration_required` before building or replacing the running image. Review the
+migration, take a database backup, apply `alembic upgrade head`, then deploy the
+matching image. This release adds migrations 0014 through 0016; do not rely on
+the application container to apply them automatically.
+The repository no longer uses GitHub Actions deployment secrets. Remove the
+old `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, and `DEPLOY_USER`
+repository secrets. If the old CI public key is still in the server's
+`authorized_keys`, remove that CI-only key while preserving the separate manual
+deployment key.
+Pause catalogue writes through REST and SQLAdmin during this maintenance window.
+Apply the migrations and immediately activate the matching image before reopening
+catalogue writes, so an old application cannot store raw CRLF hashes after normalization.
 
 ### Start and verify
 
@@ -68,17 +114,35 @@ logs, and restarts after process failures. The healthcheck verifies HTTP
 availability; it does not verify PostgreSQL or Gemini connectivity. An unhealthy
 status alone does not trigger Docker's restart policy.
 
+Database-backed rate limits are enabled by default and shared across workers:
+client registration is limited by IP/account, client and admin login by IP and
+identifier, password-reset requests by IP/email, WebSocket handshakes by IP,
+and AI messages by client account. The AI limit is 10 messages per minute and
+300 per day per client. Counters store hashed identifiers and old windows are
+cleaned automatically. Keep `RATE_LIMIT_ENABLED=true` in production.
+
+The coarse HTTP/IP limit uses a bounded in-memory counter per worker, with no
+PostgreSQL writes. GET/HEAD health checks and SQLAdmin static assets bypass
+this counter; admission, header and body limits still apply. With N workers,
+the coarse allowance can reach N times the configured value. Use the proxy
+or an upstream service for network-level and cross-worker traffic limits.
+Numeric resource settings are validated at startup; restart after changing them.
+
+The coarse counter uses LRU eviction and groups IPv6 addresses by /64. Evicted
+counters can restart; account/chat limits remain database-backed. Expired login
+and reset tokens are cleaned hourly, retaining one day after expiry; active
+tokens are not revoked. Manual cleanup: `python -m scripts.cleanup_tokens`.
+
 Create an administrator interactively after the API starts:
 
 ```bash
 docker compose exec api python create_admin.py
 ```
 
-For updates, back up PostgreSQL, update the source, then run
-`docker compose up --build -d`. Stop the API with `docker compose down`.
+For manual updates, back up PostgreSQL, update the source, then run
+`docker compose up --build -d` when the server can handle a build. Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
-requires an external PostgreSQL database; it does not persist a container-local
-SQLite database.
+requires an external PostgreSQL database.
 
 ### HTTPS on a Linux server
 
@@ -87,10 +151,14 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
 1. Use your public IP (currently `13.53.40.37`), or point a domain's DNS A/AAAA
    records to the server. Allow inbound TCP ports 80 and 443. Stop any other
    service using these ports after checking how the current API is hosted.
-2. Set `API_DOMAIN=13.53.40.37` (or your domain) and `FORWARDED_ALLOW_IPS=*` in
-   `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
+2. Set `API_DOMAIN=13.53.40.37` (or your domain) and keep
+   `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
+   Compose gives Caddy this fixed address on a dedicated proxy network. If
+   `172.30.240.0/28` overlaps an existing network, change `PROXY_SUBNET`,
+   `CADDY_PROXY_IP`, `API_PROXY_IP`, and `FORWARDED_ALLOW_IPS` together. Never set trust to `*`
+   merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.
 4. Verify `https://13.53.40.37/` and `/contacts/` without authorization, using your
@@ -135,10 +203,12 @@ translations to populate their translations. Public GETs make no AI calls.
 
 The API port binds to `127.0.0.1:8000` by default. Put a host Nginx instance
 in front of it, configure DNS and a valid TLS certificate for the API domain,
-and expose only the HTTPS proxy publicly. Set `FORWARDED_ALLOW_IPS=*` in the
-server `.env` only while the API is reachable exclusively through your trusted
-proxy; this allows Uvicorn to recognize the forwarded HTTPS scheme over Docker
-networking. Do not combine that setting with a publicly accessible API port.
+and expose only the HTTPS proxy publicly. Set `FORWARDED_ALLOW_IPS` in the
+server `.env` to the actual peer address of that proxy as seen by Uvicorn
+(for a host proxy this may be a Docker bridge gateway). Determine that address
+for your network rather than trusting `*` or every private address. The default
+fixed Caddy address is intended for the included Compose proxy, not arbitrary
+host Nginx setups.
 
 Example Nginx configuration inside an existing TLS `server` block:
 
@@ -224,17 +294,10 @@ For a new empty database, apply the schema:
 python -m alembic upgrade head
 ```
 
-The repository currently contains a legacy SQLite database created before
-Alembic. If deploying that existing file, back it up first, mark its current
-schema as the baseline revision, and then apply later migrations:
-
-```bash
-python -m alembic stamp 15eb0352f12a
-python -m alembic upgrade head
-```
-
-Do not run `stamp` against an empty database. For a database that already has
-an `alembic_version` table, run only `python -m alembic upgrade head`.
+For an existing PostgreSQL database managed by this repository, run
+`python -m alembic upgrade head`. The migration history has one unified head.
+Back up the database before every schema update. Never stamp an unreviewed
+schema or run downgrade against your working data.
 
 ## 3. Create an administrator
 
@@ -250,6 +313,21 @@ The same administrator can use the bearer-token API and the SQLAdmin login.
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Run one worker when using SQLite. Put the service behind an HTTPS reverse proxy
-and keep `.env` and `kyrgyzgo.db` outside publicly served directories. The API
+Put the service behind an HTTPS reverse proxy and keep `.env` and PostgreSQL
+backups outside publicly served directories. The API
 documentation is available at `/docs`.
+
+## Tests with PostgreSQL
+
+Set `TEST_DATABASE_URL` to a PostgreSQL connection whose user has `CREATEDB`
+permission. If omitted locally, tests use the connection settings from `.env`.
+Tests create randomly named `test_kyrgyzgo_*` databases, apply Alembic migrations,
+and delete only those databases after completion. They never reset application
+tables. CI starts a separate PostgreSQL 17 service.
+
+```bash
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
+```
+
+`DATABASE_URL` is mandatory. Unsupported database backends fail at startup.

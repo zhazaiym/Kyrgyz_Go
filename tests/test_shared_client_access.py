@@ -11,15 +11,36 @@ def catalogue_entries():
         region = models.Region(name='Access region', country=country)
         district = models.District(name='Access district', region=region)
         entries = [
-            ('/tours/', models.Tour(title='Access tour', price=100, description='Private itinerary')),
-            ('/hotels/', models.Hotel(name='Access hotel', price=100, region=region,
-                                     district=district, description='Private accommodation')),
-            ('/transports/', models.Transport(name='Access transport', price=100, seats=4,
-                                              description='Private transport')),
-            ('/trekkings/', models.Trekking(title='Access trek', price=100,
-                                          description='Private trek')),
-            ('/helicopter-tours/', models.HelicopterTour(title='Access flight', price=100,
-                                                        description='Private flight')),
+            (
+                '/tours/',
+                models.Tour(title='Access tour', price=100, description='Private itinerary'),
+            ),
+            (
+                '/hotels/',
+                models.Hotel(
+                    name='Access hotel',
+                    price=100,
+                    region=region,
+                    district=district,
+                    description='Private accommodation',
+                ),
+            ),
+            (
+                '/transports/',
+                models.Transport(
+                    name='Access transport', price=100, seats=4, description='Private transport'
+                ),
+            ),
+            (
+                '/trekkings/',
+                models.Trekking(title='Access trek', price=100, description='Private trek'),
+            ),
+            (
+                '/helicopter-tours/',
+                models.HelicopterTour(
+                    title='Access flight', price=100, description='Private flight'
+                ),
+            ),
         ]
         db.add_all([country, region, district] + [entry for _, entry in entries])
         db.commit()
@@ -27,18 +48,27 @@ def catalogue_entries():
 
 
 def register_customer(client, username, prefix='/auth'):
-    response = client.post(prefix + '/register', json={
-        'username': username, 'password': 'StrongPassword123!',
-    })
+    response = client.post(
+        prefix + '/register', json={'username': username, 'password': 'StrongPassword123!'}
+    )
     assert response.status_code == 201, response.text
     return {'Authorization': 'Bearer ' + response.json()['access_token']}
 
 
 def test_guest_sees_cards_but_needs_login_for_details(client, catalogue_entries):
-    hidden = {'description', 'included', 'excluded', 'instruction', 'programs',
-              'images', 'phone', 'amenities', 'address'}
+    hidden = {
+        'description',
+        'included',
+        'excluded',
+        'instruction',
+        'programs',
+        'images',
+        'phone',
+        'amenities',
+        'address',
+    }
     for path, entry_id in catalogue_entries:
-        response = client.get(path)
+        response = client.get(path, params={'search': 'Access'})
         assert response.status_code == 200
         card = next(item for item in response.json() if item['id'] == entry_id)
         assert not hidden.intersection(card)
@@ -56,8 +86,9 @@ def test_one_registration_opens_chat_and_details(client, catalogue_entries, entr
         assert response.json()['description'].startswith('Private ')
     created = client.post('/chat/session', headers=headers)
     assert created.status_code == 200
-    with client.websocket_connect(f"/ws/chat/{created.json()['session_id']}",
-                                  headers={'origin': 'http://localhost:3000'}) as socket:
+    with client.websocket_connect(
+        f'/ws/chat/{created.json()["session_id"]}', headers={'origin': 'http://localhost:3000'}
+    ) as socket:
         socket.send_json({'type': 'auth', 'token': headers['Authorization'].split()[1]})
         assert socket.receive_json()['type'] == 'connected'
     assert client.post('/auth/logout', headers=headers).status_code == 200
@@ -67,10 +98,18 @@ def test_one_registration_opens_chat_and_details(client, catalogue_entries, entr
         assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 401
 
 
-@pytest.mark.parametrize('path', [
-    '/tour-programs/', '/trekking-programs/', '/tour-images/', '/hotel-images/',
-    '/transport-images/', '/trekking-images/', '/helicopter-images/',
-])
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/tour-programs/',
+        '/trekking-programs/',
+        '/tour-images/',
+        '/hotel-images/',
+        '/transport-images/',
+        '/trekking-images/',
+        '/helicopter-images/',
+    ],
+)
 def test_guest_cannot_bypass_details_through_nested_resources(client, path):
     assert client.get(path).status_code == 401
 
@@ -96,9 +135,12 @@ def test_legacy_and_shared_registration_use_the_same_account(client):
     assert login.status_code == 200
     headers = {'Authorization': 'Bearer ' + login.json()['access_token']}
     assert client.get('/chat/auth/me', headers=headers).status_code == 200
-    assert client.post('/tours/', headers=headers, json={
-        'title': 'Unauthorized creation', 'price': 100,
-    }).status_code == 401
+    assert (
+        client.post(
+            '/tours/', headers=headers, json={'title': 'Unauthorized creation', 'price': 100}
+        ).status_code
+        == 401
+    )
     assert client.post('/chat/auth/logout', headers=headers).status_code == 200
     assert client.get('/auth/me', headers=headers).status_code == 401
 

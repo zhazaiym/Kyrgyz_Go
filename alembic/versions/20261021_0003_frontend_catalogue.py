@@ -1,6 +1,8 @@
 """Tour coordinates and stored translations for public catalogue sections."""
-from alembic import op
+
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = '20261021_0003'
 down_revision = '20261020_0002'
@@ -8,9 +10,20 @@ branch_labels = None
 depends_on = None
 
 TABLES = (
-    'abouts', 'about_sections', 'tour_categories', 'countries', 'regions',
-    'districts', 'hotels', 'transports', 'helicopter_tours', 'trekkings',
-    'contacts', 'faqs', 'tour_programs', 'trekking_programs',
+    'abouts',
+    'about_sections',
+    'tour_categories',
+    'countries',
+    'regions',
+    'districts',
+    'hotels',
+    'transports',
+    'helicopter_tours',
+    'trekkings',
+    'contacts',
+    'faqs',
+    'tour_programs',
+    'trekking_programs',
 )
 
 

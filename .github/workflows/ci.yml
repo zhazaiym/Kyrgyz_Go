@@ -1,0 +1,86 @@
+
+name: KyrgyzGo CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Check Python
+    runs-on: ubuntu-24.04
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Check Python syntax
+        run: |
+          python -m compileall -q main.py mysite scripts alembic
+
+      - name: Lint Python
+        run: |
+          ruff check --output-format=github .
+          python -m scripts.format_code --check
+
+      - name: Audit dependency vulnerabilities
+        run: python -m pip_audit -r requirements.txt --progress-spinner off
+
+      - name: Scan runtime security issues
+        run: python -m bandit -r mysite main.py -ll
+
+      - name: Run test suite
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          result = subprocess.run(
+              [sys.executable, "-m", "pytest", "-q"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT,
+              text=True,
+          )
+          print(result.stdout, end="")
+          if result.returncode:
+              detail = " | ".join(result.stdout.strip().splitlines()[-8:])
+              detail = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=pytest diagnostics::{detail[:3500]}")
+          sys.exit(result.returncode)
+          PY

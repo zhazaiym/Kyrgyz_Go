@@ -1,42 +1,43 @@
 from decimal import Decimal
+
 from fastapi_filter.contrib.sqlalchemy import Filter
 from pydantic import Field, model_validator
-from sqlalchemy import or_
+from sqlalchemy import Boolean, Date, DateTime, Float, Integer, Numeric, String, or_
 
-from mysite.database.models import (Tour, Hotel, Transport, Trekking, HelicopterTour,
-                                    Region, District, TourCategory, Country, PriceUnitChoices, TourTypeChoices)
+from mysite.database.models import (District, HelicopterTour, Hotel, PriceUnitChoices, Region, Tour,
+                                    TourTypeChoices, Transport, Trekking)
 
 
-class PriceFilter(Filter):
-    price__gte: Decimal | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-    )
+class CatalogueFilter(Filter):
+    @model_validator(mode='after')
+    def validate_sort_columns(self):
+        columns = self.Constants.model.__table__.c
+        sortable = (String, Integer, Numeric, Float, Boolean, Date, DateTime)
+        for item in getattr(self, 'order_by', None) or []:
+            name = item.lstrip('+-')
+            if name not in columns or not isinstance(columns[name].type, sortable):
+                raise ValueError(f'Unsupported sort field: {name}')
+        return self
 
-    price__lte: Decimal | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-    )
+
+class PriceFilter(CatalogueFilter):
+    price__gte: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    price__lte: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
 
     price_unit: PriceUnitChoices | None = None
 
-    search: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=200,
-    )
+    search: str | None = Field(default=None, min_length=1, max_length=200)
 
     order_by: list[str] | None = None
 
-    @model_validator(mode="after")
+    @model_validator(mode='after')
     def check_ranges(self):
         for name in type(self).model_fields:
-            if not name.endswith("__gte"):
+            if not name.endswith('__gte'):
                 continue
 
-            upper_name = name.removesuffix("__gte") + "__lte"
+            upper_name = name.removesuffix('__gte') + '__lte'
 
             if upper_name not in type(self).model_fields:
                 continue
@@ -44,18 +45,10 @@ class PriceFilter(Filter):
             lower = getattr(self, name)
             upper = getattr(self, upper_name)
 
-            if (
-                lower is not None
-                and upper is not None
-                and lower > upper
-            ):
-                raise ValueError(
-                    f"{name} не должен быть больше {upper_name}"
-                )
+            if lower is not None and upper is not None and lower > upper:
+                raise ValueError(f'{name} не должен быть больше {upper_name}')
 
         return self
-
-
 
 
 class TourFilter(PriceFilter):
@@ -71,25 +64,18 @@ class TourFilter(PriceFilter):
 
     class Constants(Filter.Constants):
         model = Tour
-        search_model_fields = ["title"]
+        search_model_fields = ['title']
 
     def filter(self, query):
         # guests — өзүнчө шарт, Tour таблицасындагы талаа эмес.
-        standard_filter = self.model_copy(
-            update={"guests": None}
-        )
+        standard_filter = self.model_copy(update={'guests': None})
 
-        query = super(
-            TourFilter, standard_filter
-        ).filter(query)
+        query = super(TourFilter, standard_filter).filter(query)
 
         if self.guests is not None:
             query = query.filter(
                 Tour.min_people <= self.guests,
-                or_(
-                    Tour.max_people.is_(None),
-                    Tour.max_people >= self.guests,
-                ),
+                or_(Tour.max_people.is_(None), Tour.max_people >= self.guests),
             )
 
         return query
@@ -105,12 +91,7 @@ class HotelFilter(PriceFilter):
 
     class Constants(Filter.Constants):
         model = Hotel
-        search_model_fields = [
-            "name",
-            "description",
-            "address",
-        ]
-
+        search_model_fields = ['name', 'description', 'address']
 
 
 class TransportFilter(PriceFilter):
@@ -125,13 +106,7 @@ class TransportFilter(PriceFilter):
 
     class Constants(Filter.Constants):
         model = Transport
-        search_model_fields = [
-            "name",
-            "brand",
-            "model",
-            "description",
-        ]
-
+        search_model_fields = ['name', 'brand', 'model', 'description']
 
 
 class TrekkingFilter(PriceFilter):
@@ -145,7 +120,7 @@ class TrekkingFilter(PriceFilter):
 
     class Constants(Filter.Constants):
         model = Trekking
-        search_model_fields = ["title", "description", "route"]
+        search_model_fields = ['title', 'description', 'route']
 
 
 class HelicopterTourFilter(PriceFilter):
@@ -159,11 +134,10 @@ class HelicopterTourFilter(PriceFilter):
 
     class Constants(Filter.Constants):
         model = HelicopterTour
-        search_model_fields = ["title", "description", "destination", "departure_location"]
+        search_model_fields = ['title', 'description', 'destination', 'departure_location']
 
 
-
-class RegionFilter(Filter):
+class RegionFilter(CatalogueFilter):
     country_id: int | None = Field(None, gt=0)
 
     search: str | None = Field(None, min_length=1, max_length=200)
@@ -171,10 +145,10 @@ class RegionFilter(Filter):
 
     class Constants(Filter.Constants):
         model = Region
-        search_model_fields = ["name"]
+        search_model_fields = ['name']
 
 
-class DistrictFilter(Filter):
+class DistrictFilter(CatalogueFilter):
     region_id: int | None = Field(None, gt=0)
 
     search: str | None = Field(None, min_length=1, max_length=200)
@@ -182,4 +156,4 @@ class DistrictFilter(Filter):
 
     class Constants(Filter.Constants):
         model = District
-        search_model_fields = ["name"]
+        search_model_fields = ['name']

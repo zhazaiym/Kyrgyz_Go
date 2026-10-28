@@ -1,6 +1,8 @@
 """Optional unique email for shared client authentication."""
-from alembic import op
+
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = '20261023_0004'
 down_revision = '20261021_0003'
