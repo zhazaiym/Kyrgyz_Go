@@ -290,7 +290,7 @@ def test_sqladmin_generates_translations(client, admin_headers):
 
 
 def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues(
-    client, admin_headers
+    client, admin_headers, monkeypatch
 ):
     from mysite.database.models import FAQ
     from mysite.translations.jobs import translate_record
@@ -338,6 +338,13 @@ def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues
         record = db.get(FAQ, record_id)
         assert record.translations['en']['question'] == 'Form merge question en'
 
+    enqueued = []
+
+    def capture_translation(entity, identity, source, translator):
+        enqueued.append((entity, identity, source))
+        return True
+
+    monkeypatch.setattr('mysite.admin.views.enqueue_translation', capture_translation)
     cleared = client.post(
         edit_path,
         data={
@@ -352,8 +359,50 @@ def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues
     assert cleared.status_code in (302, 303), cleared.text
     with SessionLocal() as db:
         record = db.get(FAQ, record_id)
-        assert record.translations['en']['question'] == 'Form merge question en'
+        assert 'question' not in record.translations['en']
+        assert record.translations['en']['answer'] == 'Form merge answer en'
         assert record.translations['en']['_manual_fields'] == []
+    assert len(enqueued) == 1
+    assert enqueued[0][0] is FAQ and enqueued[0][1] == record_id
+    assert enqueued[0][2] == source
+
+
+def test_tour_rest_put_only_normalizing_line_endings_keeps_translation(
+    client, admin_headers, customer_headers
+):
+    from mysite.translations.source import source_field_hash
+
+    title_crlf = 'Tour title\r\nsecond line'
+    title_lf = 'Tour title\nsecond line'
+    description_crlf = 'Description\r\nsecond line'
+    with SessionLocal() as db:
+        tour = models.Tour(title=title_crlf, description=description_crlf, price=10)
+        db.add(tour)
+        db.flush()
+        db.add(
+            models.TourTranslation(
+                tour_id=tour.id,
+                lang='en',
+                title='Stable English title',
+                description='Stable English description',
+                source_hashes={
+                    'title': source_field_hash(title_crlf),
+                    'description': source_field_hash(description_crlf),
+                },
+            )
+        )
+        tour_id = tour.id
+        db.commit()
+
+    updated = client.put(f'/tours/{tour_id}/', headers=admin_headers, json={'title': title_lf})
+    assert updated.status_code == 200, updated.text
+    detail = client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()['title'] == 'Stable English title'
+    assert detail.json()['description'] == 'Stable English description'
+    search = client.get('/tours/', params={'lang': 'en', 'search': 'Stable English title'})
+    assert search.status_code == 200, search.text
+    assert any(item['id'] == tour_id for item in search.json())
 
 
 def test_seed_demo_is_repeatable_and_preserves_edits(client, customer_headers):

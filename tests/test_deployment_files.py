@@ -43,6 +43,14 @@ def test_environment_example_documents_required_settings():
         if line.strip() and not line.lstrip().startswith('#') and '=' in line
     }
     assert required <= names
+    assert (
+        next(
+            line.split('=', 1)[1].strip()
+            for line in example.splitlines()
+            if line.strip().startswith('ADMIN_ALLOWED_IPS=')
+        )
+        == ''
+    )
 
 
 def test_local_runtime_artifacts_are_ignored():

@@ -43,6 +43,12 @@ def _normalize(value):
 
 def _hash(value):
     normalized = '' if value is None or value == '' else value
+    normalized = _normalize(normalized)
+    return hashlib.md5(str(normalized).encode('utf-8'), usedforsecurity=False).hexdigest()
+
+
+def _raw_hash(value):
+    normalized = '' if value is None or value == '' else value
     return hashlib.md5(str(normalized).encode('utf-8'), usedforsecurity=False).hexdigest()
 
 
@@ -54,7 +60,13 @@ def upgrade():
         columns.append(sa.column('translations', sa.JSON))
         table = sa.table(table_name, *columns)
         updates = []
-        for row in bind.execute(sa.select(*columns).order_by(table.c.id)).mappings().yield_per(500):
+        has_cr = sa.or_(*(table.c[field].like('%\r%') for field in fields))
+        rows = (
+            bind.execute(sa.select(*columns).where(has_cr).order_by(table.c.id))
+            .mappings()
+            .yield_per(500)
+        )
+        for row in rows:
             source = {field: row[field] for field in fields}
             normalized = {field: _normalize(value) for field, value in source.items()}
             changes = {'row_id': row['id']}
@@ -77,7 +89,7 @@ def upgrade():
                     language_changed = False
                     for field in fields:
                         if (
-                            hashes.get(field) == _hash(source[field])
+                            hashes.get(field) == _raw_hash(source[field])
                             and normalized[field] != source[field]
                         ):
                             hashes[field] = _hash(normalized[field])
@@ -112,20 +124,42 @@ def upgrade():
     updates = []
     for row in bind.execute(selected).mappings().yield_per(500):
         hashes = dict(row['source_hashes'] or {})
-        values = {'row_id': row['id']}
+        changed_hash = False
         for field in TOUR_FIELDS:
             source = row[f'source_{field}']
             normalized = _normalize(source)
             if normalized != source:
-                values[f'source_{field}'] = normalized
-                if hashes.get(field) == _hash(source):
+                if hashes.get(field) == _raw_hash(source):
                     hashes[field] = _hash(normalized)
-        if len(values) > 1:
-            values['source_hashes'] = hashes
-            updates.append(values)
+                    changed_hash = True
+        if changed_hash:
+            updates.append({'row_id': row['id'], 'source_hashes': hashes})
     if updates:
         statement = translation.update().where(translation.c.id == sa.bindparam('row_id'))
         for values in updates:
+            bind.execute(statement, values)
+
+    source_columns = [sa.column('id', sa.Integer)]
+    source_columns.extend(sa.column(field, sa.Text) for field in TOUR_FIELDS)
+    tours = sa.table('tours', *source_columns)
+    contains_cr = sa.or_(*(tours.c[field].like('%\r%') for field in TOUR_FIELDS))
+    normalized_tours = []
+    for row in (
+        bind.execute(sa.select(*source_columns).where(contains_cr).order_by(tours.c.id))
+        .mappings()
+        .yield_per(500)
+    ):
+        values = {'row_id': row['id']}
+        for field in TOUR_FIELDS:
+            value = row[field]
+            normalized = _normalize(value)
+            if normalized != value:
+                values[field] = normalized
+        if len(values) > 1:
+            normalized_tours.append(values)
+    if normalized_tours:
+        statement = tours.update().where(tours.c.id == sa.bindparam('row_id'))
+        for values in normalized_tours:
             bind.execute(statement, values)
 
 

@@ -354,7 +354,14 @@ def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client
             .all()
         ]
     assert expected in account_ids
-    assert email not in account_ids
+    assert not any(value.startswith(email[:64]) for value in account_ids)
+
+
+def test_account_index_parses_principal_from_the_last_address_delimiter():
+    assert (
+        rate_limit._account_index('account-ip:client:12:ip:marker:ip:2001:db8::/64')
+        == 'client:12:ip:marker'
+    )
 
 
 def test_account_limits_use_one_insert_and_one_commit_for_both_counters(monkeypatch):

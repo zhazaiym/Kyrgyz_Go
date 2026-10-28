@@ -33,7 +33,7 @@ def _counter_key(scope, principal):
 def _account_index(principal):
     if not principal.startswith('account-ip:'):
         return None
-    account_key = principal[len('account-ip:') :].split(':ip:', 1)[0]
+    account_key = principal[len('account-ip:') :].rsplit(':ip:', 1)[0]
     if account_key.startswith('unknown:'):
         identifier = account_key[len('unknown:') :]
         account_key = 'unknown:' + hashlib.sha256(identifier.encode('utf-8')).hexdigest()

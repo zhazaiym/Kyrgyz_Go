@@ -7,6 +7,7 @@ TOUR_TRANSLATION_FIELDS = ('title', 'description', 'included', 'excluded')
 
 def source_field_hash(value):
     normalized = '' if value is None or value == '' else value
+    normalized = normalize_text(normalized)
     return hashlib.md5(str(normalized).encode('utf-8'), usedforsecurity=False).hexdigest()
 
 

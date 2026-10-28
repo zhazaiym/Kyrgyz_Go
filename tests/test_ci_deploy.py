@@ -120,20 +120,25 @@ def test_candidate_schema_supports_legacy_named_version_path_separator(
 
 
 @pytest.mark.parametrize(
-    ('content', 'valid'),
+    ('content', 'valid', 'expected_count'),
     [
-        ('ADMIN_ALLOWED_IPS=192.0.2.4,2001:db8::/32\n', True),
-        ('SECRET_KEY=value\n', False),
-        ('ADMIN_ALLOWED_IPS=\n', False),
-        ('ADMIN_ALLOWED_IPS=bad-network\n', False),
+        ('ADMIN_ALLOWED_IPS=192.0.2.4,2001:db8::/32\n', True, 2),
+        ('SECRET_KEY=value\n', False, 0),
+        ('ADMIN_ALLOWED_IPS=\n', False, 0),
+        ('ADMIN_ALLOWED_IPS=bad-network\n', False, 0),
+        ('ADMIN_ALLOWED_IPS=0.0.0.0/0\n', False, 0),
+        ('ADMIN_ALLOWED_IPS=::/0\n', False, 0),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32 # first\nADMIN_ALLOWED_IPS=198.51.100.1/32\n', True, 1),
+        ('ADMIN_ALLOWED_IPS="192.0.2.1/32" # comment\n', True, 1),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS= # cleared\n', False, 0),
     ],
 )
-def test_deploy_requires_explicit_valid_admin_allowlist(tmp_path, content, valid):
+def test_deploy_requires_explicit_valid_admin_allowlist(tmp_path, content, valid, expected_count):
     env_file = tmp_path / '.env'
     env_file.write_text(content, encoding='utf-8')
     module = load_deployment()
     if valid:
-        assert len(module.validate_admin_allowlist(env_file)) == 2
+        assert len(module.validate_admin_allowlist(env_file)) == expected_count
     else:
         with pytest.raises(RuntimeError, match='ADMIN_ALLOWED_IPS'):
             module.validate_admin_allowlist(env_file)

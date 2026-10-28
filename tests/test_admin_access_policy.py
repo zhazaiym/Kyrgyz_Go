@@ -56,3 +56,28 @@ def test_admin_allowlist_normalizes_ipv4_mapped_ipv6(monkeypatch):
     )
     assert messages[0]['status'] == 200
     assert reached == ['/admin/login']
+
+
+def test_admin_allowlist_accepts_native_ipv6_network_identity(monkeypatch):
+    monkeypatch.setenv('ADMIN_ALLOWED_IPS', '2001:db8:abcd::/64')
+    reached = []
+
+    async def app(scope, receive, send):
+        reached.append(scope['path'])
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b'ok'})
+
+    messages = []
+
+    async def send(message):
+        messages.append(message)
+
+    asyncio.run(
+        AdminAccessMiddleware(app)(
+            {'type': 'http', 'path': '/admin/login', 'client': ('2001:db8:abcd::1234', 1234)},
+            lambda: None,
+            send,
+        )
+    )
+    assert messages[0]['status'] == 200
+    assert reached == ['/admin/login']
