@@ -35,7 +35,7 @@ def create_archive(root, destination):
         if not path.is_file():
             raise FileNotFoundError('Missing runtime file: ' + name)
         paths.append(path)
-    for name in ('mysite', 'alembic', 'scripts'):
+    for name in ('ML', 'mysite', 'alembic', 'scripts'):
         directory = root / name
         if directory.is_symlink():
             raise ValueError('Symlink is not allowed: ' + name)

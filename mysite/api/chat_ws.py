@@ -8,11 +8,10 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from langchain_core.exceptions import ModelError
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
+from ML.errors import PROVIDER_ERRORS, AIError, classify_error
 from mysite.api.chat_service import owned, process_message
 from mysite.api.client_auth import client_by_token
 from mysite.api.network_identity import client_network
@@ -71,8 +70,46 @@ async def unavailable(websocket):
     await websocket.close(code=1011)
 
 
+async def process_connected(websocket, operation, pending):
+    """Observe disconnect while working, retaining at most eight queued frames."""
+
+    async def read():
+        try:
+            return await receive_json_text(websocket)
+        except ValueError:
+            return ValueError('Invalid JSON frame')
+
+    work = asyncio.create_task(operation)
+    incoming = asyncio.create_task(read())
+    try:
+        while True:
+            done, _ = await asyncio.wait({work, incoming}, return_when=asyncio.FIRST_COMPLETED)
+            if incoming in done:
+                frame = incoming.result()  # Disconnect cancels the work in finally.
+                if len(pending) >= 8:
+                    await websocket.close(code=1008)
+                    raise WebSocketDisconnect(1008)
+                pending.append(frame)
+                if work not in done:
+                    incoming = asyncio.create_task(read())
+            if work in done:
+                return await work
+    finally:
+        for task in (work, incoming):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(work, incoming, return_exceptions=True)
+
+
 @router.websocket('/ws/chat/{session_id}')
 async def socket(websocket: WebSocket, session_id: str):
+    try:
+        await socket_session(websocket, session_id)
+    except (WebSocketDisconnect, OSError):
+        return
+
+
+async def socket_session(websocket: WebSocket, session_id: str):
     allowed = {
         v.strip()
         for v in os.getenv(
@@ -132,9 +169,12 @@ async def socket(websocket: WebSocket, session_id: str):
     # Sequential execution on each connection. Service layer also serializes same session locally.
     invalid_messages = 0
     throttled_messages = 0
+    pending = []
     while True:
         try:
-            data = await receive_json_text(websocket)
+            data = pending.pop(0) if pending else await receive_json_text(websocket)
+            if isinstance(data, ValueError):
+                raise data
         except WebSocketDisconnect:
             return
         except ValueError:
@@ -199,7 +239,13 @@ async def socket(websocket: WebSocket, session_id: str):
 
         try:
             result = await asyncio.wait_for(
-                process_message(session_id, client_id, token, message.strip(), on_chunk=send_chunk),
+                process_connected(
+                    websocket,
+                    process_message(
+                        session_id, client_id, token, message.strip(), on_chunk=send_chunk
+                    ),
+                    pending,
+                ),
                 timeout=180,
             )
             if result.get('booking_preview'):
@@ -217,6 +263,11 @@ async def socket(websocket: WebSocket, session_id: str):
                 await websocket.send_json(
                     {'type': 'booking_submitted', **result['booking_submitted']}
                 )
+        except WebSocketDisconnect:
+            return
+        except AIError as exc:
+            log.warning('Chat provider error: %s', exc.code)
+            await websocket.send_json({'type': 'error', 'code': exc.code, 'message': exc.message})
         except HTTPException as exc:
             code, error_message, close = public_http_error(exc)
             await websocket.send_json({'type': 'error', 'code': code, 'message': error_message})
@@ -233,8 +284,7 @@ async def socket(websocket: WebSocket, session_id: str):
                 }
             )
         except (
-            ModelError,
-            ChatGoogleGenerativeAIError,
+            *PROVIDER_ERRORS,
             SQLAlchemyError,
             ValueError,
             KeyError,
@@ -242,19 +292,11 @@ async def socket(websocket: WebSocket, session_id: str):
             RuntimeError,
             OSError,
         ) as exc:
-            log.exception('Chat processing failed for session %s', session_id)
-            error_name = type(exc).__name__
-            error_text = str(exc)
-            if 'RateLimit' in error_name or 'RESOURCE_EXHAUSTED' in error_text:
-                code = 'ai_rate_limit'
-                message = 'Лимит AI временно исчерпан. Попробуйте позже.'
-            elif 'GoogleAPI' in error_name or 'UNAVAILABLE' in error_text:
-                code = 'ai_unavailable'
-                message = 'AI-консультант временно недоступен. Попробуйте позже.'
-            else:
-                code = 'internal_error'
-                message = 'Не удалось обработать запрос. Попробуйте ещё раз.'
-            await websocket.send_json({'type': 'error', 'code': code, 'message': message})
+            failure = classify_error(exc)
+            log.error('Chat processing failed: %s (%s)', failure.code, type(exc).__name__)
+            await websocket.send_json(
+                {'type': 'error', 'code': failure.code, 'message': failure.message}
+            )
         finally:
             try:
                 await websocket.send_json({'type': 'typing', 'status': False})

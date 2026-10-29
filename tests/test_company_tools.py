@@ -247,3 +247,11 @@ def test_demonstration_tours_do_not_consume_real_offer_limit(company_database, m
     assert 'error' in tools.get_tour_details.invoke({'tour_id': demo_id})
     monkeypatch.setattr(agent, 'SessionLocal', sessions)
     assert agent.active_tour_ids() == [real_id]
+
+
+def test_mixed_case_demo_prefixes_are_not_published_by_ai_tools(company_database):
+    sessions, _ = company_database
+    with sessions() as db:
+        db.add_all([Tour(title='TeSt: Private demo', price=1), Tour(title='ТеСт: Пример', price=1)])
+        db.commit()
+    assert tools.list_active_tours.invoke({}) == []

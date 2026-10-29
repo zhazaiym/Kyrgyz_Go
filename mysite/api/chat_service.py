@@ -5,16 +5,19 @@ import json
 import re
 from contextlib import asynccontextmanager
 from datetime import date
+from functools import partial
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
+from ML.agent import respond
+from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import linked_request, processing_status
-from mysite.chain.agent import confirmation_allowed, rejection_allowed, respond
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSession
 from mysite.database.db import SessionLocal
@@ -25,7 +28,7 @@ _locks = {}
 _lock_users = {}
 
 
-async def _database_call(function, *args):
+async def _database_call(function, *args, on_cancel=None):
     task = asyncio.create_task(asyncio.to_thread(function, *args))
     try:
         return await asyncio.shield(task)
@@ -37,8 +40,16 @@ async def _database_call(function, *args):
             except asyncio.CancelledError:
                 continue
         if not task.cancelled():
-            task.exception()
+            error = task.exception()
+            if error is None and on_cancel is not None:
+                await _database_call(on_cancel, task.result())
         raise
+
+
+def _discard_prepared_message(session_id, result):
+    final, _, _, _, message_id = result
+    if final is None:
+        _discard_failed_message(session_id, message_id)
 
 
 def _is_confirmation_text(message):
@@ -93,14 +104,14 @@ def _discard_failed_message(session_id, message_id):
     if message_id is None:
         return
     with SessionLocal() as db:
-        # Cancellation may arrive while the DB worker commits the reply.
-        # Keep both messages when that worker has already finished saving it.
+        # A later assistant turn may belong to another worker. Preserve only
+        # a reply committed for this exact user message.
         answered = (
             db.query(ChatMessage.id)
             .filter(
                 ChatMessage.session_id == session_id,
                 ChatMessage.role == 'assistant',
-                ChatMessage.id > message_id,
+                ChatMessage.reply_to_message_id == message_id,
             )
             .first()
         )
@@ -186,18 +197,12 @@ def _prepare_message(session_id, client_id, token, message):
                 'booking_submitted': result,
             }
             return final, None, None, None, None
-        last = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.session_id == s.id)
-            .order_by(ChatMessage.id.desc())
-            .first()
-        )
-        user_message_id = None
-        if not last or last.role != 'user' or last.content != message:
-            user_message = ChatMessage(session_id=s.id, role='user', content=message)
-            db.add(user_message)
-            db.commit()
-            user_message_id = user_message.id
+        # Each accepted operation owns its row, including identical concurrent
+        # text. A losing worker may remove only that row.
+        user_message = ChatMessage(session_id=s.id, role='user', content=message)
+        db.add(user_message)
+        db.flush()
+        user_message_id = user_message.id
         previous = (
             db.query(ChatMessage)
             .filter(ChatMessage.session_id == s.id)
@@ -210,6 +215,10 @@ def _prepare_message(session_id, client_id, token, message):
             previous = previous[:-1]
         original = dict(s.state or {})
         message_version = s.message_version
+        # Commit only after history has loaded successfully. Plain snapshots
+        # remain usable after commit expires ORM objects and the session closes.
+        previous = [SimpleNamespace(role=item.role, content=item.content) for item in previous]
+        db.commit()
 
     return None, original, previous, message_version, user_message_id
 
@@ -274,7 +283,14 @@ def _save_message_response(
                 s.stage = 'collecting'
         if not answer.strip():
             raise HTTPException(502, 'AI returned an empty response')
-        db.add(ChatMessage(session_id=s.id, role='assistant', content=answer))
+        db.add(
+            ChatMessage(
+                session_id=s.id,
+                role='assistant',
+                content=answer,
+                reply_to_message_id=user_message_id,
+            )
+        )
         db.commit()
         return {
             'answer': answer,
@@ -288,7 +304,12 @@ def _save_message_response(
 async def _respond_and_save(session_id, client_id, token, message, on_chunk=None):
     # Keep each synchronous database phase off the event loop.
     (final, original, previous, message_version, user_message_id) = await _database_call(
-        _prepare_message, session_id, client_id, token, message
+        _prepare_message,
+        session_id,
+        client_id,
+        token,
+        message,
+        on_cancel=partial(_discard_prepared_message, session_id),
     )
     if final is not None:
         if on_chunk is not None:

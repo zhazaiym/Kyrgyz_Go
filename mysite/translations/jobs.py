@@ -276,8 +276,11 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                 record.translations = stored
             db.commit()
         return 'translated'
-    except Exception:
-        logger.exception('Catalogue translation failed; source record is already saved')
+    except Exception as exc:
+        # Provider exceptions may contain request text or credentials.
+        logger.error(
+            'Catalogue translation failed (%s); source record is already saved', type(exc).__name__
+        )
         return 'failed'
     finally:
         capacity.release()

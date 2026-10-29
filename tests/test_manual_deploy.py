@@ -14,7 +14,7 @@ def make_project(root):
     module = deployment_module()
     for name in module.RUNTIME_FILES:
         (root / name).write_text('runtime', encoding='utf-8')
-    for directory in ('mysite', 'alembic', 'scripts'):
+    for directory in ('ML', 'mysite', 'alembic', 'scripts'):
         (root / directory).mkdir()
         (root / directory / 'source.py').write_text('value = 1', encoding='utf-8')
     (root / 'mysite' / 'source.py').write_text('uncommitted = True', encoding='utf-8')

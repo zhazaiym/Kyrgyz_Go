@@ -12,6 +12,7 @@
 .codex
 .aws
 .worktrees
+.ml-test-tmp
 venv
 .venv
 **/__pycache__
@@ -32,3 +33,5 @@ __pycache__/
 .idea/
 *.db
 *.sqlite3
+
+.chat-deploy

@@ -50,7 +50,9 @@ def validate_members(bundle):
     for member in members:
         path = PurePosixPath(member.name)
         allowed = path.as_posix() in ALLOWED_FILES
-        allowed = allowed or bool(path.parts and path.parts[0] in {'mysite', 'alembic', 'scripts'})
+        allowed = allowed or bool(
+            path.parts and path.parts[0] in {'ML', 'mysite', 'alembic', 'scripts'}
+        )
         sensitive = any(
             (part.startswith('.') and path.as_posix() not in ALLOWED_FILES) or part == '__pycache__'
             for part in path.parts
