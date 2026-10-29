@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ML.prompts import WELCOME_MESSAGE
 from mysite.api.chat_service import (build_preview, confirm_booking_serialized, owned,
                                      remove_optional_service)
 from mysite.api.client_auth import client_by_token, current_client, login_required
 from mysite.api.rate_limit import enforce_rate_limit
-from mysite.chain.prompts import WELCOME_MESSAGE
 from mysite.database import db as database
 from mysite.database.chat_models import ChatClient, ChatMessage, ChatSession
 from mysite.database.db import get_db

@@ -50,7 +50,7 @@ jobs:
 
       - name: Check Python syntax
         run: |
-          python -m compileall -q main.py mysite scripts alembic
+          python -m compileall -q main.py ML mysite scripts alembic
 
       - name: Lint Python
         run: |
@@ -61,7 +61,10 @@ jobs:
         run: python -m pip_audit -r requirements.txt --progress-spinner off
 
       - name: Scan runtime security issues
-        run: python -m bandit -r mysite main.py -ll
+        run: python -m bandit -r ML mysite main.py -ll
+
+      - name: Run isolated ML tests without database or Gemini calls
+        run: python -m pytest --confcutdir=tests/ml tests/ml -q
 
       - name: Run test suite
         env:

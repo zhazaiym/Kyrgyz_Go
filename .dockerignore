@@ -12,6 +12,7 @@
 .codex
 .aws
 .worktrees
+.ml-test-tmp
 venv
 .venv
 **/__pycache__
