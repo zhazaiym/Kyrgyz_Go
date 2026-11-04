@@ -131,10 +131,6 @@ def booking_text(data):
     return TEXT.get(language, TEXT['en'])
 
 
-def invalid_preview_text(state):
-    return booking_text(state)['invalid_preview']
-
-
 def preview_text(data, choice):
     text = booking_text(data)
     values = [

@@ -17,3 +17,5 @@ venv/
 backups/
 pytest-cache-files-*/
 .ml-test-tmp/
+
+.chat-deploy/

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,12 +10,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from mysite.database.chat_models import ChatLoginToken
 from mysite.database.db import SessionLocal
 from mysite.database.password_reset_models import PasswordResetToken
+from mysite.database.token_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
 
 def cleanup_expired_tokens(batch_size=1000):
-    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    cutoff = utcnow() - timedelta(days=1)
     counts = {}
     for entity in (ChatLoginToken, PasswordResetToken):
         counts[entity.__tablename__] = 0

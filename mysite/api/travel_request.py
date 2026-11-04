@@ -17,6 +17,7 @@ from mysite.database.db import get_db
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.schemas.requests import TravelRequestOutSchema, TravelRequestUpdateSchema
 from mysite.database.selection_models import TravelSelection
+from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
 
 travel_request_router = APIRouter(prefix='/travel-requests', tags=['Travel Requests'])
 
@@ -139,13 +140,7 @@ def cancel_my_travel_request(
     '/', response_model=list[TravelRequestOutSchema], dependencies=[Depends(get_current_admin)]
 )
 def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination = Depends()):
-    return (
-        db.query(TravelRequest)
-        .order_by(TravelRequest.id.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-        .all()
-    )
+    return query_travel_requests(db, pagination.offset, pagination.limit)
 
 
 @travel_request_router.get(

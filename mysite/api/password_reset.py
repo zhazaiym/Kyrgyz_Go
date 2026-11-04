@@ -17,8 +17,7 @@ from mysite.api.registration import normalize_email
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import SessionLocal, get_db
 from mysite.database.password_reset_models import PasswordResetToken
-from mysite.database.token_utils import digest
-from mysite.database.token_utils import utcnow as now
+from mysite.database.token_utils import digest, utcnow
 
 router = APIRouter(prefix='/account', tags=['Tourist Account'])
 
@@ -100,7 +99,9 @@ def forgot_password(
     raw_token = secrets.token_urlsafe(40)
 
     reset = PasswordResetToken(
-        client_id=client.id, token_hash=digest(raw_token), expires_at=now() + timedelta(minutes=15)
+        client_id=client.id,
+        token_hash=digest(raw_token),
+        expires_at=utcnow() + timedelta(minutes=15),
     )
 
     db.add(reset)
@@ -119,7 +120,7 @@ def _deliver_reset(email, raw_token, reset_id):
         with SessionLocal() as db:
             reset = db.get(PasswordResetToken, reset_id)
             if reset and reset.used_at is None:
-                reset.used_at = now()
+                reset.used_at = utcnow()
                 db.commit()
         logger.exception('Reset email delivery failed')
 
@@ -135,7 +136,7 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
         expires = candidate.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
-        if expires <= now():
+        if expires <= utcnow():
             raise HTTPException(400, 'Срок действия ссылки истёк')
         reset_id, client_id = candidate.id, candidate.client_id
 
@@ -155,14 +156,14 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
 
-    if expires <= now():
+    if expires <= utcnow():
         raise HTTPException(400, 'Срок действия ссылки истёк')
 
     if not client:
         raise HTTPException(400, 'Аккаунт не найден')
 
     client.password_hash = encoded
-    reset.used_at = now()
+    reset.used_at = utcnow()
 
     db.query(ChatLoginToken).filter(ChatLoginToken.client_id == client.id).delete(
         synchronize_session=False
@@ -172,7 +173,7 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
         PasswordResetToken.client_id == client.id,
         PasswordResetToken.id != reset.id,
         PasswordResetToken.used_at.is_(None),
-    ).update({'used_at': now()}, synchronize_session=False)
+    ).update({'used_at': utcnow()}, synchronize_session=False)
 
     clear_account_login_attempt(db, 'client-login', request, f'client:{client.id}')
     db.commit()

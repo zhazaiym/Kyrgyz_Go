@@ -140,8 +140,7 @@ def test_openapi_advertises_client_requests_and_chat_booking(client):
     assert '/booking/confirm' in paths
 
 
-def test_legacy_booking_submission_requires_chat(client, admin_headers, monkeypatch):
-    monkeypatch.setattr('mysite.api.tour.try_save_translations', lambda *args: None)
+def test_legacy_booking_submission_requires_chat(client, admin_headers):
     category = client.post(
         '/tour-categories/', json={'name': 'Booking category'}, headers=admin_headers
     ).json()

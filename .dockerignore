@@ -33,3 +33,5 @@ __pycache__/
 .idea/
 *.db
 *.sqlite3
+
+.chat-deploy
