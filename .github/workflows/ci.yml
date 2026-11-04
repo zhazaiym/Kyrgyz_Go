@@ -69,6 +69,7 @@ jobs:
       - name: Run test harness unit tests
         env:
           DATABASE_URL: postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres
+          SECRET_KEY: test-secret-key-for-isolated-tests
         run: python -m pytest --confcutdir=tests/unit tests/unit -q
 
       - name: Run test suite
