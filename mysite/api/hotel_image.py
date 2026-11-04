@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Hotel, HotelImage
-from mysite.database.schema import (HotelImageInputSchema, HotelImageOutSchema,
-                                    HotelImageUpdateSchema)
+from mysite.database.schemas.catalogue import (HotelImageInputSchema, HotelImageOutSchema,
+                                               HotelImageUpdateSchema)
 
 hotel_image_router = APIRouter(prefix='/hotel-images', tags=['Hotel Images'])
 

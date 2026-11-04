@@ -15,37 +15,52 @@ def require_status_transition(current, proposed):
 
 
 def requests_for_selections(db, selections):
-    """Get the latest request for every session in one bounded query."""
+    """Load direct requests by selection and chat requests by session in bounded queries."""
     from sqlalchemy import func, select
 
+    selection_ids = {row.id for row in selections}
     session_ids = {row.session_id for row in selections if row.session_id}
-    if not session_ids:
-        return {}
-    ranked = (
-        select(
-            ChatBookingLink.session_id,
-            ChatBookingLink.client_id,
-            ChatBookingLink.request_id,
-            func.row_number()
-            .over(
-                partition_by=(ChatBookingLink.session_id, ChatBookingLink.client_id),
-                order_by=ChatBookingLink.id.desc(),
-            )
-            .label('position'),
+    requests = {}
+    if selection_ids:
+        requests.update(
+            (request.selection_id, request)
+            for request in db.query(TravelRequest)
+            .filter(TravelRequest.selection_id.in_(selection_ids))
+            .all()
         )
-        .where(ChatBookingLink.session_id.in_(session_ids))
-        .subquery()
-    )
-    rows = (
-        db.query(ranked.c.session_id, ranked.c.client_id, TravelRequest)
-        .join(TravelRequest, TravelRequest.id == ranked.c.request_id)
-        .filter(ranked.c.position == 1)
-        .all()
-    )
-    return {(sid, client_id): request for sid, client_id, request in rows}
+    if session_ids:
+        ranked = (
+            select(
+                ChatBookingLink.session_id,
+                ChatBookingLink.client_id,
+                ChatBookingLink.request_id,
+                func.row_number()
+                .over(
+                    partition_by=(ChatBookingLink.session_id, ChatBookingLink.client_id),
+                    order_by=ChatBookingLink.id.desc(),
+                )
+                .label('position'),
+            )
+            .where(ChatBookingLink.session_id.in_(session_ids))
+            .subquery()
+        )
+        rows = (
+            db.query(ranked.c.session_id, ranked.c.client_id, TravelRequest)
+            .join(TravelRequest, TravelRequest.id == ranked.c.request_id)
+            .filter(ranked.c.position == 1)
+            .all()
+        )
+        requests.update({(sid, client_id): request for sid, client_id, request in rows})
+    return requests
 
 
 def linked_request(db, selection, *, for_update=False):
+    direct_query = db.query(TravelRequest).filter(TravelRequest.selection_id == selection.id)
+    if for_update:
+        direct_query = direct_query.populate_existing().with_for_update()
+    direct = direct_query.first()
+    if direct is not None:
+        return direct
     if not selection.session_id:
         return None
     query = (

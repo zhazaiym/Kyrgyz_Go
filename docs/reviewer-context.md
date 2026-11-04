@@ -1,5 +1,13 @@
 # Контекст для следующего ревьюера
 
+> **Исторический журнал ревью.** Пункты `implemented`, настройки production,
+> результаты тестов и описания allowlist относятся к снимкам и датам, указанным
+> в соответствующих разделах; они не гарантируют текущее поведение. В текущем
+> коде `AdminAccessMiddleware` не ограничивает маршруты по IP, а лимит входа
+> администратора составляет 20 попыток в минуту на IP и 5 на пару аккаунт/IP.
+> Текущая вершина миграций — `20261030_0020`. Для актуального состояния
+> сверяйтесь с кодом и [последним локальным снимком](local-changes-2026-11-02.md).
+
 **Снимок для ревью:** коммит `d584852` (`Fix login and translation review findings`).  
 **До изменений:** `25324f7`.  
 **Ветки:** изменения опубликованы в `main` и `master`.
@@ -59,7 +67,7 @@ The local checkout was already current with `origin/main` at `7a139dc`. This sec
 ### Required block A
 
 - **A1 — implemented:** SQLAdmin content saves now lock and refresh the row, compare translation edits against the form snapshot, and merge changes into the latest stored JSON. Only changed, current-source fields become manual. Stale source hashes remain stale. CRLF is normalized to LF. Regression coverage: `test_sqladmin_marks_only_changed_translation_field_as_manual`, `test_unchanged_stale_translation_form_does_not_refresh_its_hash`, `test_admin_merge_keeps_translation_written_after_form_was_loaded`, and `test_sqladmin_lf_and_crlf_source_are_equal_and_do_not_schedule_translation`.
-- **A2 — implemented with allowlist:** `ADMIN_ALLOWED_IPS` gates `/admin` and `/admin/*` at the ASGI layer. An address outside the allowlist can make **0 accepted attempts/minute**. If all administrators use one allowlisted VPN egress, the existing admin login limiter allows at most **5 attempts/minute** from that egress. If all 100 addresses are mistakenly allowlisted, the remaining per-IP cap allows up to **500 attempts/minute** (5 × 100), so allowlisting must stay limited to the VPN/fixed admin egress. Configure only administrator VPN/fixed egress addresses. Test: `test_admin_paths_are_restricted_to_configured_networks`.
+- **A2 — updated by operator decision:** production explicitly uses `ADMIN_ALLOWED_IPS=0.0.0.0/0,::/0`; login remains protected by the admin account/session checks and five attempts per source IP per minute. The login page is publicly reachable. Deploy validation accepts the dual-stack unrestricted value only as an explicit exact pair; other broad networks remain rejected.
 - **A3 — implemented:** migration 0014 now embeds its frozen field list and hash function, without importing application modules. Downgrade removes stale content translations and restores current source text for stale tour translations. Regression coverage: `test_translation_migration_downgrade_removes_stale_values`; the existing empty-database migration test also covers upgrade with `GEMINI_API_KEY` unset.
 
 ### Required block B
@@ -106,7 +114,7 @@ Migrations 0014 through 0016 must be manually applied before deploying this code
 - **B6 — implemented:** whitespace-only tour translations now fall back in detail/list display, and SQL search/sort uses the same non-whitespace rule. Test: `test_tour_display_and_search_fall_back_for_whitespace_translation`.
 - **B7 — implemented:** explicit empty SQLAdmin translation fields are removed from stored translations/manual overrides and enqueue a replacement. Test: `test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues`.
 - **B9 — implemented:** invalid or empty `ADMIN_ALLOWED_IPS` logs an error and denies `/admin` only; public paths continue. IPv4-mapped IPv6 addresses are normalized with `client_network`. Tests: `test_invalid_admin_allowlist_fails_closed_without_disabling_public_paths`, `test_admin_allowlist_normalizes_ipv4_mapped_ipv6`.
-- **B10 — implemented:** deployment checks the production `.env` for a non-empty, valid `ADMIN_ALLOWED_IPS`; `DEPLOY.md` documents the SSH tunnel/Docker gateway address issue. Tests: `test_deploy_requires_explicit_valid_admin_allowlist`, `test_environment_example_documents_required_settings`.
+- **B10 — updated:** deployment validates a non-empty, valid `ADMIN_ALLOWED_IPS`; an explicit dual-stack unrestricted value is available when requested. `DEPLOY.md` documents both this option and the SSH tunnel/Docker gateway behavior. Tests: `test_deploy_requires_explicit_valid_admin_allowlist`, `test_environment_example_documents_required_settings`.
 - **Restored admin login limiter coverage:** `test_admin_login_limit_caps_attempts_per_account_and_ip` verifies five failed attempts are accepted and the sixth from the same account/IP is rate-limited.
 - **Legacy CRLF rows — implemented:** migration 0016 normalizes localized source fields and updates hashes only when the stored hash matched the pre-migration source. SQLAdmin also normalizes existing and submitted values before compare/save. Test: `test_translation_migration_downgrade_removes_stale_values`.
 

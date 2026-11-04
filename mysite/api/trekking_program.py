@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Trekking, TrekkingProgram
-from mysite.database.schema import (TrekkingProgramInputSchema, TrekkingProgramOutSchema,
-                                    TrekkingProgramUpdateSchema)
+from mysite.database.schemas.catalogue import (TrekkingProgramInputSchema, TrekkingProgramOutSchema,
+                                               TrekkingProgramUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 trekking_program_router = APIRouter(prefix='/trekking-programs', tags=['Trekking Programs'])

@@ -1,7 +1,6 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -29,9 +28,11 @@ from mysite.api.district import district_router
 from mysite.api.faq import faq_router
 from mysite.api.helicopter_image import helicopter_image_router
 from mysite.api.helicopter_tour import helicopter_tour_router
+from mysite.api.home_content import home_content_router
 from mysite.api.hotel import hotel_router
 from mysite.api.hotel_image import hotel_image_router
 from mysite.api.manager_selection import manager_selection_router
+from mysite.api.origin_config import configured_origins
 from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
@@ -42,6 +43,7 @@ from mysite.api.tour import tour_router
 from mysite.api.tour_category import category_router
 from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
+from mysite.api.tour_reviews import tour_reviews_router
 from mysite.api.transport import transport_router
 from mysite.api.transport_image import transport_image_router
 from mysite.api.travel_request import travel_request_router
@@ -89,13 +91,9 @@ app = FastAPI(
 # CORS
 app.add_middleware(ResourceLimitsMiddleware)
 app.add_middleware(AdminAccessMiddleware)
-cors_allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        'CORS_ALLOWED_ORIGINS', 'http://localhost:3000;http://127.0.0.1:3000'
-    ).split(';')
-    if origin.strip()
-]
+cors_allowed_origins = list(
+    configured_origins('CORS_ALLOWED_ORIGINS', 'http://localhost:3000;http://127.0.0.1:3000')
+)
 if '*' in cors_allowed_origins:
     raise RuntimeError('CORS_ALLOWED_ORIGINS must list trusted origins explicitly')
 
@@ -115,6 +113,7 @@ app.include_router(admin_router)
 # TOUR ROUTERS
 app.include_router(category_router)
 app.include_router(tour_router)
+app.include_router(tour_reviews_router)
 app.include_router(country_router)
 app.include_router(region_router)
 app.include_router(district_router)
@@ -137,6 +136,7 @@ app.include_router(trekking_image_router)
 app.include_router(trekking_program_router)
 
 # OTHER ROUTERS
+app.include_router(home_content_router)
 app.include_router(contact_router)
 app.include_router(faq_router)
 app.include_router(travel_request_router)

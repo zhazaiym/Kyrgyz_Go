@@ -73,7 +73,7 @@ def test_catalogue_and_selection_queries_stay_constant_as_page_grows(client, adm
         ]:
             number, _ = count_selects(client, path, auth)
             samples[size, path] = number
-            assert number <= (2 if path.startswith('/tours/') else 8), (path, number)
+            assert number <= (3 if path.startswith('/tours/') else 8), (path, number)
     for (size, path), number in samples.items():
         if size == 20:
             assert number <= samples[1, path] + 1, 'A query per row has been reintroduced'

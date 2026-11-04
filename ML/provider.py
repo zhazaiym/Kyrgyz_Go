@@ -16,9 +16,7 @@ def client(kind):
     retries = integer_setting('GEMINI_MAX_RETRIES', 1, 0, 2)
     options = {'max_retries': retries, 'timeout': 30}
     if kind == 'translation':
-        return ChatGoogleGenerativeAI(
-            model=model_name, temperature=0.3, timeout=15, max_retries=retries
-        )
+        return ChatGoogleGenerativeAI(model=model_name, timeout=15, max_retries=retries)
     if kind == 'agent_llm':
         from ML.tools import READ_TOOLS
 

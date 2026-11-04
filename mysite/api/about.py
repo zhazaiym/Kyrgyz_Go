@@ -5,7 +5,7 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import About
-from mysite.database.schema import AboutInputSchema, AboutOutSchema, AboutUpdateSchema
+from mysite.database.schemas.content import AboutInputSchema, AboutOutSchema, AboutUpdateSchema
 from mysite.translations.content import Language, localized, update_translations
 
 about_router = APIRouter(prefix='/abouts', tags=['About'])

@@ -5,7 +5,8 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Contact
-from mysite.database.schema import ContactInputSchema, ContactOutSchema, ContactUpdateSchema
+from mysite.database.schemas.content import (ContactInputSchema, ContactOutSchema,
+                                             ContactUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 contact_router = APIRouter(prefix='/contacts', tags=['Contacts'])

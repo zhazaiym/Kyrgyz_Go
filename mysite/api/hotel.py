@@ -9,7 +9,7 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import HotelCardSchema
 from mysite.database.db import get_db
 from mysite.database.models import District, Hotel, Region
-from mysite.database.schema import HotelInputSchema, HotelOutSchema, HotelUpdateSchema
+from mysite.database.schemas.catalogue import HotelInputSchema, HotelOutSchema, HotelUpdateSchema
 from mysite.filters.filter import HotelFilter
 from mysite.translations.content import Language, localized, update_translations
 

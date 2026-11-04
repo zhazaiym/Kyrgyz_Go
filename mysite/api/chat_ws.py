@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import os
 import uuid
 from typing import Literal
 
@@ -15,6 +14,7 @@ from ML.errors import PROVIDER_ERRORS, AIError, classify_error
 from mysite.api.chat_service import owned, process_message
 from mysite.api.client_auth import client_by_token
 from mysite.api.network_identity import client_network
+from mysite.api.origin_config import configured_origins
 from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limit
 from mysite.database.db import SessionLocal
 
@@ -110,13 +110,9 @@ async def socket(websocket: WebSocket, session_id: str):
 
 
 async def socket_session(websocket: WebSocket, session_id: str):
-    allowed = {
-        v.strip()
-        for v in os.getenv(
-            'CHAT_ALLOWED_ORIGINS', 'http://127.0.0.1:3000;http://localhost:3000'
-        ).split(';')
-        if v.strip()
-    }
+    allowed = set(
+        configured_origins('CHAT_ALLOWED_ORIGINS', 'http://127.0.0.1:3000;http://localhost:3000')
+    )
     if websocket.headers.get('origin') not in allowed:
         await websocket.close(code=1008)
         return

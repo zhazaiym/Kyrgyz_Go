@@ -3,7 +3,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 from mysite.database.models import PriceUnitChoices, TourTypeChoices
-from mysite.database.schema import HelicopterTourOutSchema, TrekkingOutSchema
+from mysite.database.schemas.catalogue import HelicopterTourOutSchema, TrekkingOutSchema
 
 
 class CatalogueCardSchema(BaseModel):
@@ -21,6 +21,8 @@ class TourCardSchema(CatalogueCardSchema):
     duration_days: int | None
     duration_nights: int | None
     tour_type: TourTypeChoices
+    average_rating: float | None = None
+    review_count: int = 0
 
 
 class HotelCardSchema(CatalogueCardSchema):

@@ -1,0 +1,33 @@
+{% extends "sqladmin_original/base.html" %}
+
+{% block tail %}
+{{ super() }}
+{% if request.url.path.endswith('/travel-request/list') or request.url.path.endswith('/chat-request/list') %}
+<script>
+(() => {
+  let socket;
+  let reconnectTimer;
+  const connect = () => {
+    const url = new URL('/admin/ws/requests', window.location.href);
+    url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(url);
+    socket.addEventListener('message', (event) => {
+      try {
+        if (JSON.parse(event.data).type === 'new_request') window.location.reload();
+      } catch (_) {
+        // Ignore malformed notifications and keep the admin page usable.
+      }
+    });
+    socket.addEventListener('close', () => {
+      reconnectTimer = window.setTimeout(connect, 2000);
+    });
+  };
+  connect();
+  window.setInterval(() => {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send('ping');
+  }, 25000);
+  window.addEventListener('pagehide', () => window.clearTimeout(reconnectTimer));
+})();
+</script>
+{% endif %}
+{% endblock %}

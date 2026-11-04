@@ -5,7 +5,7 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import FAQ
-from mysite.database.schema import FAQInputSchema, FAQOutSchema, FAQUpdateSchema
+from mysite.database.schemas.content import FAQInputSchema, FAQOutSchema, FAQUpdateSchema
 from mysite.translations.content import Language, localized, update_translations
 
 faq_router = APIRouter(prefix='/faqs', tags=['FAQ'])

@@ -348,7 +348,7 @@ def test_live_catalogue_grounding(case, question, tool, args, result, repeat, re
     metrics = {
         'case': case,
         'repeat': repeat,
-        'model': agent.model_name,
+        'model': os.getenv('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
         'prompt_sha256': hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
     }
     started = time.perf_counter()

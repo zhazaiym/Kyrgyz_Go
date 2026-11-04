@@ -528,6 +528,9 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         if selection:
             selection.status = 'in_progress'
         db.commit()
+        from mysite.admin.realtime import publish_new_request
+
+        publish_new_request(obj.id)
     except IntegrityError:
         db.rollback()
         existing = (

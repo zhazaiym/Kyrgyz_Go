@@ -66,6 +66,9 @@ jobs:
       - name: Run isolated ML tests without database or Gemini calls
         run: python -m pytest --confcutdir=tests/ml tests/ml -q
 
+      - name: Run test harness unit tests without PostgreSQL
+        run: python -m pytest --confcutdir=tests/unit tests/unit -q
+
       - name: Run test suite
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
@@ -75,7 +78,7 @@ jobs:
           import sys
 
           result = subprocess.run(
-              [sys.executable, "-m", "pytest", "-q"],
+              [sys.executable, "-m", "scripts.run_tests", "-q"],
               stdout=subprocess.PIPE,
               stderr=subprocess.STDOUT,
               text=True,

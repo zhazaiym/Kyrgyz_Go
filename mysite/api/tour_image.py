@@ -6,7 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Tour, TourImage
-from mysite.database.schema import TourImageInputSchema, TourImageOutSchema, TourImageUpdateSchema
+from mysite.database.schemas.catalogue import (TourImageInputSchema, TourImageOutSchema,
+                                               TourImageUpdateSchema)
 
 tour_image_router = APIRouter(prefix='/tour-images', tags=['Tour Images'])
 

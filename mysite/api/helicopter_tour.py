@@ -9,8 +9,8 @@ from mysite.database.catalogue_schema import (HelicopterCatalogueDetailSchema,
                                               HelicopterTourCardSchema)
 from mysite.database.db import get_db
 from mysite.database.models import HelicopterTour
-from mysite.database.schema import (HelicopterTourInputSchema, HelicopterTourOutSchema,
-                                    HelicopterTourUpdateSchema)
+from mysite.database.schemas.catalogue import (HelicopterTourInputSchema, HelicopterTourOutSchema,
+                                               HelicopterTourUpdateSchema)
 from mysite.filters.filter import HelicopterTourFilter
 from mysite.translations.content import Language, localized, update_translations
 

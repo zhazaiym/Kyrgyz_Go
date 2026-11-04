@@ -41,7 +41,7 @@
 
 ## Автоматические проверки
 
-`python -B -m pytest tests/test_chat_booking_flow.py tests/test_chat_only_requests.py tests/test_shared_client_access.py -q`
+`python -m scripts.run_tests tests/test_chat_booking_flow.py tests/test_chat_only_requests.py tests/test_shared_client_access.py -q`
 
 Тесты используют отдельную временную PostgreSQL-базу и подменяют ответы AI. Они проверяют обработку подтверждений и админку, но не оценивают качество реальных ответов Gemini.
 

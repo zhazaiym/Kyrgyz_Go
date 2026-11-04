@@ -1,10 +1,12 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from sqladmin import Admin as SQLAdmin
 from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
 
+from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.db import SessionLocal, engine
@@ -18,6 +20,14 @@ from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ChatRequestAdmin,
 
 
 class AdminAuthBackend(AuthenticationBackend):
+    def __init__(self):
+        super().__init__(
+            secret_key=SECRET_KEY,
+            max_age=None,
+            same_site='strict',
+            https_only=os.getenv('ADMIN_COOKIE_SECURE', 'true').lower() == 'true',
+        )
+
     @staticmethod
     def login_identity(request, username, password):
         with SessionLocal() as db:
@@ -76,12 +86,11 @@ def setup_admin(auth_app: FastAPI):
     admin = SQLAdmin(
         auth_app,
         engine,
-        authentication_backend=AdminAuthBackend(
-            secret_key=SECRET_KEY,
-            max_age=3600,
-            same_site='strict',
-            https_only=os.getenv('ADMIN_COOKIE_SECURE', 'true').lower() == 'true',
-        ),
+        authentication_backend=AdminAuthBackend(),
+        templates_dir=str(Path(__file__).resolve().parent / 'templates'),
+    )
+    admin.admin.router.add_websocket_route(
+        '/ws/requests', admin_requests_websocket, name='request_notifications'
     )
     admin.add_view(AdminAdmin)
     admin.add_view(AboutAdmin)
@@ -104,3 +113,4 @@ def setup_admin(auth_app: FastAPI):
     admin.add_view(ContactAdmin)
     admin.add_view(FAQAdmin)
     admin.add_view(ChatRequestAdmin)
+    return admin

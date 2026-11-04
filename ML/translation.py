@@ -1,4 +1,5 @@
 import json
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -12,6 +13,8 @@ model = LazyClient('translation')
 LANGUAGES = {'ru': 'Russian', 'en': 'English', 'de': 'German', 'zh': 'Simplified Chinese'}
 
 FIELDS = TOUR_TRANSLATION_FIELDS
+
+_DUPLICATE_LANGUAGE_CLOSE = re.compile(r'(\}\s*,)\s*\},\s*(?="(?:en|de|zh)"\s*:)')
 
 
 def translate_fields(source: dict):
@@ -51,7 +54,15 @@ def _translate_fields(source):
         raise AIError('ai_invalid_response')
     if content.startswith('```'):
         content = content.split('\n', 1)[1].rsplit('```', 1)[0].strip()
-    result = json.loads(content)
+    try:
+        result = json.loads(content)
+    except json.JSONDecodeError:
+        # Gemini Flash Lite occasionally repeats the closing brace between
+        # language objects despite returning an otherwise valid JSON object.
+        repaired, replacements = _DUPLICATE_LANGUAGE_CLOSE.subn(r'\1 ', content)
+        if not replacements:
+            raise
+        result = json.loads(repaired)
     if not isinstance(result, dict):
         raise ValueError('Translation response must be a JSON object')
     result = {lang: result.get(lang) for lang in ('en', 'de', 'zh')}

@@ -5,8 +5,8 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import AboutSection
-from mysite.database.schema import (AboutSectionInputSchema, AboutSectionOutSchema,
-                                    AboutSectionUpdateSchema)
+from mysite.database.schemas.content import (AboutSectionInputSchema, AboutSectionOutSchema,
+                                             AboutSectionUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 about_section_router = APIRouter(prefix='/about-sections', tags=['About Sections'])

@@ -104,12 +104,15 @@ def selection_context(db, selections, *, include_clients=False):
 
 def selection_data(db, selection, context=None):
     if context is not None:
+        request = context.requests.get(selection.id) or context.requests.get(
+            (selection.session_id, selection.client_id)
+        )
         return _selection_payload(
             selection,
             context.tours.get(selection.tour_id),
             context.hotels.get(selection.hotel_id),
             context.transports.get(selection.transport_id),
-            context.requests.get((selection.session_id, selection.client_id)),
+            request,
         )
     request = linked_request(db, selection)
     tour = db.get(Tour, selection.tour_id) if selection.tour_id is not None else None

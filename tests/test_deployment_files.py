@@ -42,8 +42,19 @@ def test_environment_example_documents_required_settings():
         if line.strip() and not line.lstrip().startswith('#') and '=' in line
     }
     assert required <= names
-    assert '# ADMIN_ALLOWED_IPS=' in example
+    assert 'Admin pages are reachable from any IP' in example
     assert 'ADMIN_ALLOWED_IPS' not in names
+
+
+def test_chat_websocket_example_allows_the_production_admin_frontend():
+    example = Path('.env.example').read_text(encoding='utf-8')
+    settings = {
+        line.split('=', 1)[0].strip(): line.split('=', 1)[1].strip()
+        for line in example.splitlines()
+        if line.strip() and not line.lstrip().startswith('#') and '=' in line
+    }
+    allowed = {origin.strip() for origin in settings['CHAT_ALLOWED_ORIGINS'].split(';')}
+    assert 'https://kyrgyzgo-admin.vercel.app' in allowed
 
 
 def test_local_runtime_artifacts_are_ignored():

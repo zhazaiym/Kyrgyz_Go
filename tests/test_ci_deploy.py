@@ -5,7 +5,7 @@ import json
 import shutil
 import subprocess
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -145,6 +145,7 @@ def test_candidate_schema_supports_legacy_named_version_path_separator(
             )
         ],
         ('192.0.0.0/16,2001:db8::/32', ['192.0.0.0/16', '2001:db8::/32'], None),
+        ('0.0.0.0/0,::/0', ['0.0.0.0/0', '::/0'], None),
     ],
 )
 def test_deploy_requires_explicit_valid_admin_allowlist(value, expected, error):
@@ -200,6 +201,7 @@ def test_deploy_rejects_ipv6_transition_and_translation_allowlists(network):
             None,
             'too broad',
         ),
+        ('ADMIN_ALLOWED_IPS=0.0.0.0/0,::/0\n', None, ['0.0.0.0/0', '::/0'], None),
         (
             'ADMIN_ALLOWED_IPS=192.0.2.1/32\nexport ADMIN_ALLOWED_IPS=198.51.100.2/32\n',
             None,
@@ -339,10 +341,14 @@ def test_compose_override_preserves_api_service_and_production_network():
 
     assert '  api:\n' in override
     assert '    image: kyrgyzgo-api:manual-123\n' in override
+    assert '      - /home/ubuntu/releases/main-edefb05/.env\n' in override
+    assert '      - /home/ubuntu/releases/main-edefb05/runtime-secrets.env\n' in override
     assert '      ADMIN_ALLOWED_IPS: "192.0.2.10/32"\n' in override
-    assert '      - kyrgyzgo_network\n' in override
+    assert '      proxy:\n' in override
+    assert '        ipv4_address: 172.30.240.3\n' in override
+    assert '      default: {}\n' in override
     assert '    external: true\n' in override
-    assert '    name: kyrgyz_go_kyrgyzgo_network\n' in override
+    assert '    name: kyrgyz_go_proxy\n' in override
     assert '  backend:\n' not in override
 
 
@@ -380,6 +386,7 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
     root.mkdir()
     override = tmp_path / 'deploy.override.yml'
     (root / '.env').write_text('ADMIN_ALLOWED_IPS=198.51.100.44/32\n', encoding='utf-8')
+    (root / 'runtime-secrets.env').write_text('', encoding='utf-8')
     (root / 'docker-compose.yml').write_text(
         'services:\n'
         '  api:\n'
@@ -398,6 +405,7 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
     )
     monkeypatch.setattr(module, 'ROOT', root)
     monkeypatch.setattr(module, 'OVERRIDE', override)
+    monkeypatch.setattr(module, 'PRODUCTION_ENV_DIR', PurePosixPath('.'))
     calls = []
 
     def docker_command(arguments):

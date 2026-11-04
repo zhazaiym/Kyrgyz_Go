@@ -19,8 +19,10 @@ OVERRIDE = Path('/home/ubuntu/kyrgyzgo-deploy.override.yml')
 RELEASES = Path('/home/ubuntu/releases')
 BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
 DEPLOY_LOCK = Path('/home/ubuntu/.kyrgyzgo-deploy.lock')
-PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
-PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
+PRODUCTION_NETWORK = 'kyrgyz_go_proxy'
+PRODUCTION_NETWORK_KEY = 'proxy'
+PRODUCTION_API_IP = '172.30.240.3'
+PRODUCTION_ENV_DIR = PurePosixPath('/home/ubuntu/releases/main-edefb05')
 UNSAFE_IPV6_ADMIN_NETWORKS = tuple(
     ipaddress.ip_network(value)
     for value in ('2001::/32', '64:ff9b::/96', '64:ff9b:1::/48', '2002::/16', '::ffff:0:0/96')
@@ -157,10 +159,15 @@ def compose_override(image, admin_allowlist):
         'services:\n'
         '  api:\n'
         f'    image: {image}\n'
+        '    env_file:\n'
+        f'      - {PRODUCTION_ENV_DIR / ".env"}\n'
+        f'      - {PRODUCTION_ENV_DIR / "runtime-secrets.env"}\n'
         '    environment:\n'
         f'      ADMIN_ALLOWED_IPS: {json.dumps(admin_allowlist)}\n'
         f'    networks:\n'
-        f'      - {PRODUCTION_NETWORK_KEY}\n'
+        f'      {PRODUCTION_NETWORK_KEY}:\n'
+        f'        ipv4_address: {PRODUCTION_API_IP}\n'
+        '      default: {}\n'
         'networks:\n'
         f'  {PRODUCTION_NETWORK_KEY}:\n'
         '    external: true\n'
@@ -204,6 +211,25 @@ def compose_output(*arguments):
         ],
         cwd=ROOT,
     )
+
+
+def production_service_container(service):
+    containers = output(
+        [
+            'sudo',
+            '-n',
+            'docker',
+            'ps',
+            '-q',
+            '--filter',
+            'label=com.docker.compose.project=kyrgyz_go',
+            '--filter',
+            f'label=com.docker.compose.service={service}',
+        ]
+    ).splitlines()
+    if len(containers) != 1:
+        raise RuntimeError(f'Expected one production {service} container; found {len(containers)}')
+    return containers[0]
 
 
 def install_override(image, admin_networks):
@@ -347,11 +373,17 @@ def validate_admin_allowlist(rendered_config):
         ) from exc
     if not networks:
         raise RuntimeError('Production ADMIN_ALLOWED_IPS must contain at least one network')
-    if any(network.prefixlen < (16 if network.version == 4 else 32) for network in networks):
+    unrestricted = len(networks) == 2 and {str(network) for network in networks} == {
+        '0.0.0.0/0',
+        '::/0',
+    }
+    if not unrestricted and any(
+        network.prefixlen < (16 if network.version == 4 else 32) for network in networks
+    ):
         raise RuntimeError(
             'Production ADMIN_ALLOWED_IPS is too broad; require IPv4 /16 or IPv6 /32 or narrower'
         )
-    if any(
+    if not unrestricted and any(
         network.version == unsafe.version and network.overlaps(unsafe)
         for network in networks
         for unsafe in UNSAFE_IPV6_ADMIN_NETWORKS
@@ -402,7 +434,6 @@ def deploy(revision, source):
         previous = json.loads(output(['sudo', '-n', 'docker', 'inspect', previous_container]))[0]
         if previous['State']['Health']['Status'] != 'healthy':
             raise RuntimeError('Current api is unhealthy; manual intervention required')
-        old_image_id = previous['Image']
         old_image = previous['Config']['Image']
         image = 'kyrgyzgo-api:' + stamp
         state = {
@@ -442,6 +473,7 @@ def deploy(revision, source):
         for name in ('docker-compose.yml', 'Caddyfile', '.env'):
             shutil.copy2(ROOT / name, backup / name)
         shutil.copy2(OVERRIDE, backup / 'previous-deploy.override.yml')
+        postgres_container = production_service_container('postgres')
         with (backup / 'database.dump').open('wb') as destination:
             run(
                 [
@@ -449,7 +481,7 @@ def deploy(revision, source):
                     '-n',
                     'docker',
                     'exec',
-                    'kyrgyzgo_postgres',
+                    postgres_container,
                     'sh',
                     '-c',
                     'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc',
@@ -464,7 +496,7 @@ def deploy(revision, source):
             dockerfile = 'Dockerfile.runtime'
             (release / dockerfile).write_text(
                 runtime_dockerfile(
-                    old_image_id, dockerfile_cmd, install_requirements=requirements_changed
+                    old_image, dockerfile_cmd, install_requirements=requirements_changed
                 )
             )
         state['status'] = 'building'

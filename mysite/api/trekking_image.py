@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Trekking, TrekkingImage
-from mysite.database.schema import (TrekkingImageInputSchema, TrekkingImageOutSchema,
-                                    TrekkingImageUpdateSchema)
+from mysite.database.schemas.catalogue import (TrekkingImageInputSchema, TrekkingImageOutSchema,
+                                               TrekkingImageUpdateSchema)
 
 trekking_image_router = APIRouter(prefix='/trekking-images', tags=['Trekking Images'])
 

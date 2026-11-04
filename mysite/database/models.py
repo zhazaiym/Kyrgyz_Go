@@ -404,8 +404,24 @@ class FAQ(LocalizedContent, Base):
 
 class TravelRequest(Base):
     __tablename__ = 'travel_requests'
+    __table_args__ = (UniqueConstraint('selection_id', name='uq_travel_requests_selection_id'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            'chat_clients.id', ondelete='SET NULL', name='fk_travel_requests_client_id_chat_clients'
+        ),
+        nullable=True,
+        index=True,
+    )
+    selection_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            'travel_selections.id',
+            ondelete='SET NULL',
+            name='fk_travel_requests_selection_id_travel_selections',
+        ),
+        nullable=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255))

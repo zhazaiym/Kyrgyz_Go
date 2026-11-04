@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import uuid
 from pathlib import Path
 
 from .ci_deploy import ALLOWED_FILES, validate_members
@@ -58,6 +57,10 @@ def create_archive(root, destination):
         raise ValueError('Source archive exceeds the server limit of 25 MiB')
     with tarfile.open(destination) as bundle:
         validate_members(bundle)
+
+
+def run_local_tests(root):
+    subprocess.run([sys.executable, '-m', 'scripts.run_tests', '-q'], cwd=root, check=True)
 
 
 def ssh_arguments(executable, key, known_hosts):
@@ -115,19 +118,7 @@ def main():
         if not executable:
             parser.error('OpenSSH client is not installed')
     if not options.check and not options.skip_tests:
-        cache = root / '.pytest_cache'
-        cache.mkdir(exist_ok=True)
-        subprocess.run(
-            [
-                sys.executable,
-                '-m',
-                'pytest',
-                '-q',
-                '--basetemp=' + str(cache / ('manual-' + uuid.uuid4().hex)),
-            ],
-            cwd=root,
-            check=True,
-        )
+        run_local_tests(root)
     with tempfile.TemporaryDirectory(prefix='kyrgyzgo-deploy-') as temporary:
         archive = Path(temporary) / 'source.tar.gz'
         known_hosts = Path(temporary) / 'known_hosts'
@@ -138,8 +129,11 @@ def main():
         print('Source snapshot:', snapshot, flush=True)
         preflight = (
             'test -r /usr/local/lib/kyrgyzgo/ci_deploy.py && '
-            "test \"$(sudo -n docker inspect --format '{{.State.Health.Status}}' "
-            'kyrgyzgo_backend)" = healthy && df -h /'
+            'api_container=$(sudo -n docker compose -p kyrgyz_go '
+            '-f /home/ubuntu/Kyrgyz_Go/docker-compose.yml '
+            '-f /home/ubuntu/kyrgyzgo-deploy.override.yml ps -q api) && '
+            'test -n "$api_container" && '
+            'test "$(sudo -n docker inspect --format \'{{.State.Health.Status}}\' "$api_container")" = healthy && df -h /'
         )
         subprocess.run([*arguments, preflight], check=True)
         if options.check:

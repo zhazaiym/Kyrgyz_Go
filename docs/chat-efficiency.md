@@ -50,6 +50,6 @@ Gemini-клиенты создаются при первом использов�
 
 ## Проверки
 
-`python -B -m pytest tests/test_agent_budget.py tests/test_company_tools.py tests/test_chat_booking_flow.py -q`
+`python -m scripts.run_tests tests/test_agent_budget.py tests/test_company_tools.py tests/test_chat_booking_flow.py -q`
 
 Эти тесты проверяют бюджеты, контекст, свежие данные базы, исключение тестовых записей, отсутствие выдуманных контактов и сохранение логики подтверждения заявки. Обычный запуск использует подмену модели. В `test_agent_budget.py` также есть 12 сетевых проверок (четыре сценария по три повтора), которые пропускаются без `RUN_LIVE_GEMINI_EVAL=1`. Их запуск обращается к Gemini; инструкция и ограничения приведены в [проверке ИИ](ai-review-followup.md).

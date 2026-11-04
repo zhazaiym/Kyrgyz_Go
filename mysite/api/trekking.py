@@ -8,7 +8,8 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TrekkingCardSchema, TrekkingCatalogueDetailSchema
 from mysite.database.db import get_db
 from mysite.database.models import Trekking
-from mysite.database.schema import TrekkingInputSchema, TrekkingOutSchema, TrekkingUpdateSchema
+from mysite.database.schemas.catalogue import (TrekkingInputSchema, TrekkingOutSchema,
+                                               TrekkingUpdateSchema)
 from mysite.filters.filter import TrekkingFilter
 from mysite.translations.content import Language, localized, update_translations
 

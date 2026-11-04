@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Transport, TransportImage
-from mysite.database.schema import (TransportImageInputSchema, TransportImageOutSchema,
-                                    TransportImageUpdateSchema)
+from mysite.database.schemas.catalogue import (TransportImageInputSchema, TransportImageOutSchema,
+                                               TransportImageUpdateSchema)
 
 transport_image_router = APIRouter(prefix='/transport-images', tags=['Transport Images'])
 

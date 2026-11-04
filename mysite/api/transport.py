@@ -9,7 +9,8 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TransportCardSchema
 from mysite.database.db import get_db
 from mysite.database.models import Transport
-from mysite.database.schema import TransportInputSchema, TransportOutSchema, TransportUpdateSchema
+from mysite.database.schemas.catalogue import (TransportInputSchema, TransportOutSchema,
+                                               TransportUpdateSchema)
 from mysite.filters.filter import TransportFilter
 from mysite.translations.content import Language, localized, update_translations
 
