@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from io import BytesIO
 from urllib.parse import urlsplit
 
@@ -102,3 +105,22 @@ def test_admin_panel_uploads_with_session_and_shows_picker(client, admin_headers
     form = client.get('/admin/transport/create')
     assert form.status_code == 200
     assert '/admin/media/upload' in form.text
+
+
+def test_webp_content_type_does_not_depend_on_system_mime_types():
+    code = (
+        'import mimetypes; mimetypes.knownfiles = []; mimetypes.init(); '
+        'import mysite.api.media; '
+        "print(mimetypes.guess_type('photo.webp')[0])"
+    )
+    result = subprocess.run(
+        [sys.executable, '-B', '-c', code],
+        cwd=os.getcwd(),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == 'image/webp'

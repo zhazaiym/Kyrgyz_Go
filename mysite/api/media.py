@@ -1,5 +1,6 @@
 """Admin image uploads stored on the server and served by URL from /media."""
 
+import mimetypes
 import os
 import uuid
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ MEDIA_URL = '/media'
 IMAGE_FORMATS = {'JPEG', 'PNG', 'WEBP'}
 MAX_IMAGE_PIXELS = 40_000_000
 MAX_IMAGE_SIDE = 2560
+mimetypes.add_type('image/webp', '.webp')
 
 media_router = APIRouter(prefix='/admin/media', tags=['Media'])
 
