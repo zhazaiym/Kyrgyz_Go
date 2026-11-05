@@ -35,12 +35,16 @@ def create_transport_image(
 @transport_image_router.get(
     '/', response_model=list[TransportImageOutSchema], dependencies=[Depends(current_client)]
 )
-def list_transport_images(db: Session = Depends(get_db), pagination: Pagination = Depends()):
+def list_transport_images(
+    transport_id: int | None = None,
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
+):
+    query = db.query(TransportImage).join(Transport).filter(Transport.is_active.is_(True))
+    if transport_id is not None:
+        query = query.filter(TransportImage.transport_id == transport_id)
     return (
-        db.query(TransportImage)
-        .join(Transport)
-        .filter(Transport.is_active.is_(True))
-        .order_by(TransportImage.order, TransportImage.id)
+        query.order_by(TransportImage.order, TransportImage.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()
