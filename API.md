@@ -218,6 +218,8 @@ ws.onmessage = ({ data }) => {
 
 - `GET /` возвращает `{message:"Welcome to KYRGYZGO API"}`. Это HTTP-проверка доступности, а не проверка Gemini или содержимого каталога.
 - `GET /home/content/?lang=ru|en|de|zh` возвращает локализованные поля главной страницы `{lang, title, description, details, promise}`. `lang` необязателен и по умолчанию равен `ru`.
+- `GET /media/<год>/<месяц>/<имя>.webp` отдаёт загруженные фото. Ссылки на них приходят во фронт в обычных полях `image` и `main_image`, рядом с внешними ссылками.
+- В формах SQLAdmin у полей `image`, `main_image` и `qr_code` есть кнопка выбора файла: фото загружается на сервер, и ссылка сама подставляется в поле.
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
 - `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы списков/создания/редактирования/деталей SQLAdmin - HTML-интерфейс с cookie-сессией и входом администратора. Ограничения доступа по IP для этих маршрутов нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
@@ -295,6 +297,16 @@ ws.onmessage = ({ data }) => {
 Тело: `RequestStatusUpdate` (см. раздел 11).
 
 Успех: **200**, TravelRequestOutSchema.
+
+### Загрузка фото
+
+#### `POST /admin/media/`
+
+Загрузить фото и получить ссылку на него. Доступ: **Администратор**.
+
+Тело: `multipart/form-data` с полем `file`. Принимаются JPEG, PNG и WEBP до 10 МБ (`MAX_IMAGE_UPLOAD_BYTES`). Сервер поворачивает фото по EXIF, убирает метаданные, уменьшает до 2560 px по большей стороне и сохраняет в WEBP.
+
+Успех: **201**, `{url}`. Ссылку передавайте в поле `image` или `main_image` при создании или изменении записи. Не картинка - **400**, больше лимита - **413**.
 
 ### Категории туров
 

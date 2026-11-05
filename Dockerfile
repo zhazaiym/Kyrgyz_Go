@@ -9,7 +9,9 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
     && python -m pip install --no-cache-dir -r requirements.txt \
     && groupadd --system app \
-    && useradd --system --gid app --home-dir /app app
+    && useradd --system --gid app --home-dir /app app \
+    && mkdir /app/media \
+    && chown app:app /app/media
 
 COPY --chown=app:app Dockerfile main.py create_admin.py seed_demo.py alembic.ini ./
 COPY --chown=app:app ML ./ML

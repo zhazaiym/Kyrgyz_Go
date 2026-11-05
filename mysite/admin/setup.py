@@ -5,9 +5,11 @@ from fastapi import FastAPI, HTTPException, Request
 from sqladmin import Admin as SQLAdmin
 from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import JSONResponse
 
 from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
+from mysite.api.media import save_upload
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import Admin as AdminModel
@@ -69,17 +71,32 @@ class AdminAuthBackend(AuthenticationBackend):
         request.session.clear()
         return True
 
+    @staticmethod
+    def active_admin(admin_id):
+        with SessionLocal() as db:
+            admin = db.get(AdminModel, admin_id)
+            return bool(admin and admin.is_active)
+
     async def authenticate(self, request: Request) -> bool:
         admin_id = request.session.get('admin_id')
         if admin_id is None:
             return False
+        return await run_in_threadpool(self.active_admin, admin_id)
 
-        def active():
-            with SessionLocal() as db:
-                admin = db.get(AdminModel, admin_id)
-                return bool(admin and admin.is_active)
 
-        return await run_in_threadpool(active)
+async def upload_image(request: Request):
+    admin_id = request.session.get('admin_id')
+    if admin_id is None or not await run_in_threadpool(AdminAuthBackend.active_admin, admin_id):
+        return JSONResponse({'detail': 'Админ катары кириңиз'}, status_code=401)
+    form = await request.form(max_files=1, max_fields=1)
+    upload = form.get('file')
+    if not hasattr(upload, 'read'):
+        return JSONResponse({'detail': 'Сүрөт тандалган жок'}, status_code=400)
+    try:
+        url = await save_upload(request, upload)
+    except HTTPException as exc:
+        return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
+    return JSONResponse({'url': url}, status_code=201)
 
 
 def setup_admin(auth_app: FastAPI):
@@ -92,6 +109,7 @@ def setup_admin(auth_app: FastAPI):
     admin.admin.router.add_websocket_route(
         '/ws/requests', admin_requests_websocket, name='request_notifications'
     )
+    admin.admin.router.add_route('/media/upload', upload_image, methods=['POST'])
     admin.add_view(AdminAdmin)
     admin.add_view(AboutAdmin)
     admin.add_view(AboutSectionAdmin)

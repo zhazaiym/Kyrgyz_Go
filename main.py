@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / '.env')
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from mysite.admin.setup import setup_admin
 from mysite.api.about import about_router
@@ -32,6 +33,7 @@ from mysite.api.home_content import home_content_router
 from mysite.api.hotel import hotel_router
 from mysite.api.hotel_image import hotel_image_router
 from mysite.api.manager_selection import manager_selection_router
+from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.origin_config import configured_origins
 from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
@@ -108,6 +110,7 @@ app.add_middleware(
 
 # ADMIN ROUTER
 app.include_router(admin_router)
+app.include_router(media_router)
 
 
 # TOUR ROUTERS
@@ -158,6 +161,11 @@ app.include_router(selection_router)
 app.include_router(manager_selection_router)
 app.include_router(registration_router)
 app.include_router(password_reset_router)
+
+
+# MEDIA FILES
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount(MEDIA_URL, StaticFiles(directory=MEDIA_ROOT), name='media')
 
 
 # ADMIN PANEL
