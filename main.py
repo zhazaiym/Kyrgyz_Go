@@ -15,13 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from mysite.admin.setup import setup_admin
 from mysite.api.about import about_router
 from mysite.api.about_section import about_section_router
-# ADMIN
 from mysite.api.admin import admin_router
 from mysite.api.admin_access import AdminAccessMiddleware
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_ws import router as chat_ws_router
-# NEW AI CHAT
 from mysite.api.client_auth import router as client_auth_router
 from mysite.api.contact import contact_router
 from mysite.api.country import country_router
@@ -41,7 +39,6 @@ from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
-# OLD KYRGYZGO API
 from mysite.api.tour_category import category_router
 from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
