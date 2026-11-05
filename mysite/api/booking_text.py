@@ -18,7 +18,7 @@ TEXT = {
         'готов бронировать тур». Короткое «да» заявку не отправляет. Для отказа '
         'напишите «Не отправляйте заявку», для исправлений укажите изменения.',
         'declined': 'Заявка не отправлена. Что хотите изменить или уточнить?',
-        'submitted': 'Ваши данные переданы менеджеру KYRGYZGO. Он скоро свяжется с вами для '
+        'submitted': 'Ваши данные переданы менеджеру Kerben Travel. Он скоро свяжется с вами для '
         'уточнения деталей и подтверждения бронирования. Номер заявки: {request_id}.',
         'invalid_preview': 'Данные заявки изменились или больше недействительны. Проверьте услуги, '
         'дату поездки и контакты. Заявка не отправлена; уточните данные, чтобы '
@@ -43,7 +43,7 @@ TEXT = {
         '"I confirm". A plain "yes" does not submit it. Write "Do not submit" to '
         'decline, or tell me what to change.',
         'declined': 'Your request has not been sent. What would you like to change or clarify?',
-        'submitted': 'Request #{request_id} has been sent to a KYRGYZGO manager. The manager will '
+        'submitted': 'Request #{request_id} has been sent to a Kerben Travel manager. The manager will '
         'contact you soon to clarify the details and confirm your booking.',
         'invalid_preview': 'Your request details have changed or are no longer valid. Check the '
         'services, travel date and contact details. Nothing has been sent; '
@@ -69,7 +69,7 @@ TEXT = {
         'жазыңыз. Жөн гана «ооба» өтүнмөнү жөнөтпөйт. Баш тартуу үчүн «Жөнөтпө» деп '
         'жазыңыз же эмнени өзгөртүү керектигин айтыңыз.',
         'declined': 'Өтүнмө жөнөтүлгөн жок. Эмнени өзгөрткүңүз же тактагыңыз келет?',
-        'submitted': '№{request_id} өтүнмө KYRGYZGO менеджерине жөнөтүлдү. Менеджер маалыматтарды '
+        'submitted': '№{request_id} өтүнмө Kerben Travel менеджерине жөнөтүлдү. Менеджер маалыматтарды '
         'тактоо жана брондоону ырастоо үчүн жакында сиз менен байланышат.',
         'invalid_preview': 'Өтүнмөнүн маалыматы өзгөрдү же жараксыз болуп калды. Кызматтарды, '
         'сапардын күнүн жана байланыштарды текшериңиз. Өтүнмө жөнөтүлгөн жок.',
@@ -94,7 +94,7 @@ TEXT = {
         '"Ich bestätige", um sie abzusenden. Ein einfaches "Ja" genügt nicht. Mit '
         '"Nicht absenden" lehnen Sie ab; Änderungen können Sie direkt mitteilen.',
         'declined': 'Ihre Anfrage wurde nicht gesendet. Was möchten Sie ändern oder klären?',
-        'submitted': 'Anfrage Nr. {request_id} wurde an das KYRGYZGO-Team gesendet. Das Team wird '
+        'submitted': 'Anfrage Nr. {request_id} wurde an das Kerben-Travel-Team gesendet. Das Team wird '
         'Sie bald kontaktieren, um die Details zu klären und Ihre Buchung zu '
         'bestätigen.',
         'invalid_preview': 'Die Angaben sind geändert oder nicht mehr gültig. Prüfen Sie '
@@ -119,7 +119,7 @@ TEXT = {
         'missing': '未提供',
         'confirm': '这是提交给客服的申请，并非已确认的预订。请回复“确认提交”发送申请，单独回复“是”不会提交。取消请回复“不发送”，也可以说明需要修改的信息。',
         'declined': '申请尚未发送。您希望修改或确认哪些信息？',
-        'submitted': '申请编号 {request_id} 已发送给 KYRGYZGO 客服。客服会尽快联系您，核实详细信息并确认预订。',
+        'submitted': '申请编号 {request_id} 已发送给 Kerben Travel 客服。客服会尽快联系您，核实详细信息并确认预订。',
         'invalid_preview': '申请信息已更改或失效。请核对服务、旅行日期和联系方式。申请尚未发送，请更新信息以获取新的摘要。',
         'service_removed': '已移除所选服务。请核对其余旅行信息。',
     },
