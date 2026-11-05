@@ -3,7 +3,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-from mysite.database import models  # noqa: F401  # noqa: F401
+from mysite.database import models  # noqa: F401
 from mysite.database import rate_limit_models  # noqa: F401
 from mysite.database import selection_models  # noqa: F401
 from mysite.database import tour_review_models  # noqa: F401

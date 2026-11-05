@@ -22,10 +22,12 @@ RESOURCE_LIMITS = {
     'HTTP_REQUESTS_PER_MINUTE': (120, 100_000),
     'HTTP_IP_BUCKETS': (8192, 65_536),
     'MAX_REQUEST_BODY_BYTES': (1_048_576, 16_777_216),
+    'MAX_IMAGE_UPLOAD_BYTES': (10_485_760, 33_554_432),
     'REQUEST_BODY_TIMEOUT': (10, 60),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
 }
+IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload'}
 
 
 @lru_cache(maxsize=len(RESOURCE_LIMITS))
@@ -152,6 +154,8 @@ class ResourceLimitsMiddleware:
             ):
                 return await reject(431, 'Request headers are too large')
             maximum = setting('MAX_REQUEST_BODY_BYTES')
+            if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
+                maximum = setting('MAX_IMAGE_UPLOAD_BYTES') + 65_536
             lengths = request_headers.getlist('content-length')
             if lengths:
                 try:
@@ -181,7 +185,7 @@ class ResourceLimitsMiddleware:
             try:
                 path = scope.get('path', '')
                 cheap_read = scope.get('method') in {'GET', 'HEAD'} and (
-                    path == '/' or path.startswith('/admin/statics/')
+                    path == '/' or path.startswith(('/admin/statics/', '/media/'))
                 )
                 if not cheap_read:
                     self.http_quota(address)

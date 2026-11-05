@@ -35,12 +35,18 @@ def create_helicopter_image(
 @helicopter_image_router.get(
     '/', response_model=list[HelicopterImageOutSchema], dependencies=[Depends(current_client)]
 )
-def list_helicopter_images(db: Session = Depends(get_db), pagination: Pagination = Depends()):
+def list_helicopter_images(
+    helicopter_id: int | None = None,
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
+):
+    query = (
+        db.query(HelicopterImage).join(HelicopterTour).filter(HelicopterTour.is_active.is_(True))
+    )
+    if helicopter_id is not None:
+        query = query.filter(HelicopterImage.helicopter_id == helicopter_id)
     return (
-        db.query(HelicopterImage)
-        .join(HelicopterTour)
-        .filter(HelicopterTour.is_active.is_(True))
-        .order_by(HelicopterImage.order, HelicopterImage.id)
+        query.order_by(HelicopterImage.order, HelicopterImage.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()

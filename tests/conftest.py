@@ -1,6 +1,7 @@
 # ruff: noqa: E402 -- configure the isolated test database before importing the app.
 import atexit
 import os
+import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +27,9 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-isolated-tests')
 os.environ.setdefault('GEMINI_API_KEY', 'test-key-not-used-for-network-calls')
 os.environ.setdefault('ADMIN_ALLOWED_IPS', '127.0.0.1/32,::1/128')
 os.environ['ADMIN_COOKIE_SECURE'] = 'false'
+_media_root = tempfile.TemporaryDirectory()
+atexit.register(_media_root.cleanup)
+os.environ['MEDIA_ROOT'] = _media_root.name
 
 command.upgrade(Config('alembic.ini'), 'head')
 

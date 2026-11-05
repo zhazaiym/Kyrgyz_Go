@@ -7,6 +7,7 @@ from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
+from mysite.database import chat_models, selection_models  # noqa: F401
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
 from mysite.database.request_status import validate_status_transition

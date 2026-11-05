@@ -49,7 +49,7 @@ def send_reset_email(email: str, token: str):
     link = frontend_url + separator + urlencode({'token': token})
 
     message = EmailMessage()
-    message['Subject'] = 'KyrgyzGo - Восстановление пароля'
+    message['Subject'] = 'Kerben Travel - Восстановление пароля'
     message['From'] = sender
     message['To'] = email
 

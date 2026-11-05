@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from mysite.about_content import ABOUT_SLIDES, ABOUT_TITLE
+from mysite.about_content import ABOUT_DESCRIPTION, ABOUT_SLIDES, ABOUT_TITLE
 from mysite.database.db import SessionLocal
 from mysite.database.models import About, AboutSection
 from mysite.translations.content import update_translations
@@ -48,7 +48,7 @@ def replace_content(backup_path: Path, *, apply: bool) -> tuple[int, int, int]:
         db.query(AboutSection).delete(synchronize_session=False)
         db.query(About).delete(synchronize_session=False)
 
-        about = About(title=ABOUT_TITLE, description=None, image=None, is_active=True)
+        about = About(title=ABOUT_TITLE, description=ABOUT_DESCRIPTION, image=None, is_active=True)
         db.add(about)
         update_translations(about)
 

@@ -70,7 +70,7 @@ def test_complete_chat_requires_approval_and_shows_in_admin(
     monkeypatch.setattr(chat_service, 'respond', unexpected)
     submitted = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
     repeated = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
-    assert 'Ваши данные переданы менеджеру KYRGYZGO' in submitted['answer']
+    assert 'Ваши данные переданы менеджеру Kerben Travel' in submitted['answer']
     assert 'скоро свяжется с вами' in submitted['answer']
     assert (
         submitted['booking_submitted']['request_id'] == repeated['booking_submitted']['request_id']
@@ -433,16 +433,16 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
 @pytest.mark.parametrize(
     ('language', 'summary', 'refusal', 'approval', 'submitted_text'),
     [
-        ('en', 'Please review your request', 'No', 'I confirm', 'sent to a KYRGYZGO manager'),
+        ('en', 'Please review your request', 'No', 'I confirm', 'sent to a Kerben Travel manager'),
         ('ky', 'Өтүнмөнүн маалыматтарын текшериңиз', 'Жок', 'Ырастайм', 'менеджерине жөнөтүлдү'),
         (
             'de',
             'Bitte prüfen Sie Ihre Anfrage',
             'Nicht absenden',
             'Ich bestätige',
-            'an das KYRGYZGO-Team gesendet',
+            'an das Kerben-Travel-Team gesendet',
         ),
-        ('zh', '请核对申请信息', '不发送', '确认提交', '已发送给 KYRGYZGO 客服'),
+        ('zh', '请核对申请信息', '不发送', '确认提交', '已发送给 Kerben Travel 客服'),
     ],
 )
 def test_booking_summary_and_submission_follow_client_language(

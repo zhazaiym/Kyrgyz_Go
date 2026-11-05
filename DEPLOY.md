@@ -125,6 +125,16 @@ Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
 Activate the matching image after the migration and before reopening catalogue
 writes.
 
+### Uploaded photos
+
+Admins upload JPEG, PNG or WEBP photos from the SQLAdmin forms or through
+`POST /admin/media/`. The API stores them as WEBP in the `media` Compose volume
+(`/app/media`, override with `MEDIA_ROOT`) and serves them from `/media/`; the
+database keeps only the returned absolute URL. Back up the `media` volume together
+with PostgreSQL: a database restore without it leaves broken photo links. URLs
+include the API host, so a move to a new domain needs the stored URLs rewritten.
+`MAX_IMAGE_UPLOAD_BYTES` limits one upload (default 10 MB).
+
 ### Start and verify
 
 Run from the project directory:

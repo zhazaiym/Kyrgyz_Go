@@ -33,12 +33,14 @@ def create_hotel_image(hotel_image: HotelImageInputSchema, db: Session = Depends
 @hotel_image_router.get(
     '/', response_model=list[HotelImageOutSchema], dependencies=[Depends(current_client)]
 )
-def list_hotel_images(db: Session = Depends(get_db), pagination: Pagination = Depends()):
+def list_hotel_images(
+    hotel_id: int | None = None, db: Session = Depends(get_db), pagination: Pagination = Depends()
+):
+    query = db.query(HotelImage).join(Hotel).filter(Hotel.is_active.is_(True))
+    if hotel_id is not None:
+        query = query.filter(HotelImage.hotel_id == hotel_id)
     return (
-        db.query(HotelImage)
-        .join(Hotel)
-        .filter(Hotel.is_active.is_(True))
-        .order_by(HotelImage.order, HotelImage.id)
+        query.order_by(HotelImage.order, HotelImage.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()
