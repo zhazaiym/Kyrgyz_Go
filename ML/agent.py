@@ -1,12 +1,8 @@
-"""Bounded read-only consultation; booking writes belong to the backend."""
-
 import asyncio
 import json
 import logging
 from datetime import date
-
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-
 from ML.config import integer_setting, output_budget
 from ML.context import extraction_context, recent_messages
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
@@ -19,19 +15,8 @@ from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 __all__ = ['respond', 'output_budget', 'confirmation_allowed', 'rejection_allowed']
 
 log = logging.getLogger(__name__)
-FIELDS = (
-    'client_name',
-    'phone',
-    'email',
-    'tour_id',
-    'destination',
-    'travel_date',
-    'duration_days',
-    'people_count',
-    'budget',
-    'notes',
-    'language',
-)
+FIELDS = ('client_name', 'phone', 'email', 'tour_id', 'destination', 'travel_date', 'duration_days', 'people_count',
+    'budget', 'notes', 'language',)
 
 llm = LazyClient('llm')
 extract_llm = LazyClient('extract_llm')
@@ -42,7 +27,6 @@ tool_map = {t.name: t for t in READ_TOOLS}
 
 def SessionLocal():
     from mysite.database.db import SessionLocal as sessions
-
     return sessions()
 
 
@@ -124,7 +108,10 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             else:
                 dumped.pop('tour_id')
         if 'destination' in dumped and 'tour_id' not in dumped:
-            current.pop('tour_id', None)
+            if 'tour_id' in changes.clear_fields:
+                current.pop('tour_id', None)
+            elif current.get('tour_id') is not None:
+                dumped.pop('destination', None)
         if 'tour_id' in dumped:
             current.pop('destination', None)
         for k, v in dumped.items():
