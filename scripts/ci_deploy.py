@@ -33,7 +33,6 @@ ALLOWED_FILES = {
     'requirements.txt',
     'main.py',
     'create_admin.py',
-    'seed_demo.py',
     'alembic.ini',
 }
 

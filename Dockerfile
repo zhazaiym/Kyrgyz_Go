@@ -13,7 +13,7 @@ RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
     && mkdir /app/media \
     && chown app:app /app/media
 
-COPY --chown=app:app Dockerfile main.py create_admin.py seed_demo.py alembic.ini ./
+COPY --chown=app:app Dockerfile main.py create_admin.py alembic.ini ./
 COPY --chown=app:app ML ./ML
 COPY --chown=app:app mysite ./mysite
 COPY --chown=app:app alembic ./alembic

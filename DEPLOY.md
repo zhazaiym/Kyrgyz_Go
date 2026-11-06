@@ -213,22 +213,6 @@ by IP. Keep the certificate volumes and proxy running so renewal is automatic.
 See the [Caddy HTTPS guide](https://caddyserver.com/docs/quick-starts/https) and
 [Let's Encrypt IP certificates](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
 
-### Test catalogue and translations
-
-After migrations, explicitly add test catalogue data with:
-
-```bash
-docker compose exec api python seed_demo.py
-```
-
-Without Docker, run `python seed_demo.py` against the configured `DATABASE_URL`.
-This creates 20 entries in each of tours, hotels, transport, trekking, helicopter
-tours and FAQ (120 catalogue entries total), with
-`ТЕСТ` labels, placeholder prices/photos and ru/en/de/zh texts. Numbered variants
-use synthetic coordinates and prices. Re-running the
-command preserves existing entries and does not create duplicates. Data is
-never seeded automatically in production.
-
 Public catalogue GETs accept `?lang=ru|en|de|zh`; the default is Russian.
 Translations are generated on content changes through the API or SQLAdmin and
 stored in the database. If generation fails or a field has no translation, GET

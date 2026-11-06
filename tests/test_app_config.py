@@ -44,7 +44,7 @@ def test_http_cors_origins_come_from_environment(origin, expected_status, expect
     assert result.stdout.splitlines() == [str(expected_status), str(expected_origin)]
 
 
-@pytest.mark.parametrize('script', ['create_admin', 'seed_demo'])
+@pytest.mark.parametrize('script', ['create_admin'])
 def test_standalone_scripts_register_every_referenced_table(script):
     code = (
         f'import {script}; '
