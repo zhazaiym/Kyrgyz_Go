@@ -1,9 +1,6 @@
 from datetime import datetime
-
-from sqlalchemy import (JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
-                        func)
+from sqlalchemy import (JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,func)
 from sqlalchemy.orm import Mapped, mapped_column
-
 from mysite.database.db import Base
 from mysite.database.token_utils import utcnow
 
@@ -29,14 +26,10 @@ class ChatLoginToken(Base):
 class ChatSession(Base):
     __tablename__ = 'chat_sessions'
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    client_id: Mapped[int] = mapped_column(
-        ForeignKey('chat_clients.id'), index=True, nullable=False
-    )
+    client_id: Mapped[int] = mapped_column(ForeignKey('chat_clients.id'), index=True, nullable=False)
     state: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    message_version: Mapped[int] = mapped_column(
-        Integer, default=0, server_default='0', nullable=False
-    )
+    message_version: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     stage: Mapped[str] = mapped_column(String(30), default='consultation', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -44,14 +37,10 @@ class ChatSession(Base):
 class ChatMessage(Base):
     __tablename__ = 'chat_messages'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    session_id: Mapped[str] = mapped_column(
-        ForeignKey('chat_sessions.id'), index=True, nullable=False
-    )
+    session_id: Mapped[str] = mapped_column(ForeignKey('chat_sessions.id'), index=True, nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    reply_to_message_id: Mapped[int | None] = mapped_column(
-        ForeignKey('chat_messages.id', ondelete='SET NULL'), nullable=True, unique=True
-    )
+    reply_to_message_id: Mapped[int | None] = mapped_column(ForeignKey('chat_messages.id', ondelete='SET NULL'), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

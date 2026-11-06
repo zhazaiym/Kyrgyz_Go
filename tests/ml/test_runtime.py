@@ -1,5 +1,3 @@
-"""ML contracts runnable with --confcutdir=tests/ml, without DB or Gemini access."""
-
 import asyncio
 import importlib
 import json
@@ -7,10 +5,8 @@ import os
 import subprocess
 import sys
 from types import SimpleNamespace
-
 import pytest
 from langchain_core.messages import AIMessageChunk
-
 from ML.translation import translate_fields as translate
 
 

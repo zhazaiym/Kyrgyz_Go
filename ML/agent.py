@@ -11,12 +11,24 @@ from ML.provider import LazyClient
 from ML.schemas import Changes
 from ML.tools import READ_TOOLS, _not_demo
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
+import time
 
 __all__ = ['respond', 'output_budget', 'confirmation_allowed', 'rejection_allowed']
 
 log = logging.getLogger(__name__)
-FIELDS = ('client_name', 'phone', 'email', 'tour_id', 'destination', 'travel_date', 'duration_days', 'people_count',
-    'budget', 'notes', 'language',)
+FIELDS = (
+    'client_name',
+    'phone',
+    'email',
+    'tour_id',
+    'destination',
+    'travel_date',
+    'duration_days',
+    'people_count',
+    'budget',
+    'notes',
+    'language',
+)
 
 llm = LazyClient('llm')
 extract_llm = LazyClient('extract_llm')
@@ -27,6 +39,7 @@ tool_map = {t.name: t for t in READ_TOOLS}
 
 def SessionLocal():
     from mysite.database.db import SessionLocal as sessions
+
     return sessions()
 
 
@@ -70,7 +83,6 @@ def active_tour_ids():
 
 
 async def _respond(message: str, state: dict, history: list, on_chunk=None):
-    """Return answer, updated state, explicit booking intent. Tools read DB on demand."""
     current = dict(state or {})
     intent = False
     try:
@@ -79,6 +91,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
         if type(selected_id) is int and selected_id > 0 and selected_id not in ids:
             if await asyncio.to_thread(valid_selected_tour, selected_id):
                 ids.append(selected_id)
+        extractor_start = time.perf_counter()
         changes = await asyncio.wait_for(
             extractor.ainvoke(
                 EXTRACT_PROMPT.format(
@@ -90,6 +103,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             ),
             timeout=45,
         )
+        extractor_seconds = time.perf_counter() - extractor_start
+        log.info('AI extractor completed in %.2f seconds', extractor_seconds)
         if isinstance(changes, dict):
             changes = Changes.model_validate(changes)
         if not isinstance(changes, Changes):
@@ -180,7 +195,11 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                 raise ValueError('Gemini returned empty stream')
             return complete
 
+        generation_start = time.perf_counter()
         reply = await asyncio.wait_for(stream_reply(), timeout=60)
+        generation_seconds = time.perf_counter() - generation_start
+
+        log.info('AI generation completed in %.2f seconds', generation_seconds)
         finish_reason = (
             str(reply.response_metadata.get('finish_reason', '')).upper().rsplit('.', 1)[-1]
         )
@@ -235,6 +254,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                 raise AIError('ai_invalid_response')
             name = call.get('name', '')
             tool = tool_map.get(name)
+            tool_start = time.perf_counter()
             try:
                 result = (
                     await asyncio.wait_for(
@@ -246,6 +266,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             except (ValueError, KeyError, TypeError, RuntimeError, OSError, TimeoutError) as exc:
                 log.warning('Read-only tool failed: %s', type(exc).__name__)
                 result = {'error': 'Данные компании сейчас не удалось проверить'}
+            tool_seconds = time.perf_counter() - tool_start
+            log.info('AI tool %s completed in %.2f seconds', name, tool_seconds)
             encoded = json.dumps(result, ensure_ascii=False, default=str)
             if len(encoded) > 16_000:
                 encoded = json.dumps(

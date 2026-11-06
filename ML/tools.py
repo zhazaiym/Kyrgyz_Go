@@ -74,6 +74,50 @@ def list_active_tours() -> list[dict]:
 
 
 @tool
+def search_tours(
+    destination: str | None = None,
+    people_count: int | None = None,
+    duration_days: int | None = None,
+) -> list[dict]:
+    """Search active tours by destination, group size and duration."""
+    from mysite.database.models import Tour
+
+    if people_count is not None and people_count <= 0:
+        return []
+
+    if duration_days is not None and duration_days <= 0:
+        return []
+
+    with SessionLocal() as db:
+        query = db.query(Tour).filter(Tour.is_active.is_(True), _not_demo(Tour.title))
+
+        if destination and destination.strip():
+            keyword = destination.strip()
+            keyword = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            pattern = f'%{keyword}%'
+
+            query = query.filter(
+                or_(
+                    Tour.title.ilike(pattern, escape='\\'),
+                    Tour.description.ilike(pattern, escape='\\'),
+                )
+            )
+
+        if people_count is not None:
+            query = query.filter(
+                or_(Tour.min_people.is_(None), Tour.min_people <= people_count),
+                or_(Tour.max_people.is_(None), Tour.max_people >= people_count),
+            )
+
+        if duration_days is not None:
+            query = query.filter(Tour.duration_days == duration_days)
+
+        tours = query.order_by(Tour.id).limit(20).all()
+
+        return [_tour(tour, brief=True) for tour in tours]
+
+
+@tool
 def get_tour_details(tour_id: int) -> dict:
     """Read one active tour by known exact numeric ID, with full program and inclusions. Never guess an ID; not live availability."""
     from mysite.database.models import Tour
@@ -255,6 +299,7 @@ def search_company_faq(question: str) -> list[dict]:
 
 
 READ_TOOLS = [
+    search_tours,
     list_active_tours,
     get_tour_details,
     get_company_info,
