@@ -14,7 +14,7 @@
 | Карта модулей и проверки изменений | [Архитектура](architecture.md) |
 | Локальный запуск тестов с изолированной PostgreSQL | [Локальные тесты](local-testing.md) |
 | Параметры сервера и ограничения развёртывания | [DEPLOY](../DEPLOY.md) |
-| Ручная отправка изменений на сервер | [Ручное развёртывание](manual-deployment.md) |
+| Как обновляется прод, правила перед мержем в main и выкат MFA | [DEPLOY](../DEPLOY.md#как-обновляется-прод) |
 | PostgreSQL и переход со старой базы | [Миграция PostgreSQL](postgresql-migration.md) |
 | Общий аккаунт сайта и чата | [Авторизация клиента](shared-client-auth.md) |
 | Поведение чата, бюджеты и источники фактов | [Эффективность чата](chat-efficiency.md) |
@@ -23,7 +23,7 @@
 | Последовательность исправлений и отложенные вопросы | [Контекст ревьюера](reviewer-context.md) |
 | Форматирование Python и проверки CI | [Стиль кода](code-style.md) |
 
-`automatic-deployment.md` и `server-update.md` содержат исторические сведения; не используйте их как описание текущего сервера. Текущий GitHub workflow выполняет проверки, развёртывание запускается вручную. Планы в `superpowers/plans/` следует сопоставлять с кодом перед использованием. `KYRGYZGO` остаётся в исходниках и runtime-идентификаторах ради совместимости; актуальное название продукта в руководствах — Kerben Travel.
+`server-update.md` содержит исторические сведения о старом сервере; не используйте его как описание текущего. GitHub workflow только проверяет код; прод обновляет себя сам из `main` после зелёного CI (см. DEPLOY.md). Планы в `superpowers/plans/` следует сопоставлять с кодом перед использованием. `KYRGYZGO` остаётся в исходниках и runtime-идентификаторах ради совместимости; актуальное название продукта в руководствах — Kerben Travel.
 
 
 Current operations: the [API reference](../API.md) covers MFA and `/metrics`; [deployment guidance](../DEPLOY.md) describes admin enrollment and translation retry; the local load smoke is `python -m scripts.load_test` and uses a disposable PostgreSQL database with Gemini stubbed by default.

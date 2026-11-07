@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Trekking, TrekkingImage
@@ -13,13 +14,15 @@ trekking_image_router = APIRouter(prefix='/trekking-images', tags=['Trekking Ima
 
 
 @trekking_image_router.post(
-    '/', response_model=TrekkingImageOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=TrekkingImageOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_trekking_image(trekking_image: TrekkingImageInputSchema, db: Session = Depends(get_db)):
     trekking_db = db.get(Trekking, trekking_image.trekking_id)
 
     if trekking_db is None:
-        raise HTTPException(status_code=404, detail='Треккинг табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     image_db = TrekkingImage(**trekking_image.model_dump())
 
@@ -56,13 +59,15 @@ def detail_trekking_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TrekkingImage, image_id)
 
     if image_db is None or not image_db.trekking.is_active:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return image_db
 
 
 @trekking_image_router.put(
-    '/{image_id}/', response_model=TrekkingImageOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{image_id}/',
+    response_model=TrekkingImageOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_trekking_image(
     image_id: int, trekking_image: TrekkingImageUpdateSchema, db: Session = Depends(get_db)
@@ -70,18 +75,18 @@ def update_trekking_image(
     image_db = db.get(TrekkingImage, image_id)
 
     if image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = trekking_image.model_dump(exclude_unset=True)
 
     if 'trekking_id' in data:
         if data['trekking_id'] is None:
-            raise HTTPException(status_code=400, detail='Треккинг милдеттүү')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         trekking_db = db.get(Trekking, data['trekking_id'])
 
         if trekking_db is None:
-            raise HTTPException(status_code=404, detail='Треккинг табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     for key, value in data.items():
         setattr(image_db, key, value)
@@ -92,12 +97,14 @@ def update_trekking_image(
     return image_db
 
 
-@trekking_image_router.delete('/{image_id}/', dependencies=[Depends(get_current_admin)])
+@trekking_image_router.delete(
+    '/{image_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_trekking_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TrekkingImage, image_id)
 
     if image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(image_db)
     db.commit()

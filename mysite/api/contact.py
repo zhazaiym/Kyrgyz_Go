@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Contact
@@ -13,7 +14,9 @@ contact_router = APIRouter(prefix='/contacts', tags=['Contacts'])
 
 
 @contact_router.post(
-    '/', response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=ContactOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_contact(contact: ContactInputSchema, db: Session = Depends(get_db)):
     contact_db = Contact(**contact.model_dump())
@@ -45,24 +48,26 @@ def detail_contact(contact_id: int, lang: Language = 'ru', db: Session = Depends
     contact_db = db.get(Contact, contact_id)
 
     if contact_db is None or not contact_db.is_active:
-        raise HTTPException(status_code=404, detail='Байланыш маалыматы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(contact_db, lang)
 
 
 @contact_router.put(
-    '/{contact_id}/', response_model=ContactOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{contact_id}/',
+    response_model=ContactOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_contact(contact_id: int, contact: ContactUpdateSchema, db: Session = Depends(get_db)):
     contact_db = db.get(Contact, contact_id)
 
     if contact_db is None:
-        raise HTTPException(status_code=404, detail='Байланыш маалыматы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = contact.model_dump(exclude_unset=True)
 
     if 'is_active' in data and data['is_active'] is None:
-        raise HTTPException(status_code=400, detail='is_active бош болбошу керек')
+        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(contact_db, key, value)
@@ -74,12 +79,14 @@ def update_contact(contact_id: int, contact: ContactUpdateSchema, db: Session = 
     return contact_db
 
 
-@contact_router.delete('/{contact_id}/', dependencies=[Depends(get_current_admin)])
+@contact_router.delete(
+    '/{contact_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_contact(contact_id: int, db: Session = Depends(get_db)):
     contact_db = db.get(Contact, contact_id)
 
     if contact_db is None:
-        raise HTTPException(status_code=404, detail='Байланыш маалыматы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(contact_db)
     db.commit()

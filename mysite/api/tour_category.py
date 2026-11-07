@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import TourCategory
@@ -13,7 +14,9 @@ category_router = APIRouter(prefix='/tour-categories', tags=['Tour Categories'])
 
 
 @category_router.post(
-    '/', response_model=TourCategoryOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=TourCategoryOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_category(category: TourCategoryInputSchema, db: Session = Depends(get_db)):
     category_db = TourCategory()
@@ -43,7 +46,7 @@ def detail_category(category_id: int, lang: Language = 'ru', db: Session = Depen
     category_db = db.get(TourCategory, category_id)
 
     if category_db is None:
-        raise HTTPException(status_code=404, detail='Категория табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(category_db, lang)
 
@@ -51,7 +54,7 @@ def detail_category(category_id: int, lang: Language = 'ru', db: Session = Depen
 @category_router.put(
     '/{category_id}/',
     response_model=TourCategoryOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_category(
     category_id: int, category: TourCategoryUpdateSchema, db: Session = Depends(get_db)
@@ -59,7 +62,7 @@ def update_category(
     category_db = db.get(TourCategory, category_id)
 
     if category_db is None:
-        raise HTTPException(status_code=404, detail='Категория табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     for key, value in category.model_dump(exclude_unset=True).items():
         setattr(category_db, key, value)
@@ -71,15 +74,17 @@ def update_category(
     return category_db
 
 
-@category_router.delete('/{category_id}/', dependencies=[Depends(get_current_admin)])
+@category_router.delete(
+    '/{category_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_category(category_id: int, db: Session = Depends(get_db)):
     category_db = db.get(TourCategory, category_id)
 
     if category_db is None:
-        raise HTTPException(status_code=404, detail='Категория табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     if category_db.tours:
-        raise HTTPException(status_code=400, detail='Бул категорияга турлар байланышкан')
+        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     db.delete(category_db)
     db.commit()
@@ -87,7 +92,9 @@ def delete_category(category_id: int, db: Session = Depends(get_db)):
     return {'message': 'Категория өчүрүлдү'}
 
 
-@category_router.post('/setup-directions/', dependencies=[Depends(get_current_admin)])
+@category_router.post(
+    '/setup-directions/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def setup_directions(db: Session = Depends(get_db)):
     directions = [
         'Высокие горы',

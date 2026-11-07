@@ -1,9 +1,10 @@
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from mysite.database.models import PriceUnitChoices, TourTypeChoices
-from mysite.database.schemas.catalogue import HelicopterTourOutSchema, TrekkingOutSchema
+from mysite.database.schemas.catalogue import (HelicopterTourOutSchema, TrekkingOutSchema,
+                                               TrekkingProgramOutSchema)
 
 
 class CatalogueCardSchema(BaseModel):
@@ -68,3 +69,4 @@ class TrekkingCatalogueDetailSchema(TrekkingOutSchema):
     max_altitude: int | None
     min_people: int
     max_people: int | None
+    programs: list[TrekkingProgramOutSchema] = Field(default_factory=list)

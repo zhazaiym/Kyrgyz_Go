@@ -3,7 +3,7 @@
 import asyncio
 import os
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import contextmanager
 from functools import lru_cache
 from threading import Lock
@@ -13,8 +13,10 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
+from mysite.api.errors import error_detail
 from mysite.api.network_identity import client_network, rate_limits_enabled
 from mysite.api.observability import record_websocket_connection
+from mysite.api.origin_config import configured_origins
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -58,7 +60,9 @@ def ai_capacity():
     global _ai_active
     with _ai_lock:
         if _ai_active >= setting('AI_MAX_CONCURRENT'):
-            raise HTTPException(503, 'AI is busy; retry shortly', headers={'Retry-After': '5'})
+            raise HTTPException(
+                503, error_detail('service_unavailable'), headers={'Retry-After': '5'}
+            )
         _ai_active += 1
     try:
         yield
@@ -139,6 +143,10 @@ class ResourceLimitsMiddleware:
             await send(message)
 
         async def reject(status, detail, headers=None):
+            from mysite.api.errors import STATUS_CODES
+
+            if isinstance(detail, str):
+                detail = error_detail(STATUS_CODES.get(status, 'invalid_request'))
             await JSONResponse({'detail': detail}, status_code=status, headers=headers)(
                 scope, receive, safe_send
             )
@@ -176,9 +184,7 @@ class ResourceLimitsMiddleware:
             ):
                 origin = request_headers.get('origin')
                 own = f'{scope.get("scheme", "http")}://{request_headers.get("host", "")}'
-                allowed = {
-                    value.strip() for value in os.getenv('CORS_ALLOWED_ORIGINS', '').split(';')
-                }
+                allowed = set(configured_origins('CORS_ALLOWED_ORIGINS'))
                 if (origin and origin != own and origin not in allowed) or request_headers.get(
                     'sec-fetch-site'
                 ) == 'cross-site':
@@ -192,7 +198,26 @@ class ResourceLimitsMiddleware:
                     self.http_quota(address)
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail, exc.headers)
-            chunks, size = [], 0
+            if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
+                size = 0
+                deadline = asyncio.get_running_loop().time() + setting('REQUEST_BODY_TIMEOUT')
+
+                async def bounded_upload_receive():
+                    nonlocal size
+                    try:
+                        message = await asyncio.wait_for(
+                            receive(), timeout=max(0, deadline - asyncio.get_running_loop().time())
+                        )
+                    except TimeoutError:
+                        raise HTTPException(408, 'Request body timed out') from None
+                    size += len(message.get('body', b''))
+                    if size > maximum:
+                        raise HTTPException(413, 'Request body is too large')
+                    return message
+
+                return await self.app(scope, bounded_upload_receive, safe_send)
+
+            chunks, size = deque(), 0
             try:
                 async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT')):
                     while True:
@@ -208,14 +233,24 @@ class ResourceLimitsMiddleware:
                             break
             except TimeoutError:
                 return await reject(408, 'Request body timed out')
-            body = b''.join(chunks)
             delivered = False
 
             async def replay():
                 nonlocal delivered
+
+                if chunks:
+                    chunk = chunks.popleft()
+                    more_body = bool(chunks)
+
+                    if not more_body:
+                        delivered = True
+
+                    return {'type': 'http.request', 'body': chunk, 'more_body': more_body}
+
                 if not delivered:
                     delivered = True
-                    return {'type': 'http.request', 'body': body, 'more_body': False}
+                    return {'type': 'http.request', 'body': b'', 'more_body': False}
+
                 return await receive()
 
             await self.app(scope, replay, safe_send)

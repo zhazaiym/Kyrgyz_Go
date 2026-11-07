@@ -1,4 +1,3 @@
-import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -7,12 +6,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mysite.api.client_auth import authenticate_client, current_client, issue_token
+from mysite.api.errors import error_detail
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_request_limits
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
+from mysite.phone_validation import Phone
 
 router = APIRouter(prefix='/account', tags=['Tourist Account'])
 
@@ -21,7 +22,7 @@ passwords = BoundedPasswords()
 
 class RegisterInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    phone: str = Field(min_length=7, max_length=25)
+    phone: Phone = Field(min_length=7, max_length=25)
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
 
@@ -39,7 +40,7 @@ def normalize_email(value: str):
         return result
 
     except ValueError:
-        raise HTTPException(status_code=422, detail='Введите корректный email')
+        raise HTTPException(status_code=422, detail=error_detail('validation_error'))
 
 
 @router.post('/register', status_code=201)
@@ -50,18 +51,15 @@ def register(data: RegisterInput, request: Request, db: Session = Depends(get_db
         'client-register', request, email, ip_limit=10, identity_limit=3, window_seconds=3600
     )
 
-    phone = re.sub(r'[\s()\-]', '', data.phone.strip())
+    phone = data.phone
 
     if not name:
-        raise HTTPException(422, 'Укажите имя')
-
-    if not re.fullmatch(r'\+?[0-9]{7,15}', phone):
-        raise HTTPException(422, 'Введите корректный номер телефона')
+        raise HTTPException(422, error_detail('validation_error'))
 
     existing = db.query(ChatClient).filter(ChatClient.email == email).first()
 
     if existing:
-        raise HTTPException(409, 'Этот email уже зарегистрирован')
+        raise HTTPException(409, error_detail('conflict'))
 
     username = 'u_' + secrets.token_hex(16)
 
@@ -79,7 +77,7 @@ def register(data: RegisterInput, request: Request, db: Session = Depends(get_db
 
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, 'Этот email уже зарегистрирован')
+        raise HTTPException(409, error_detail('conflict'))
 
     db.refresh(client)
 

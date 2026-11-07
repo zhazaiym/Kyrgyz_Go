@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
 
+from mysite.api.errors import error_detail
 from mysite.api.resource_limits import setting
 
 _lock = Lock()
@@ -19,7 +20,7 @@ def password_capacity():
     with _lock:
         if _active >= setting('AUTH_MAX_CONCURRENT'):
             raise HTTPException(
-                503, 'Authentication is busy; retry shortly', headers={'Retry-After': '2'}
+                503, error_detail('service_unavailable'), headers={'Retry-After': '2'}
             )
         _active += 1
     try:

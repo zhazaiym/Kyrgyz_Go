@@ -20,7 +20,7 @@ def test_admin_request_list_includes_live_update_script(client, admin_headers):
         follow_redirects=False,
     )
 
-    response = client.get('/admin/chat-request/list')
+    response = client.get('/admin/travel-request/list')
 
     assert response.status_code == 200
     assert '/admin/ws/requests' in response.text

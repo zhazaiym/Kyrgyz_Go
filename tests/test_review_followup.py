@@ -179,7 +179,7 @@ def test_completed_request_cannot_be_reopened_through_any_admin_path(
         )
         try:
             response = client.post(
-                f'/admin/chat-request/edit/{request_id}',
+                f'/admin/travel-request/edit/{request_id}',
                 data={'status': 'in_progress'},
                 headers={'origin': 'http://testserver'},
             )

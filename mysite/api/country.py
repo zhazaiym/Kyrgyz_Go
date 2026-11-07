@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Country, Tour
@@ -13,7 +14,9 @@ country_router = APIRouter(prefix='/countries', tags=['Countries'])
 
 
 @country_router.post(
-    '/', response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=CountryOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_country(country: CountryInputSchema, db: Session = Depends(get_db)):
     country_db = Country(name=country.name)
@@ -41,25 +44,27 @@ def detail_country(country_id: int, lang: Language = 'ru', db: Session = Depends
     country_db = db.get(Country, country_id)
 
     if country_db is None:
-        raise HTTPException(status_code=404, detail='Мамлекет табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(country_db, lang)
 
 
 @country_router.put(
-    '/{country_id}/', response_model=CountryOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{country_id}/',
+    response_model=CountryOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_country(country_id: int, country: CountryUpdateSchema, db: Session = Depends(get_db)):
     country_db = db.get(Country, country_id)
 
     if country_db is None:
-        raise HTTPException(status_code=404, detail='Мамлекет табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = country.model_dump(exclude_unset=True)
 
     if 'name' in data:
         if not data['name'] or not data['name'].strip():
-            raise HTTPException(status_code=400, detail='Мамлекеттин аты бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         country_db.name = data['name']
 
@@ -70,17 +75,19 @@ def update_country(country_id: int, country: CountryUpdateSchema, db: Session = 
     return country_db
 
 
-@country_router.delete('/{country_id}/', dependencies=[Depends(get_current_admin)])
+@country_router.delete(
+    '/{country_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_country(country_id: int, db: Session = Depends(get_db)):
     country_db = db.get(Country, country_id, with_for_update=True)
 
     if country_db is None:
-        raise HTTPException(status_code=404, detail='Мамлекет табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     if country_db.regions:
-        raise HTTPException(status_code=400, detail='Бул мамлекетке областтар байланышкан')
+        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
     if db.query(Tour.id).filter(Tour.country_id == country_id).first():
-        raise HTTPException(409, 'Country is used by tours')
+        raise HTTPException(409, error_detail('conflict'))
 
     db.delete(country_db)
     db.commit()

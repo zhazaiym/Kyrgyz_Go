@@ -6,18 +6,15 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
-def isolated_metric_registry():
-    from mysite.api.observability import _counters, _gauges, _histograms, _lock
+def isolated_metric_registry(monkeypatch):
+    from prometheus_client import CollectorRegistry
 
-    with _lock:
-        _counters.clear()
-        _gauges.clear()
-        _histograms.clear()
+    from mysite.api import observability
+
+    registry = CollectorRegistry()
+    monkeypatch.setattr(observability, '_registry', registry)
+    monkeypatch.setattr(observability, '_metrics', observability.create_metrics(registry))
     yield
-    with _lock:
-        _counters.clear()
-        _gauges.clear()
-        _histograms.clear()
 
 
 def test_metrics_expose_fixed_low_cardinality_labels():
@@ -76,15 +73,23 @@ def test_websocket_middleware_tracks_accepted_connection_lifetime():
     assert 'kerben_websocket_connections_active 0' in render_metrics()
 
 
-def test_database_metrics_use_statement_categories_without_sql_labels():
-    from mysite.api.observability import record_database_query, render_metrics
+def test_http_metrics_use_route_patterns_without_customer_ids():
+    from mysite.api.observability import HTTPMetricsMiddleware, render_metrics
 
-    record_database_query('select', 'success', 0.05)
+    app = FastAPI()
+    app.add_middleware(HTTPMetricsMiddleware)
+
+    @app.get('/items/{identity}')
+    def detail(identity: str):
+        return {}
+
+    with TestClient(app) as client:
+        assert client.get('/items/private-customer-123').status_code == 200
     rendered = render_metrics()
-
-    assert 'kerben_database_queries_total{operation="select",outcome="success"} 1' in rendered
-    assert 'kerben_database_query_duration_seconds_count{operation="select"} 1' in rendered
-    assert 'SELECT *' not in rendered
+    assert 'kerben_http_request_duration_seconds_count' in rendered
+    assert 'route="/items/{identity}"' in rendered
+    assert 'private-customer-123' not in rendered
+    assert 'kerben_database_queries' not in rendered
 
 
 def test_metrics_endpoint_requires_a_configured_bearer_token(monkeypatch):

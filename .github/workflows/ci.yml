@@ -94,57 +94,18 @@ jobs:
           sys.exit(result.returncode)
           PY
 
-  deploy:
-    name: Deploy tested backend
-    needs: test
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      vars.DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    environment: production
-    timeout-minutes: 20
-    concurrency:
-      group: production-deployment
-      cancel-in-progress: false
-    steps:
-      - name: Download the tested revision
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Reject a superseded revision
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
+      - name: Build runtime image and check the documented MFA command
         run: |
-          set -euo pipefail
-          latest_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
-          if [[ "$latest_sha" != "$GITHUB_SHA" ]]; then
-            echo 'Deployment refused: tested revision is no longer main.'
-            exit 1
-          fi
+          docker build --tag kyrgyzgo-ci .
+          docker run --rm \
+            -e SECRET_KEY=ci-runtime-test-key-at-least-32-bytes \
+            -e DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres \
+            kyrgyzgo-ci python -m scripts.enroll_admin_mfa --help
 
-      - name: Upload source through the guarded server helper
-        env:
-          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        shell: bash
+      - name: Validate Caddyfile with the pinned Caddy image
         run: |
-          set -euo pipefail
-          umask 077
-          test -n "$DEPLOY_TARGET" && test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_KNOWN_HOSTS"
-          key_file="$RUNNER_TEMP/kyrgyzgo-deploy-key"
-          hosts_file="$RUNNER_TEMP/kyrgyzgo-deploy-known-hosts"
-          trap 'rm -f -- "$key_file" "$hosts_file"' EXIT
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key_file"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$hosts_file"
-          python -m scripts.manual_deploy --skip-tests \
-            --host "$DEPLOY_TARGET" --known-hosts "$hosts_file" \
-            --key "$key_file" --revision "$GITHUB_SHA"
+          image="$(sed -n 's/^ *image: \(caddy:[^ ]*\)$/\1/p' docker-compose.yml)"
+          test -n "$image"
+          docker run --rm -e API_DOMAIN=ci.example.test \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            "$image" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

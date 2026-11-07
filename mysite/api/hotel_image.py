@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Hotel, HotelImage
@@ -13,13 +14,15 @@ hotel_image_router = APIRouter(prefix='/hotel-images', tags=['Hotel Images'])
 
 
 @hotel_image_router.post(
-    '/', response_model=HotelImageOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=HotelImageOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_hotel_image(hotel_image: HotelImageInputSchema, db: Session = Depends(get_db)):
     hotel_db = db.get(Hotel, hotel_image.hotel_id)
 
     if hotel_db is None:
-        raise HTTPException(status_code=404, detail='Мейманкана табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     hotel_image_db = HotelImage(**hotel_image.model_dump())
 
@@ -54,13 +57,15 @@ def detail_hotel_image(image_id: int, db: Session = Depends(get_db)):
     hotel_image_db = db.get(HotelImage, image_id)
 
     if hotel_image_db is None or not hotel_image_db.hotel.is_active:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return hotel_image_db
 
 
 @hotel_image_router.put(
-    '/{image_id}/', response_model=HotelImageOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{image_id}/',
+    response_model=HotelImageOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_hotel_image(
     image_id: int, hotel_image: HotelImageUpdateSchema, db: Session = Depends(get_db)
@@ -68,18 +73,18 @@ def update_hotel_image(
     hotel_image_db = db.get(HotelImage, image_id)
 
     if hotel_image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = hotel_image.model_dump(exclude_unset=True)
 
     if 'hotel_id' in data:
         if data['hotel_id'] is None:
-            raise HTTPException(status_code=400, detail='Мейманкана милдеттүү')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         hotel_db = db.get(Hotel, data['hotel_id'])
 
         if hotel_db is None:
-            raise HTTPException(status_code=404, detail='Мейманкана табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     for key, value in data.items():
         setattr(hotel_image_db, key, value)
@@ -90,12 +95,14 @@ def update_hotel_image(
     return hotel_image_db
 
 
-@hotel_image_router.delete('/{image_id}/', dependencies=[Depends(get_current_admin)])
+@hotel_image_router.delete(
+    '/{image_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_hotel_image(image_id: int, db: Session = Depends(get_db)):
     hotel_image_db = db.get(HotelImage, image_id)
 
     if hotel_image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(hotel_image_db)
     db.commit()

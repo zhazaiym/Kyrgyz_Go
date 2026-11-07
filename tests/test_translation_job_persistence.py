@@ -80,8 +80,8 @@ def test_terminal_translation_failure_stays_capped_for_same_source(client):
                 record_id=identity,
                 source=source,
                 status='failed',
-                attempts=5,
-                last_error='failed',
+                attempts=3,
+                last_error='invalid_translation',
             )
         )
         db.commit()
@@ -102,7 +102,7 @@ def test_transient_translation_failure_is_scheduled_and_eventually_completes(cli
         raise TimeoutError('provider details are not persisted')
 
     result, delay = _run_persisted_translation((About, identity), source, transient_failure)
-    assert result == 'failed'
+    assert result == 'ai_timeout'
     assert delay == 2
     with SessionLocal() as db:
         job = (
@@ -110,7 +110,7 @@ def test_transient_translation_failure_is_scheduled_and_eventually_completes(cli
         )
         assert job.status == 'pending'
         assert job.attempts == 1
-        assert job.last_error == 'failed'
+        assert job.last_error == 'ai_timeout'
         job.next_attempt_at = utcnow()
         db.commit()
 

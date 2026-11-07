@@ -24,7 +24,7 @@ def test_uploaded_image_reaches_frontend_as_url(client, admin_headers):
 
     assert response.status_code == 201, response.text
     url = response.json()['url']
-    assert url.startswith('http://testserver/media/')
+    assert url.startswith('/media/')
     assert url.endswith('.webp')
 
     served = client.get(urlsplit(url).path)

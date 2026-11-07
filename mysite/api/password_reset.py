@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from mysite.api.errors import error_detail
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import clear_account_login_attempt, enforce_request_limits
 from mysite.api.registration import normalize_email
@@ -132,12 +133,12 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
             lookup.query(PasswordResetToken).filter_by(token_hash=digest(data.token)).first()
         )
         if not candidate or candidate.used_at is not None:
-            raise HTTPException(400, 'Недействительная или использованная ссылка')
+            raise HTTPException(400, error_detail('invalid_request'))
         expires = candidate.expires_at
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         if expires <= utcnow():
-            raise HTTPException(400, 'Срок действия ссылки истёк')
+            raise HTTPException(400, error_detail('invalid_request'))
         reset_id, client_id = candidate.id, candidate.client_id
 
     encoded = passwords.hash(data.new_password)
@@ -149,7 +150,7 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
     # when one reset invalidates all the account's other tokens.
 
     if not reset or reset.used_at is not None:
-        raise HTTPException(400, 'Недействительная или использованная ссылка')
+        raise HTTPException(400, error_detail('invalid_request'))
 
     expires = reset.expires_at
 
@@ -157,10 +158,10 @@ def reset_password(data: ResetPasswordInput, request: Request, db: Session = Dep
         expires = expires.replace(tzinfo=timezone.utc)
 
     if expires <= utcnow():
-        raise HTTPException(400, 'Срок действия ссылки истёк')
+        raise HTTPException(400, error_detail('invalid_request'))
 
     if not client:
-        raise HTTPException(400, 'Аккаунт не найден')
+        raise HTTPException(400, error_detail('invalid_request'))
 
     client.password_hash = encoded
     reset.used_at = utcnow()

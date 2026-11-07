@@ -46,7 +46,7 @@ def test_environment_example_documents_required_settings():
     assert 'ADMIN_ALLOWED_IPS' not in names
 
 
-def test_chat_websocket_example_allows_the_production_admin_frontend():
+def test_chat_websocket_example_allows_the_production_site():
     example = Path('.env.example').read_text(encoding='utf-8')
     settings = {
         line.split('=', 1)[0].strip(): line.split('=', 1)[1].strip()
@@ -54,7 +54,17 @@ def test_chat_websocket_example_allows_the_production_admin_frontend():
         if line.strip() and not line.lstrip().startswith('#') and '=' in line
     }
     allowed = {origin.strip() for origin in settings['CHAT_ALLOWED_ORIGINS'].split(';')}
-    assert 'https://kyrgyzgo-admin.vercel.app' in allowed
+    assert 'https://kerben-travel.vercel.app' in allowed
+    cors = {origin.strip() for origin in settings['CORS_ALLOWED_ORIGINS'].split(';')}
+    assert 'https://kerben-travel.vercel.app' in cors
+
+
+def test_dead_frontends_and_old_server_are_not_configured():
+    dead = ('tours-app-teal.vercel.app', 'kyrgyzgo-admin.vercel.app', '13.53.40.37')
+    for name in ('.env.example', 'DEPLOY.md', 'API.md', 'docker-compose.yml', 'README.md'):
+        text = Path(name).read_text(encoding='utf-8')
+        for value in dead:
+            assert value not in text, (name, value)
 
 
 def test_local_runtime_artifacts_are_ignored():

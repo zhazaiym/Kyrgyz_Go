@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import (HelicopterCatalogueDetailSchema,
                                               HelicopterTourCardSchema)
@@ -18,7 +19,9 @@ helicopter_tour_router = APIRouter(prefix='/helicopter-tours', tags=['Helicopter
 
 
 @helicopter_tour_router.post(
-    '/', response_model=HelicopterTourOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=HelicopterTourOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_helicopter_tour(helicopter: HelicopterTourInputSchema, db: Session = Depends(get_db)):
     helicopter_db = HelicopterTour(**helicopter.model_dump())
@@ -42,7 +45,7 @@ def detail_helicopter_tour(
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None or not helicopter_db.is_active:
-        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(helicopter_db, lang)
 
@@ -50,7 +53,7 @@ def detail_helicopter_tour(
 @helicopter_tour_router.put(
     '/{helicopter_id}/',
     response_model=HelicopterTourOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_helicopter_tour(
     helicopter_id: int, helicopter: HelicopterTourUpdateSchema, db: Session = Depends(get_db)
@@ -58,7 +61,7 @@ def update_helicopter_tour(
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None:
-        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = helicopter.model_dump(exclude_unset=True)
 
@@ -76,12 +79,14 @@ def update_helicopter_tour(
     return helicopter_db
 
 
-@helicopter_tour_router.delete('/{helicopter_id}/', dependencies=[Depends(get_current_admin)])
+@helicopter_tour_router.delete(
+    '/{helicopter_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_helicopter_tour(helicopter_id: int, db: Session = Depends(get_db)):
     helicopter_db = db.get(HelicopterTour, helicopter_id)
 
     if helicopter_db is None:
-        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(helicopter_db)
     db.commit()

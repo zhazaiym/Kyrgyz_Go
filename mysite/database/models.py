@@ -3,10 +3,12 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import (JSON, Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Index,
-                        Integer, Numeric, String, Text, UniqueConstraint, event, inspect, select)
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+                        Integer, Numeric, String, Text, UniqueConstraint, case, event, inspect,
+                        select)
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
+from mysite.database import admin_security_models  # noqa: F401
 from mysite.database import chat_models, selection_models  # noqa: F401
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
@@ -132,6 +134,7 @@ class Tour(Base):
     included: Mapped[str | None] = mapped_column(Text)
     excluded: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person
     )
@@ -152,10 +155,15 @@ class Tour(Base):
     )
     category: Mapped['TourCategory | None'] = relationship(back_populates='tours')
     images: Mapped[list['TourImage']] = relationship(
-        back_populates='tour', cascade='all, delete-orphan'
+        back_populates='tour',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TourImage.order, TourImage.id),
     )
+
     programs: Mapped[list['TourProgram']] = relationship(
-        back_populates='tour', cascade='all, delete-orphan'
+        back_populates='tour',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TourProgram.day_number, TourProgram.id),
     )
     translations: Mapped[list['TourTranslation']] = relationship(
         back_populates='tour', cascade='all, delete-orphan'
@@ -329,6 +337,7 @@ class HelicopterTour(LocalizedContent, Base):
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
     max_passengers: Mapped[int | None] = mapped_column(Integer)
     departure_location: Mapped[str | None] = mapped_column(String(255))
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     main_image: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -358,6 +367,7 @@ class Trekking(LocalizedContent, Base):
     route: Mapped[str | None] = mapped_column(Text)
     included: Mapped[str | None] = mapped_column(Text)
     requirements: Mapped[str | None] = mapped_column(Text)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person
@@ -373,10 +383,15 @@ class Trekking(LocalizedContent, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     images: Mapped[list['TrekkingImage']] = relationship(
-        back_populates='trekking', cascade='all, delete-orphan'
+        back_populates='trekking',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TrekkingImage.order, TrekkingImage.id),
     )
+
     programs: Mapped[list['TrekkingProgram']] = relationship(
-        back_populates='trekking', cascade='all, delete-orphan'
+        back_populates='trekking',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TrekkingProgram.day_number, TrekkingProgram.id),
     )
 
 
@@ -443,6 +458,18 @@ class TravelRequest(Base):
     __table_args__ = (UniqueConstraint('selection_id', name='uq_travel_requests_selection_id'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = column_property(
+        case(
+            (
+                select(chat_models.ChatBookingLink.id)
+                .where(chat_models.ChatBookingLink.request_id == id)
+                .correlate_except(chat_models.ChatBookingLink)
+                .exists(),
+                'chat',
+            ),
+            else_='site',
+        )
+    )
     client_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             'chat_clients.id', ondelete='SET NULL', name='fk_travel_requests_client_id_chat_clients'

@@ -2,7 +2,10 @@
 
 {% block tail %}
 {{ super() }}
-{% if request.url.path.endswith('/travel-request/list') or request.url.path.endswith('/chat-request/list') %}
+{% if request.session.get('admin_id') %}
+<form action="{{ url_for('admin:index') }}forget-device" method="post" class="m-3"><button type="submit" class="btn btn-link">Забыть этот браузер</button></form>
+{% endif %}
+{% if request.url.path.endswith('/travel-request/list') %}
 <script>
 (() => {
   let socket;

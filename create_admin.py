@@ -2,6 +2,8 @@ from getpass import getpass
 
 from pwdlib import PasswordHash
 
+from mysite.admin.enrollment import enroll_totp
+from mysite.api.admin import SECRET_KEY
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin
 
@@ -25,8 +27,11 @@ def create_admin():
         admin = Admin(
             username=username, hashed_password=password_hash.hash(password), is_active=True
         )
+        codes = enroll_totp(admin, SECRET_KEY)
         db.add(admin)
         db.commit()
+        print('Store these one-time recovery codes securely:')
+        print('\n'.join(codes))
         print('Админ түзүлдү')
 
 

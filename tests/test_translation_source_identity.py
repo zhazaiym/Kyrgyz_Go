@@ -12,9 +12,10 @@ from mysite.api.tour import get_localized_tour
 from mysite.database.db import SessionLocal
 from mysite.database.models import About, Tour
 from mysite.translations.content import (localized, manual_translation_changed,
-                                         manual_translation_needs_refresh, mark_manual_translations)
+                                         manual_translation_needs_refresh, mark_manual_translations,
+                                         release_stale_manual_translations)
 from mysite.translations.jobs import _translation_is_complete, translate_record
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, source_value_changed, translation_ready
 
 
 def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
@@ -26,7 +27,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 import hashlib
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, translation_ready, source_value_changed
 
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0013')
@@ -124,6 +125,85 @@ def test_translation_recovery_treats_none_as_missing():
     }
 
     assert not _translation_is_complete(translations, source)
+
+
+def test_translation_display_and_recovery_both_reject_whitespace():
+    source = {'title': 'A tour'}
+    translations = {
+        language: {'title': '   ', '_source_hashes': {'title': source_field_hash(source['title'])}}
+        for language in ('en', 'de', 'zh')
+    }
+
+    assert not _translation_is_complete(translations, source)
+
+
+def test_translation_comparison_normalizes_crlf():
+    assert source_field_hash('line one\r\nline two') == source_field_hash('line one\nline two')
+    assert not source_value_changed('line one\r\nline two', 'line one\nline two')
+
+
+def test_sqladmin_marks_only_changed_translation_fields_and_removes_empty_fields():
+    source = {'title': 'Current title', 'description': 'Current description'}
+    hashes = {field: source_field_hash(value) for field, value in source.items()}
+    existing = {
+        'en': {
+            'title': 'English title',
+            'description': 'English description',
+            '_source_hashes': hashes,
+            '_manual_fields': [],
+        },
+        'de': {
+            'title': 'Deutscher Titel',
+            '_source_hashes': {'title': hashes['title']},
+            '_manual_fields': [],
+        },
+    }
+    incoming = {
+        'en': {'title': 'Edited English title', 'description': 'English description'},
+        'de': {'title': 'Deutscher Titel'},
+    }
+
+    assert manual_translation_changed(incoming, existing)
+    updated = mark_manual_translations(incoming, source, existing)
+
+    assert updated['en']['_manual_fields'] == ['title']
+    assert updated['de']['_manual_fields'] == []
+    assert updated['en']['description'] == 'English description'
+
+    incoming['en']['title'] = ''
+    updated = mark_manual_translations(incoming, source, updated)
+    assert 'title' not in updated['en']
+    assert 'title' not in updated['en']['_source_hashes']
+    assert 'title' not in updated['en']['_manual_fields']
+
+
+def test_old_sqladmin_payload_does_not_mark_stale_translation_as_current():
+    old_source = {'title': 'Before edit', 'description': None}
+    new_source = {'title': 'After edit', 'description': None}
+    existing = mark_manual_translations({'en': {'title': 'Translation of old title'}}, old_source)
+
+    assert not manual_translation_changed(existing, existing)
+    unchanged = mark_manual_translations(existing, new_source, existing)
+    released = release_stale_manual_translations(unchanged, new_source)
+    assert released['en']['_source_hashes']['title'] == source_field_hash('Before edit')
+    assert released['en']['_manual_fields'] == []
+
+
+def test_sqladmin_source_edit_does_not_rehash_unchanged_old_translation():
+    from mysite.admin.views import AboutAdmin
+
+    old_source = {'title': 'Before edit', 'description': None}
+    new_source = {'title': 'After edit', 'description': None}
+    existing = mark_manual_translations({'en': {'title': 'Translation of old title'}}, old_source)
+    model = About(title=old_source['title'], description=None, translations=existing)
+    data = {**new_source, 'translations': existing}
+    request = SimpleNamespace(state=SimpleNamespace())
+
+    asyncio.run(AboutAdmin().on_model_change(data, model, False, request))
+
+    assert request.state.catalogue_source == new_source
+    assert data['translations']['en']['_source_hashes']['title'] == source_field_hash('Before edit')
+    assert data['translations']['en']['_manual_fields'] == []
 
 
 def test_stale_translation_job_does_not_overwrite_manual_translation():
@@ -366,7 +446,7 @@ import os
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, translation_ready, source_value_changed
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0015')
 engine = create_engine(os.environ['DATABASE_URL'])

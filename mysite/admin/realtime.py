@@ -9,8 +9,8 @@ from urllib.parse import urlsplit
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from mysite.api.admin_sessions import sql_session_admin
 from mysite.database.db import SessionLocal
-from mysite.database.models import Admin
 
 logger = logging.getLogger(__name__)
 _clients = set()
@@ -37,9 +37,9 @@ def _enqueue(queue: asyncio.Queue, event: dict) -> None:
     queue.put_nowait(event)
 
 
-def _eligible_admin(admin_id) -> bool:
+def _eligible_admin(session) -> bool:
     with SessionLocal() as db:
-        admin = db.get(Admin, admin_id)
+        admin = sql_session_admin(db, session)
         return bool(admin and admin.is_active and admin.role in {'owner', 'manager'})
 
 
@@ -56,7 +56,7 @@ async def admin_requests_websocket(websocket: WebSocket) -> None:
     if (
         admin_id is None
         or not session.get('admin_mfa')
-        or not await run_in_threadpool(_eligible_admin, admin_id)
+        or not await run_in_threadpool(_eligible_admin, session)
     ):
         await websocket.close(code=1008)
         return
@@ -70,12 +70,22 @@ async def admin_requests_websocket(websocket: WebSocket) -> None:
 
     async def deliver_events():
         while True:
-            await websocket.send_json(await queue.get())
+            event = await queue.get()
+            if not await run_in_threadpool(_eligible_admin, session):
+                await websocket.close(code=1008)
+                return
+            await websocket.send_json(event)
 
     sender = asyncio.create_task(deliver_events())
     try:
         while True:
-            await websocket.receive()
+            message = await websocket.receive()
+
+            if message['type'] == 'websocket.disconnect':
+                break
+            if not await run_in_threadpool(_eligible_admin, session):
+                await websocket.close(code=1008)
+                break
     except WebSocketDisconnect:
         pass
     except Exception:

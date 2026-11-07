@@ -19,45 +19,29 @@ for local Windows development; it must be running to build or start containers.
 ### Environment and database
 
 On a new server, copy `.env.example` to `.env`. Keep your existing `.env` if
-already configured. Set a long random `SECRET_KEY` and real database credentials.
+already configured. Set a random `SECRET_KEY` of at least 32 bytes and real database credentials.
 The image excludes `.env` and local database files; Compose injects the runtime
 environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
-Admin sessions do not expire on a timer; the login is cleared by the admin
-logout action. Browsers may discard a session cookie when the browser closes.
+Admin session lifetimes, refresh tokens and trusted browsers are described in
+«Sessions and trusted browsers» below.
 
 The admin panel and admin API require a password and TOTP MFA, or a single-use
-recovery code. For an existing deployment, apply the MFA migration during a
-maintenance window, enroll every active admin from a trusted local shell, and
-only then reopen admin access:
-
-```powershell
-python -m scripts.enroll_admin_mfa admin-username
-```
-
-The command displays a one-time authenticator secret, verifies a current code,
-then stores the TOTP secret encrypted with a key derived from `SECRET_KEY` and
-stores only hashes of recovery codes. Keep `SECRET_KEY` stable; rotating it
-requires re-enrolling administrators. The login limiter permits at most
-**20 attempts/minute per source IP** and **5 attempts/minute for each
+recovery code; rollout, enrollment and reset are in «Backend-first MFA rollout»
+below. TOTP secrets are encrypted with a key derived from `SECRET_KEY`, and refresh
+tokens are signed with it: keep `SECRET_KEY` stable, because rotating it signs
+everyone out and requires re-enrolling administrators. The login limiter permits
+at most **20 attempts/minute per source IP** and **5 attempts/minute for each
 account/IP pair**. Use HTTPS in production.
-
-If an enrolled account loses its device and recovery codes, an active owner can
-authorize a reset from a trusted shell with
-`python -m scripts.enroll_admin_mfa target-username --reset-by owner-username`;
-the command verifies the owner's password and MFA before replacing the target's
-MFA secret.
 
 There are three server-enforced roles: `owner` manages all data and admins,
 `manager` manages travel requests and selections, and `catalog_editor` manages
 catalogue and public content. Existing accounts migrate as `owner`; assign
 least-privilege roles through SQLAdmin after an owner has enrolled.
-The trusted deployment helper also requires a valid `ADMIN_ALLOWED_IPS` value
-in the resolved server Compose configuration. The application middleware
-currently does not enforce that value at request time; use a firewall or
-reverse-proxy rule if admin routes must be restricted by network.
+The application does not restrict admin routes by network; use a firewall or
+reverse-proxy rule if that is required.
 
 ### About page content
 
@@ -83,9 +67,6 @@ the database transaction, replaces the rows atomically, and queues translations
 to English, German, and Chinese using the existing worker. No schema migration
 is needed.
 
-The deployment helper carries the existing Compose environment into its
-generated `/home/ubuntu/kyrgyzgo-deploy.override.yml`.
-
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -102,13 +83,13 @@ Database addressing:
 Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
 
 ```dotenv
-CORS_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
-CHAT_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
-FRONTEND_RESET_URL=https://tours-app-teal.vercel.app/ru/reset-password
+CORS_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
+CHAT_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
+FRONTEND_RESET_URL=https://kerben-travel.vercel.app/ru/reset-password
 ```
 
-Multiple origins are separated by `;`. The example file includes the admin
-Vercel origin and localhost ports 3000 and 5173. Add the production site origins
+Multiple origins are separated by `;`. The example file includes the production
+site origin and localhost ports 3000 and 5173. Add the production site origins
 on the server. HTTP CORS accepts the `Authorization` header and preflight requests.
 Chat WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`. The admin
 request notification socket stays on the same origin as SQLAdmin and requires its
@@ -122,52 +103,27 @@ and certificate, point a DNS A record for a domain you control to this server an
 `API_DOMAIN` to that hostname. Keep enough free disk space for Caddy's certificate
 renewal and take a verified PostgreSQL backup before applying migrations.
 
-Back up an existing database before deployment. Every API container start runs
-`alembic upgrade head` and starts Uvicorn only if migrations succeed. A database
-created outside Alembic needs its schema reviewed and baselined first; do not
-blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
-migrations to a separate deployment step.
-
-GitHub Actions runs checks and tests by default. An opt-in `deploy` job is
-prepared locally but remains disabled unless the repository variable
-`DEPLOY_ENABLED` is exactly `true`. It runs only after successful tests on a
-push to `main`; see [automatic deployment](docs/automatic-deployment.md) for
-the required target, verified host keys and secrets. No production rollout
-has been confirmed by the local checks.
-Production updates can also be started manually by an administrator using
-`scripts/deploy.ps1` from a workstation or the server's documented Docker
-commands. The trusted server-side deploy script compares the current database
-revision with the candidate source and reports `migration_required` before
-replacing the running image if they differ. Back up the database, review and
-apply the required migrations from the candidate source with
-`python -m alembic upgrade head`, then deploy the matching image. The current
-source migration head is `20261107_0024`; revisions `20261030_0018` through
-`20261030_0020` replace and repopulate FAQ content, `20261103_0021` adds tour
-reviews, `20261103_0022` adds client-owned travel requests, `20261107_0023`
-adds admin MFA/roles, and `20261107_0024` persists translation jobs. After
-applying `20261107_0023`, enroll active admins using the command above before
-reopening admin access. Do not assume the production
-database is at a particular revision; check it before deployment. Although the
-Docker image runs `alembic upgrade head` on startup, the guarded production
-deploy flow requires schema changes to be applied as a backed-up maintenance
-step first.
-The opt-in job requires fresh `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` secrets
-in the `production` environment and a repository variable `DEPLOY_TARGET`.
-Do not reuse historical server settings without verifying them. Keep
-`DEPLOY_ENABLED` unset until the actual server and trusted helper are ready.
-Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
-Activate the matching image after the migration and before reopening catalogue
-writes.
+Every API container start runs `alembic upgrade head` and starts Uvicorn only if
+migrations succeed. A database created outside Alembic needs its schema reviewed
+and baselined first; do not blindly stamp a populated PostgreSQL database.
+PostgreSQL is required in all environments. Do not scale this service to
+multiple replicas without moving migrations to a separate deployment step.
 
 ### Uploaded photos
 
 Admins upload JPEG, PNG or WEBP photos from the SQLAdmin forms or through
 `POST /admin/media/`. The API stores them as WEBP in the `media` Compose volume
-(`/app/media`, override with `MEDIA_ROOT`) and serves them from `/media/`; the
-database keeps only the returned absolute URL. Back up the `media` volume together
-with PostgreSQL: a database restore without it leaves broken photo links. URLs
-include the API host, so a move to a new domain needs the stored URLs rewritten.
-`MAX_IMAGE_UPLOAD_BYTES` limits one upload (default 10 MB).
+(`/app/media`, override with `MEDIA_ROOT`); `MAX_IMAGE_UPLOAD_BYTES` limits one
+upload (default 10 MB). Back up the `media` volume together with PostgreSQL: a
+database restore without it leaves broken photo links.
+
+Caddy serves the media volume read only at `/media/` with immutable one-year
+caching. Compose disables Uvicorn's own media mount; `.env.example` enables it
+for local development without Caddy with `SERVE_MEDIA_LOCALLY=true`.
+
+Uploads return `/media/YYYY/MM/<uuid>.webp`. Resolve these paths against the API
+base URL. A migration removes old hosts from `/media/` references in every image
+column. External catalogue images keep their external sources.
 
 ### Start and verify
 
@@ -211,8 +167,9 @@ Create an administrator interactively after the API starts:
 docker compose exec api python create_admin.py
 ```
 
-For manual updates, back up PostgreSQL, update the source, then run
-`docker compose up --build -d` when the server can handle a build. Stop the API with `docker compose down`.
+Production updates itself from `main` (see «Как обновляется прод»). On another
+server, back up PostgreSQL, update the source, then run `docker compose up --build -d`.
+Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
 requires an external PostgreSQL database.
 
@@ -220,10 +177,10 @@ requires an external PostgreSQL database.
 
 Alternatively, use the included Caddy proxy with automatic HTTPS:
 
-1. Use your public IP (currently `13.53.40.37`), or point a domain's DNS A/AAAA
+1. Use your public IP (currently `13.49.104.87`), or point a domain's DNS A/AAAA
    records to the server. Allow inbound TCP ports 80 and 443. Stop any other
    service using these ports after checking how the current API is hosted.
-2. Set `API_DOMAIN=13.53.40.37` (or your domain) and keep
+2. Set `API_DOMAIN=13.49.104.87` (or your domain) and keep
    `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
@@ -233,7 +190,7 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.
-4. Verify `https://13.53.40.37/` and `/contacts/` without authorization, using your
+4. Verify `https://13.49.104.87/` and `/contacts/` without authorization, using your
    domain instead if configured. Check the certificate without bypassing TLS verification.
 
 The single `docker-compose.yml` includes an optional `https` profile. Without
@@ -241,6 +198,8 @@ that profile, only the API starts. With it, Caddy exposes ports 80/443 and
 persists TLS certificates in Docker volumes; the API remains bound to localhost.
 Continue to use `--profile https` for updates, or set `COMPOSE_PROFILES=https` in
 the server `.env` to use plain `docker compose up --build -d`.
+Compose pins `caddy:2.11.9-alpine` and refuses to start without `API_DOMAIN`.
+Caddy also serves `/media/` read-only from the media volume.
 Caddy 2.10.1+ obtains and renews short-lived Let's Encrypt certificates
 for public IPs and domains. The Caddyfile sets a default SNI for clients connecting
 by IP. Keep the certificate volumes and proxy running so renewal is automatic.
@@ -250,8 +209,8 @@ See the [Caddy HTTPS guide](https://caddyserver.com/docs/quick-starts/https) and
 Public catalogue GETs accept `?lang=ru|en|de|zh`; the default is Russian.
 Translations are generated on content changes through the API or SQLAdmin and
 stored in the database. If generation fails or a field has no translation, GET
-returns the original text. Translation jobs are stored in PostgreSQL and retry
-transient failures up to five times with backoff; stale source text is discarded.
+returns the original text. Translation jobs are stored in PostgreSQL; retries are described in
+«Translation recovery» below.
 The SQLAdmin `translations` JSON field also supports
 manual translations, for example `{"en":{"question":"Question?","answer":"Answer."}}`.
 Existing records need to be saved with changed source text or supplied manual
@@ -287,6 +246,8 @@ location / {
 Configure CORS in the API; avoid adding duplicate CORS headers in Nginx.
 Validate Nginx configuration with `nginx -t` before reloading it. The domain
 and certificate must be configured on the target server before public use.
+Caddy normally serves `/media/`. With a host Nginx either add an equivalent
+`location /media/` for the media volume or set `SERVE_MEDIA_LOCALLY=true`.
 
 ### Frontend connection
 
@@ -301,7 +262,8 @@ remain separate and cannot be replaced with a customer token.
 Use `https://your-api.example` as the frontend API base URL and
 `wss://your-api.example/ws/chat/{session_id}` for chat WebSockets. OpenAPI is
 available at `/openapi.json` and interactive documentation at `/docs`.
-For protected HTTP endpoints send `Authorization: Bearer <access_token>`.
+Photo fields contain relative `/media/...` paths; resolve them against the API
+base URL. For protected HTTP endpoints send `Authorization: Bearer <access_token>`.
 For chat WebSockets, send `{"type":"auth","token":"<access_token>"}`
 as the first message after opening the connection.
 
@@ -318,6 +280,168 @@ Expect HTTP 200 and `Access-Control-Allow-Origin` equal to the frontend origin.
 For direct local network development, set `API_BIND_HOST=0.0.0.0` explicitly
 and restrict access with your firewall. Change `API_PORT` if port 8000 is busy.
 
+## Как обновляется прод
+
+Прод — `13.49.104.87` (проект в `~/Kyrgyz_Go`, контейнеры `kyrgyz_go-api-1`,
+`kyrgyz_go-postgres-1`, `kyrgyz_go-https-1`). Сервер обновляет себя сам; GitHub
+Actions только проверяет код и не имеет доступа к серверу (секретов в GitHub нет,
+это проверяет `tests/test_second_review.py::test_no_github_actions_job_can_deploy_to_production`).
+
+**`main` = прод.** Каждый коммит в `main` с зелёным CI через 2-3 минуты стоит на
+сервере вместе с миграциями. Незаконченное — в ветку и PR.
+
+Автодеплой (`/usr/local/bin/kyrgyzgo-autodeploy`, таймер
+`kyrgyzgo-autodeploy.timer`, ведёт владелец сервера):
+
+1. Раз в 2 минуты `git fetch origin main`.
+2. Для нового коммита читает check-runs через публичный API GitHub. Проверки ещё
+   идут — ждёт. Упали — коммит навсегда в пропущенных; его изменения принесёт
+   следующий зелёный коммит.
+3. Зелёный: `pg_dump` в `~/kyrgyzgo-backups` (хранится 14 штук), текущий образ
+   помечается `kyrgyzgo-api:prev`.
+4. `git reset --hard`, `docker compose build api`, `docker compose up -d --wait`.
+   Контейнер при старте сам выполняет `alembic upgrade head`.
+5. Не поднялось — код и образ откатываются на `prev`. **База не откатывается.**
+
+Команды владельца сервера:
+
+| Задача | Команда |
+|---|---|
+| Журнал автодеплоя | `journalctl -u kyrgyzgo-autodeploy -f` |
+| Какая версия стоит | `git -C ~/Kyrgyz_Go log -1 --oneline` |
+| Пауза / возобновление | `sudo systemctl stop kyrgyzgo-autodeploy.timer` / `sudo systemctl start kyrgyzgo-autodeploy.timer` |
+| Повторить пропущенный коммит | `rm ~/.local/state/kyrgyzgo-autodeploy/skip` |
+| Откат кода | revert-коммит в `main` (сервер поставит его как обычный) |
+| Восстановление базы | `docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < дамп` |
+| Лог ответов чата | `docker logs kyrgyz_go-api-1 \| grep "AI response"` |
+
+`docker compose restart` не перечитывает `.env`, после правки `.env` нужен
+`docker compose up -d api`. Все скрипты из `scripts/` входят в образ: `docker compose exec api python -m scripts.<имя>`.
+`docker compose run api` не подходит: у `api` фиксированный IP в сети `proxy`.
+
+## Administrators: MFA, sessions and trusted browsers
+
+### Backend-first MFA rollout
+
+Migrations add tables without enabling enforcement. `ADMIN_MFA_REQUIRED=false`
+allows password login only for accounts that have not been enrolled. An already
+enrolled administrator still needs a code or a valid trusted browser.
+
+1. Deploy the backend; normal container startup applies migrations.
+2. From the server's project directory enroll **every** active administrator:
+
+   ```sh
+   docker compose exec api python -m scripts.enroll_admin_mfa <username>
+   ```
+
+   Verify the authenticator code and store the one-time recovery codes securely.
+   The script is in the image and uses the running API's database and secret key.
+   Do not use `docker compose run`: a second API container conflicts with the
+   service's fixed proxy address.
+3. Set `ADMIN_MFA_REQUIRED=true` only after enrollment is complete, then recreate
+   the API through the normal server deployment procedure.
+
+Emergency recovery for an older image missing the script:
+
+```sh
+docker compose cp scripts/enroll_admin_mfa.py api:/app/scripts/
+docker compose exec api python -m scripts.enroll_admin_mfa <username>
+```
+
+`docker compose exec api python create_admin.py` enrolls new administrators before
+saving the account. Resetting an enrolled administrator requires owner approval:
+
+```sh
+docker compose exec api python -m scripts.enroll_admin_mfa <username> --reset-by <owner>
+```
+
+Password changes, deactivation and MFA enrollment/reset revoke all sessions and
+trusted devices in the same transaction.
+
+### Sessions and trusted browsers
+
+Password is always required. Code login with `remember_device=true` issues a
+30-day device token; at most ten devices are kept, revoking the oldest first.
+API login preserves the existing response fields and adds refresh metadata.
+Refresh rotates tokens, accepts the previous token for 30 seconds, expires after
+30 unused days and has an absolute 90-day limit. Only token hashes are stored.
+Authenticated refresh envelopes and keyed rotation reproduce the same replacement
+pair across workers during the grace period without recoverable tokens in the DB.
+Reusing an older issued refresh outside that window revokes its session.
+
+SQLAdmin sessions expire after seven idle days, renew on active HTTP use every
+ten minutes and require login after 30 days. Logout revokes the session and keeps
+browser trust. **Забыть этот браузер** revokes trust separately. Owner-only SQLAdmin
+sections list all sessions/devices and allow revocation; API endpoints list/revoke
+only the caller's own records.
+
+| Setting | Backend rollout default |
+| --- | --- |
+| `ADMIN_MFA_REQUIRED` | `false` until all accounts are enrolled |
+| `ADMIN_ACCESS_TOKEN_MINUTES` | `60` until the admin frontend supports refresh |
+| `ADMIN_REFRESH_DAYS` | `30` |
+| `ADMIN_SESSION_HOURS` | `168` |
+| `ADMIN_TRUSTED_DEVICE_DAYS` | `30` |
+| `ADMIN_MAX_TRUSTED_DEVICES` | `10` |
+| `GEMINI_REQUESTS_PER_MINUTE` | `10` shared translation calls |
+
+Set `ADMIN_ACCESS_TOKEN_MINUTES=15` after the new Vercel frontend ships. Keep 60
+during this backend-only rollout. Notify the reviewer of these settings before
+merging. This change does not edit the production `.env` or operate the server.
+
+## Translation recovery
+
+Temporary `ai_unavailable`, `ai_rate_limit` and `ai_timeout` errors remain pending
+with exponential backoff capped at one hour. Retry delays do not occupy workers.
+Due persisted jobs are dispatched continuously; catalogue recovery runs at startup
+and every 15 minutes. Old failed rows with a temporary code, or the old ambiguous
+`failed` diagnostic, automatically become eligible again. Permanent invalid or
+blocked responses stop after three attempts until the source changes. Logs and
+`translation_jobs.last_error` retain the error code.
+
+Translation quota is reserved atomically in PostgreSQL across workers before a
+provider call. Set `GEMINI_REQUESTS_PER_MINUTE` to the actual key's quota. After
+deploying recovery, no manual SQL reset is needed when provider access returns.
+
+## Перед мержем в main
+
+- Миграции только совместимые: добавлять таблицы и nullable-колонки (или колонки
+  со значением по умолчанию); удалять и переименовывать — отдельным релизом, когда
+  код уже не читает старое. Миграция применится сама сразу после мержа, окна
+  обслуживания не будет.
+- Всё, что требует ручного шага на сервере (новая настройка, запись в базе,
+  внешний сервис), — за флагом окружения, выключенным по умолчанию.
+- Новая переменная окружения — со значением по умолчанию и строкой в
+  `.env.example`; приложение стартует без неё. Владельцу сервера сказать заранее.
+- Скрипты, нужные на проде, — в образ (Dockerfile) и с тестом.
+- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы, SMTP) — только в серверном
+  `.env`: не в репо, GitHub, чатах, логах и тестах.
+- Локально прогнать те же проверки, что CI (`.github/workflows/ci.yml`).
+
+Голова миграций одна, а номера ревизий не повторяются: это проверяет
+`tests/unit/test_migration_graph.py`. Новую миграцию нумеровать следующей после
+текущей головы (`python -m alembic heads`), а если параллельная ветка уже
+заняла номер, перенумеровать свою перед мержем.
+
+### Checks before a PR
+
+For a fictional local catalogue, use a loopback PostgreSQL database named
+`kyrgyzgo_dev` (or `kyrgyzgo_dev_*`), apply migrations and run
+`python -m scripts.seed_dev`. The command is repeatable and refuses remote or
+non-development databases. It creates no client accounts and imports no production data.
+
+Use a clean checkout without `.env` and disposable PostgreSQL test databases:
+
+```sh
+python -m scripts.format_code --check
+python -m scripts.run_tests -q
+python -m pytest --confcutdir=tests/ml tests/ml -q
+python -m pytest --confcutdir=tests/unit tests/unit -q
+```
+
+CI also checks syntax, Ruff, security and dependencies, builds the runtime image
+and executes `python -m scripts.enroll_admin_mfa --help` inside that image.
+Post-deployment verification is performed by the server operator.
 ## Manual deployment without Docker
 
 The application is a FastAPI backend. Run the commands below from the project
@@ -371,6 +495,7 @@ The same administrator can use the bearer-token API and the SQLAdmin login.
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+Without Caddy set `SERVE_MEDIA_LOCALLY=true` so the API serves `/media/` itself.
 Put the service behind an HTTPS reverse proxy and keep `.env` and PostgreSQL
 backups outside publicly served directories. The API
 documentation is available at `/docs`.
@@ -390,10 +515,12 @@ python -m scripts.run_tests -q
 ```
 
 `DATABASE_URL` is mandatory. Unsupported database backends fail at startup.
-# Monitoring
+## Monitoring
 
 The Prometheus text endpoint is `GET /metrics`. It returns 404 unless
 `METRICS_BEARER_TOKEN` is set to a random value of at least 32 characters.
 Send it as `Authorization: Bearer <token>` and keep the token in the deployment
 secret store. Metrics contain bounded operation/outcome labels and durations;
 they do not include prompts, message text, account names, or session ids.
+Metrics are produced with `prometheus_client`; durations are recorded per HTTP
+request, not per SQL statement.

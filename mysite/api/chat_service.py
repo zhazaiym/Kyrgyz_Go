@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import re
 from contextlib import asynccontextmanager
 from datetime import date
 from functools import partial
@@ -16,6 +15,7 @@ from mysite.admin.realtime import publish_new_request
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
+from mysite.api.errors import error_detail
 from mysite.api.observability import record_booking_conflict
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
@@ -25,7 +25,9 @@ from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSessio
 from mysite.database.db import SessionLocal
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.selection_models import TravelSelection
+from mysite.database.traveler_validation import validate_travelers_count
 from mysite.dates import bishkek_today
+from mysite.phone_validation import normalize_phone
 
 _locks = {}
 _lock_users = {}
@@ -69,7 +71,7 @@ def _preview_summary(db, preview):
 def owned(db, session_id, client_id):
     session = db.get(ChatSession, session_id)
     if not session or session.client_id != client_id:
-        raise HTTPException(404, 'Беседа не найдена')
+        raise HTTPException(404, error_detail('not_found'))
     return session
 
 
@@ -82,9 +84,7 @@ def advance_message_version(db, session):
     )
     if updated != 1:
         db.rollback()
-        raise HTTPException(
-            409, 'Чат изменился в другом запросе. Обновите историю и повторите сообщение.'
-        )
+        raise HTTPException(409, error_detail('conflict'))
     session.message_version = current_version + 1
 
 
@@ -149,7 +149,7 @@ def _prepare_message(session_id, client_id, token, message):
     with SessionLocal() as db:
         c = client_by_token(db, token)
         if c.id != client_id:
-            raise HTTPException(401, 'Требуется повторный вход')
+            raise HTTPException(401, error_detail('authentication_required'))
         s = owned(db, session_id, client_id)
         if rejection_allowed(s.stage, message):
             advance_message_version(db, s)
@@ -241,13 +241,11 @@ def _save_message_response(
     with SessionLocal() as db:
         c = client_by_token(db, token)
         if c.id != client_id:
-            raise HTTPException(401, 'Требуется повторный вход')
+            raise HTTPException(401, error_detail('authentication_required'))
         s = owned(db, session_id, client_id)
         if s.message_version != expected_message_version:
             discard_pending_message(db, s.id, user_message_id)
-            raise HTTPException(
-                409, 'Чат изменился в другом запросе. Обновите историю и повторите сообщение.'
-            )
+            raise HTTPException(409, error_detail('conflict'))
         try:
             advance_message_version(db, s)
         except HTTPException:
@@ -285,7 +283,7 @@ def _save_message_response(
             else:
                 s.stage = 'collecting'
         if not answer.strip():
-            raise HTTPException(502, 'AI returned an empty response')
+            raise HTTPException(502, error_detail('service_unavailable'))
         db.add(
             ChatMessage(
                 session_id=s.id,
@@ -327,13 +325,13 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
                 or not isinstance(updated, dict)
                 or type(intent) is not bool
             ):
-                raise HTTPException(502, 'AI returned invalid response data')
+                raise HTTPException(502, error_detail('service_unavailable'))
             try:
                 state_bytes = json.dumps(updated, allow_nan=False).encode('utf-8')
             except (ValueError, TypeError) as exc:
-                raise HTTPException(502, 'AI returned invalid state data') from exc
+                raise HTTPException(502, error_detail('service_unavailable')) from exc
             if len(state_bytes) > 32_768:
-                raise HTTPException(502, 'AI state exceeds the supported size')
+                raise HTTPException(502, error_detail('service_unavailable'))
         result, summary = await _database_call(
             _save_message_response,
             session_id,
@@ -369,14 +367,13 @@ def build_preview(db, s):
         missing.append('valid_email')
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         missing.append('client_name')
-    if (
-        not isinstance(phone, str)
-        or len(phone) > 50
-        or not re.fullmatch(r'\+?[0-9\s().-]+', phone.strip())
-        or not 7 <= len(re.sub(r'[^0-9]', '', phone)) <= 15
-    ):
+    try:
+        state['phone'] = normalize_phone(phone)
+    except ValueError:
         missing.append('phone')
-    if type(people) is not int or not 1 <= people <= 2147483647:
+    try:
+        validate_travelers_count(people)
+    except ValueError:
         missing.append('people_count')
     if duration is not None and (type(duration) is not int or not 1 <= duration <= 2147483647):
         missing.append('duration_days')
@@ -395,16 +392,12 @@ def build_preview(db, s):
             missing.append('valid_travel_date')
     if state.get('tour_id') and 'valid_tour' not in unavailable:
         tour = db.get(Tour, state['tour_id'])
-        if (
-            tour
-            and tour.is_active
-            and 'people_count' not in missing
-            and (
-                people < tour.min_people
-                or (tour.max_people is not None and people > tour.max_people)
-            )
-        ):
-            missing.append('people_count')
+
+        if tour and tour.is_active and 'people_count' not in missing:
+            try:
+                validate_travelers_count(people, tour)
+            except ValueError:
+                missing.append('people_count')
     return {
         'status': 'draft',
         'session_id': s.id,
@@ -412,7 +405,7 @@ def build_preview(db, s):
         'data': state,
         'missing_fields': missing,
         'complete': not missing,
-        'can_confirm': s.stage == 'awaiting_confirmation' and not missing,
+        'can_confirm': not missing and s.stage == 'awaiting_confirmation',
     }
 
 
@@ -446,23 +439,30 @@ def recover_confirmation(db, session, message=None):
 
 def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     if not confirmed:
-        raise HTTPException(400, 'Необходимо явное подтверждение')
+        raise HTTPException(400, error_detail('invalid_request'))
+
     existing = (
         db.query(ChatBookingLink)
         .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
         .first()
     )
+
     if existing:
         return already_submitted(existing.request_id, client_id)
+
     if s.stage != 'awaiting_confirmation':
-        raise HTTPException(409, 'Сначала получите полную сводку заявки в чате')
+        raise HTTPException(409, error_detail('conflict'))
+
     preview = build_preview(db, s)
+
     if revision != s.revision:
         record_booking_conflict()
-        raise HTTPException(409, 'Данные изменились, запросите новый preview')
+        raise HTTPException(409, error_detail('conflict'))
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
+
     st = preview['data']
+
     selection = (
         db.query(TravelSelection)
         .filter(TravelSelection.session_id == s.id)
@@ -475,43 +475,51 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         'completed',
     ):
         record_booking_conflict()
-        raise HTTPException(409, 'Подборка уже отменена или завершена')
+        raise HTTPException(409, error_detail('conflict'))
     try:
         advance_message_version(db, s)
     except HTTPException as exc:
         if exc.status_code != 409:
             raise
+
         existing = (
             db.query(ChatBookingLink)
             .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
             .first()
         )
+
         if existing:
             return already_submitted(existing.request_id, client_id)
         record_booking_conflict()
         raise
+
     tour_note = ''
     destination = st.get('destination')
+
     if st.get('tour_id'):
-        t = db.get(Tour, st['tour_id'])
-        tour_note = f'Тур #{t.id}: {t.title}. '
-        destination = t.title
+        tour = db.get(Tour, st['tour_id'])
+        tour_note = f'Тур #{tour.id}: {tour.title}. '
+        destination = tour.title
+
     notes = (
         f'Chat Client: KG-{client_id:06d}; session: {s.id}. '
         + tour_note
         + f'Язык общения: {st.get("language") or "не указан"}. '
-        + f'Бюджет: {st.get("budget") or "не указан"}. Пожелания: {st.get("notes") or "нет"}.'
+        + f'Бюджет: {st.get("budget") or "не указан"}. '
+        + f'Пожелания: {st.get("notes") or "нет"}.'
     )
+
     if st['selected_services']:
         notes += '\nSelected services: ' + '; '.join(
             f'{item["kind"]} #{item["id"]}: {item["name"]}' for item in st['selected_services']
         )
+
     obj = TravelRequest(
         client_id=client_id,
         name=st['client_name'],
         phone=st['phone'],
         email=st.get('email'),
-        travel_date=date.fromisoformat(st['travel_date']) if st.get('travel_date') else None,
+        travel_date=(date.fromisoformat(st['travel_date']) if st.get('travel_date') else None),
         duration_days=st.get('duration_days'),
         travelers_count=st['people_count'],
         destination=destination,
@@ -519,30 +527,38 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         selected_services=st['selected_services'],
         status=RequestStatusChoices.new,
     )
+
     try:
         db.add(obj)
         db.flush()
+
+        request_id = obj.id
+
         db.add(
             ChatBookingLink(
-                client_id=client_id, session_id=s.id, request_id=obj.id, revision=s.revision
+                client_id=client_id, session_id=s.id, request_id=request_id, revision=s.revision
             )
         )
+
         s.stage = 'submitted'
+
         if selection:
             selection.status = 'in_progress'
         db.commit()
         publish_new_request(obj.id)
     except IntegrityError:
         db.rollback()
+
         existing = (
             db.query(ChatBookingLink)
             .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
             .first()
         )
+
         if existing:
             return already_submitted(existing.request_id, client_id)
         record_booking_conflict()
-        raise HTTPException(409, 'Конфликт подтверждения заявки')
+        raise HTTPException(409, error_detail('conflict'))
     return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 
 
@@ -550,7 +566,7 @@ def _confirm_booking_for_client(session_id, client_id, token, revision, confirme
     with SessionLocal() as db:
         client = client_by_token(db, token)
         if client.id != client_id:
-            raise HTTPException(401, 'Требуется повторный вход')
+            raise HTTPException(401, error_detail('authentication_required'))
         session = owned(db, session_id, client_id)
         return confirm_booking(db, session, client_id, revision, confirmed)
 
@@ -565,10 +581,10 @@ async def confirm_booking_serialized(session_id, client_id, token, revision, con
 def _remove_service(session_id, client_id, token, kind):
     with SessionLocal() as db:
         if client_by_token(db, token).id != client_id:
-            raise HTTPException(401, 'Authentication required')
+            raise HTTPException(401, error_detail('authentication_required'))
         session = owned(db, session_id, client_id)
         if session.stage == 'submitted':
-            raise HTTPException(409, 'Submitted requests cannot be edited')
+            raise HTTPException(409, error_detail('conflict'))
         selection = (
             db.query(TravelSelection)
             .filter_by(session_id=session_id, client_id=client_id)
@@ -579,22 +595,23 @@ def _remove_service(session_id, client_id, token, kind):
             'completed',
             'cancelled',
         }:
-            raise HTTPException(409, 'Closed selections cannot be edited')
+            raise HTTPException(409, error_detail('conflict'))
         advance_message_version(db, session)
         state = dict(session.state or {})
         state.pop(f'{kind}_id', None)
         session.state = state
         session.revision += 1
-        session.stage = 'collecting'
+        session.stage = 'awaiting_confirmation'
         if selection:
             setattr(selection, f'{kind}_id', None)
         preview = build_preview(db, session)
+
         if preview['complete']:
-            session.stage = 'awaiting_confirmation'
-            preview = build_preview(db, session)
             answer = _preview_summary(db, preview)
         else:
+            session.stage = 'collecting'
             answer = booking_text(state)['service_removed']
+            preview['can_confirm'] = False
         db.add(ChatMessage(session_id=session_id, role='assistant', content=answer))
         db.commit()
         return {
@@ -608,6 +625,6 @@ def _remove_service(session_id, client_id, token, kind):
 
 async def remove_optional_service(session_id, client_id, token, kind):
     if kind not in {'hotel', 'transport'}:
-        raise HTTPException(422, 'Only optional services can be removed')
+        raise HTTPException(422, error_detail('validation_error'))
     async with session_lock(session_id):
         return await _database_call(_remove_service, session_id, client_id, token, kind)

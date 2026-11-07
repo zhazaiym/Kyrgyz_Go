@@ -6,6 +6,7 @@ services:
       - .env
     environment:
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.30.240.2}
+      SERVE_MEDIA_LOCALLY: ${SERVE_MEDIA_LOCALLY:-false}
     networks:
       default: {}
       proxy:
@@ -34,11 +35,11 @@ services:
         max-file: "3"
 
   https:
-    image: caddy:2-alpine
+    image: caddy:2.11.9-alpine
     profiles: ["https"]
     restart: unless-stopped
     environment:
-      API_DOMAIN: ${API_DOMAIN:-13.53.40.37}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
     networks:
       proxy:
         ipv4_address: ${CADDY_PROXY_IP:-172.30.240.2}
@@ -47,6 +48,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - media:/srv/media:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

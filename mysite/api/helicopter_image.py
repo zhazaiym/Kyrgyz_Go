@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import HelicopterImage, HelicopterTour
@@ -13,7 +14,9 @@ helicopter_image_router = APIRouter(prefix='/helicopter-images', tags=['Helicopt
 
 
 @helicopter_image_router.post(
-    '/', response_model=HelicopterImageOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=HelicopterImageOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_helicopter_image(
     helicopter_image: HelicopterImageInputSchema, db: Session = Depends(get_db)
@@ -21,7 +24,7 @@ def create_helicopter_image(
     helicopter_db = db.get(HelicopterTour, helicopter_image.helicopter_id)
 
     if helicopter_db is None:
-        raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     image_db = HelicopterImage(**helicopter_image.model_dump())
 
@@ -60,7 +63,7 @@ def detail_helicopter_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(HelicopterImage, image_id)
 
     if image_db is None or not image_db.helicopter.is_active:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return image_db
 
@@ -68,7 +71,7 @@ def detail_helicopter_image(image_id: int, db: Session = Depends(get_db)):
 @helicopter_image_router.put(
     '/{image_id}/',
     response_model=HelicopterImageOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_helicopter_image(
     image_id: int, helicopter_image: HelicopterImageUpdateSchema, db: Session = Depends(get_db)
@@ -76,18 +79,18 @@ def update_helicopter_image(
     image_db = db.get(HelicopterImage, image_id)
 
     if image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = helicopter_image.model_dump(exclude_unset=True)
 
     if 'helicopter_id' in data:
         if data['helicopter_id'] is None:
-            raise HTTPException(status_code=400, detail='Вертолёт туру милдеттүү')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         helicopter_db = db.get(HelicopterTour, data['helicopter_id'])
 
         if helicopter_db is None:
-            raise HTTPException(status_code=404, detail='Вертолёт туру табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     for key, value in data.items():
         setattr(image_db, key, value)
@@ -98,12 +101,14 @@ def update_helicopter_image(
     return image_db
 
 
-@helicopter_image_router.delete('/{image_id}/', dependencies=[Depends(get_current_admin)])
+@helicopter_image_router.delete(
+    '/{image_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_helicopter_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(HelicopterImage, image_id)
 
     if image_db is None:
-        raise HTTPException(status_code=404, detail='Сүрөт табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(image_db)
     db.commit()

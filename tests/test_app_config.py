@@ -10,7 +10,7 @@ import pytest
     [
         ('https://front.example', 200, 'https://front.example'),
         ('https://admin.example', 200, 'https://admin.example'),
-        ('https://kyrgyzgo-admin.vercel.app', 200, 'https://kyrgyzgo-admin.vercel.app'),
+        ('https://kerben-travel.vercel.app', 200, 'https://kerben-travel.vercel.app'),
         ('https://untrusted.example', 400, None),
     ],
 )
@@ -19,7 +19,7 @@ def test_http_cors_origins_come_from_environment(origin, expected_status, expect
     env.update(
         {
             'CORS_ALLOWED_ORIGINS': ' https://front.example ; ; https://admin.example ; '
-            'https://kyrgyzgo-admin.vercel.app '
+            'https://kerben-travel.vercel.app '
         }
     )
     code = (

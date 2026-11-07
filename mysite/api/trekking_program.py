@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Trekking, TrekkingProgram
@@ -14,13 +15,15 @@ trekking_program_router = APIRouter(prefix='/trekking-programs', tags=['Trekking
 
 
 @trekking_program_router.post(
-    '/', response_model=TrekkingProgramOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=TrekkingProgramOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_trekking_program(program: TrekkingProgramInputSchema, db: Session = Depends(get_db)):
     trekking_db = db.get(Trekking, program.trekking_id)
 
     if trekking_db is None:
-        raise HTTPException(status_code=404, detail='Треккинг табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     program_db = TrekkingProgram(**program.model_dump())
 
@@ -36,18 +39,24 @@ def create_trekking_program(program: TrekkingProgramInputSchema, db: Session = D
     '/', response_model=list[TrekkingProgramOutSchema], dependencies=[Depends(current_client)]
 )
 def list_trekking_programs(
-    lang: Language = 'ru', db: Session = Depends(get_db), pagination: Pagination = Depends()
+    lang: Language = 'ru',
+    trekking_id: int | None = None,
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
 ):
-    return [
-        localized(record, lang)
-        for record in db.query(TrekkingProgram)
-        .join(Trekking)
-        .filter(Trekking.is_active.is_(True))
-        .order_by(TrekkingProgram.trekking_id, TrekkingProgram.day_number)
+    query = db.query(TrekkingProgram).join(Trekking).filter(Trekking.is_active.is_(True))
+
+    if trekking_id is not None:
+        query = query.filter(TrekkingProgram.trekking_id == trekking_id)
+
+    records = (
+        query.order_by(TrekkingProgram.trekking_id, TrekkingProgram.day_number, TrekkingProgram.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()
-    ]
+    )
+
+    return [localized(record, lang) for record in records]
 
 
 @trekking_program_router.get(
@@ -59,7 +68,7 @@ def detail_trekking_program(program_id: int, lang: Language = 'ru', db: Session 
     program_db = db.get(TrekkingProgram, program_id)
 
     if program_db is None or not program_db.trekking.is_active:
-        raise HTTPException(status_code=404, detail='Треккинг программасы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(program_db, lang)
 
@@ -67,7 +76,7 @@ def detail_trekking_program(program_id: int, lang: Language = 'ru', db: Session 
 @trekking_program_router.put(
     '/{program_id}/',
     response_model=TrekkingProgramOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_trekking_program(
     program_id: int, program: TrekkingProgramUpdateSchema, db: Session = Depends(get_db)
@@ -75,22 +84,22 @@ def update_trekking_program(
     program_db = db.get(TrekkingProgram, program_id)
 
     if program_db is None:
-        raise HTTPException(status_code=404, detail='Треккинг программасы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = program.model_dump(exclude_unset=True)
 
     if 'trekking_id' in data:
         if data['trekking_id'] is None:
-            raise HTTPException(status_code=400, detail='Треккинг милдеттүү')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         trekking_db = db.get(Trekking, data['trekking_id'])
 
         if trekking_db is None:
-            raise HTTPException(status_code=404, detail='Треккинг табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     if 'day_number' in data:
         if data['day_number'] is None or data['day_number'] < 1:
-            raise HTTPException(status_code=400, detail='Күндүн номери 1ден кем болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(program_db, key, value)
@@ -102,12 +111,14 @@ def update_trekking_program(
     return program_db
 
 
-@trekking_program_router.delete('/{program_id}/', dependencies=[Depends(get_current_admin)])
+@trekking_program_router.delete(
+    '/{program_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_trekking_program(program_id: int, db: Session = Depends(get_db)):
     program_db = db.get(TrekkingProgram, program_id)
 
     if program_db is None:
-        raise HTTPException(status_code=404, detail='Треккинг программасы табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(program_db)
     db.commit()
