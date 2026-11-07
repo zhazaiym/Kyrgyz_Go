@@ -1,12 +1,29 @@
 """Read-only tools for bounded company information and catalogue queries."""
 
+import re
 from copy import deepcopy
 
 from langchain_core.tools import tool
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload, selectinload
 
 from ML.prompts import COMPANY_PROFILE
+
+_SEPARATORS = r'[\s‐‑‒–—-]+'
+_SQL_SEPARATORS = '[[:space:]‐‑‒–—-]+'
+_LAKE_ALIASES = r'(issyk(kul|kol)|ysyk(kul|kol)|ысык(көл|кол|куль)|иссык(көл|кол|куль))'
+_UPPER = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯӨҮҢ'
+
+
+def _destination_key(value):
+    compact = re.sub(_SEPARATORS, '', value.casefold())
+    return re.sub(_LAKE_ALIASES, 'иссыккуль', compact)
+
+
+def _destination_column(column):
+    lowered = func.lower(func.translate(column, _UPPER, _UPPER.lower()))
+    compact = func.regexp_replace(lowered, _SQL_SEPARATORS, '', 'g')
+    return func.regexp_replace(compact, _LAKE_ALIASES, 'иссыккуль', 'g')
 
 
 def SessionLocal():
@@ -83,12 +100,23 @@ def search_tours(
     destination: str | None = None,
     people_count: int | None = None,
     duration_days: int | None = None,
+    min_duration_days: int | None = None,
+    max_duration_days: int | None = None,
 ) -> list[dict]:
-    """Search active tours by destination, group size and duration."""
+    """Search active tours by destination aliases, group size and duration. duration_days is exact; use min/max_duration_days for flexible ranges (e.g. up to a week: max_duration_days=7). Prefer this over list_active_tours when filters are known; do not call both for the same query."""
     if people_count is not None and people_count <= 0:
         return []
 
     if duration_days is not None and duration_days <= 0:
+        return []
+
+    if any(value is not None and value <= 0 for value in (min_duration_days, max_duration_days)):
+        return []
+    if (
+        min_duration_days is not None
+        and max_duration_days is not None
+        and min_duration_days > max_duration_days
+    ):
         return []
 
     from mysite.database.models import Country, Tour
@@ -97,15 +125,15 @@ def search_tours(
         query = _active_tours_query(db)
 
         if destination and destination.strip():
-            keyword = destination.strip()
+            keyword = _destination_key(destination.strip())
             keyword = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             pattern = f'%{keyword}%'
 
             query = query.filter(
                 or_(
-                    Tour.title.ilike(pattern, escape='\\'),
-                    Tour.description.ilike(pattern, escape='\\'),
-                    Tour.country.has(Country.name.ilike(pattern, escape='\\')),
+                    _destination_column(Tour.title).like(pattern, escape='\\'),
+                    _destination_column(Tour.description).like(pattern, escape='\\'),
+                    Tour.country.has(_destination_column(Country.name).like(pattern, escape='\\')),
                 )
             )
 
@@ -117,6 +145,10 @@ def search_tours(
 
         if duration_days is not None:
             query = query.filter(Tour.duration_days == duration_days)
+        if min_duration_days is not None:
+            query = query.filter(Tour.duration_days >= min_duration_days)
+        if max_duration_days is not None:
+            query = query.filter(Tour.duration_days <= max_duration_days)
 
         tours = query.order_by(Tour.id).limit(20).all()
 

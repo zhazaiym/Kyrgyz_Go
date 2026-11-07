@@ -24,3 +24,5 @@ def test_invalid_filters_do_not_import_database(monkeypatch):
     monkeypatch.setattr(builtins, '__import__', guarded_import)
     assert search_tours.invoke({'people_count': 0}) == []
     assert search_tours.invoke({'duration_days': -1}) == []
+    assert search_tours.invoke({'min_duration_days': 8, 'max_duration_days': 7}) == []
+    assert search_tours.invoke({'max_duration_days': 0}) == []

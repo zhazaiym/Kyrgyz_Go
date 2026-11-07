@@ -69,13 +69,15 @@ def test_prompt_budgets_and_runtime_contracts():
         return {name for _, name, _, _ in Formatter().parse(prompt) if name}
 
     assert fields(SYSTEM_PROMPT) == {'state', 'today'}
-    assert fields(EXTRACT_PROMPT) == {'state', 'tour_ids', 'message', 'context'}
+    assert fields(EXTRACT_PROMPT) == {'state', 'tour_ids', 'message', 'context', 'today'}
     for field in agent.Changes.model_fields:
         assert field in EXTRACT_PROMPT
     for tool in agent.READ_TOOLS:
         assert tool.name in SYSTEM_PROMPT
     assert SYSTEM_PROMPT.format(state='{}', today='2026-10-23')
-    assert EXTRACT_PROMPT.format(state='{}', tour_ids='[]', message='Анна', context='[]')
+    assert EXTRACT_PROMPT.format(
+        state='{}', tour_ids='[]', message='Анна', context='[]', today='2026-10-23'
+    )
 
 
 def test_prompt_distinguishes_catalogue_evidence_and_failures():
@@ -320,6 +322,18 @@ def _catalogue_grounding_cases():
     ]
 
 
+@pytest.fixture(scope='module')
+def live_gemini_runner():
+    from ML.provider import client
+
+    client.cache_clear()
+    with asyncio.Runner() as runner:
+        yield runner
+        runner.run(agent.llm.async_client.aclose())
+        runner.run(agent.extract_llm.async_client.aclose())
+    client.cache_clear()
+
+
 @pytest.mark.skipif(
     os.getenv('RUN_LIVE_GEMINI_EVAL') != '1',
     reason='Opt-in: sends prompts and synthetic fixtures to Gemini',
@@ -330,7 +344,9 @@ def _catalogue_grounding_cases():
     _catalogue_grounding_cases(),
     ids=[case[0] for case in _catalogue_grounding_cases()],
 )
-def test_live_catalogue_grounding(case, question, tool, args, result, repeat, record_property):
+def test_live_catalogue_grounding(
+    case, question, tool, args, result, repeat, record_property, live_gemini_runner
+):
     """Bounded regression signals, not a proof of factuality for arbitrary dialogue."""
     from mysite.chain.prompts import SYSTEM_PROMPT
 
@@ -354,7 +370,7 @@ def test_live_catalogue_grounding(case, question, tool, args, result, repeat, re
     started = time.perf_counter()
     reply = None
     try:
-        reply = asyncio.run(asyncio.wait_for(agent.llm.ainvoke(messages), timeout=35))
+        reply = live_gemini_runner.run(asyncio.wait_for(agent.llm.ainvoke(messages), timeout=35))
     except Exception as error:
         metrics['error'] = type(error).__name__
         raise
@@ -388,6 +404,37 @@ def test_live_catalogue_grounding(case, question, tool, args, result, repeat, re
             )
         )
         raise
+
+
+@pytest.mark.skipif(os.getenv('RUN_LIVE_GEMINI_EVAL') != '1', reason='Opt-in Gemini extraction')
+@pytest.mark.parametrize(
+    'message,expected',
+    [
+        ('Нет, давайте лучше в Каракол', 'switch'),
+        ('А чем отличается от Каракола?', 'comparison'),
+        ('Поедем завтра', 'tomorrow'),
+    ],
+)
+def test_live_review_extraction(message, expected, live_gemini_runner):
+    from ML.prompts import EXTRACT_PROMPT
+
+    prompt = EXTRACT_PROMPT.format(
+        state=json.dumps({'tour_id': 7, 'people_count': 4}),
+        tour_ids='[7, 8]',
+        context='Тур 7: Иссык-Куль; тур 8: Каракол.',
+        message=message,
+        today='2026-11-07',
+    )
+    changes = live_gemini_runner.run(asyncio.wait_for(agent.extractor.ainvoke(prompt), timeout=45))
+    if expected == 'switch':
+        assert 'tour_id' in changes.clear_fields
+        assert changes.destination == 'Каракол'
+        assert changes.tour_id is None
+    elif expected == 'comparison':
+        assert 'tour_id' not in changes.clear_fields
+        assert changes.destination is None
+    else:
+        assert changes.travel_date == '2026-11-08'
 
 
 def _assert_catalogue_grounding(case, reply):

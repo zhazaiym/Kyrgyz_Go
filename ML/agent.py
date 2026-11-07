@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import time
-from datetime import date
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -17,6 +16,7 @@ from ML.schemas import Changes
 from ML.tools import READ_TOOLS, _not_demo
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.observability import record_ai_call
+from mysite.dates import bishkek_today
 
 __all__ = ['respond', 'output_budget', 'confirmation_allowed', 'rejection_allowed']
 
@@ -109,6 +109,7 @@ def active_tour_ids():
 async def _respond(message: str, state: dict, history: list, on_chunk=None):
     """Extract preferences and consult with bounded read-only tool calls."""
     current = dict(state or {})
+    today = bishkek_today().isoformat()
     intent = False
     try:
         ids = await asyncio.to_thread(active_tour_ids)
@@ -124,6 +125,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                     tour_ids=json.dumps(ids),
                     message=message,
                     context=extraction_context(history),
+                    today=today,
                 )
             ),
             timeout=45,
@@ -173,9 +175,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
 
     msgs = [
         SystemMessage(
-            content=SYSTEM_PROMPT.format(
-                state=json.dumps(current, ensure_ascii=False), today=date.today().isoformat()
-            )
+            content=SYSTEM_PROMPT.format(state=json.dumps(current, ensure_ascii=False), today=today)
         )
     ]
     for item in recent_messages(history):

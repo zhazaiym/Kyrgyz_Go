@@ -26,3 +26,16 @@
 ## Reliability notes
 
 FAQ lookup returns only rows with an actual text match; an empty result means the agent must say that the policy was not found. Tour destination search includes the linked country. AI provider metrics use fixed operation labels and never record user text.
+
+Поиск нормализует пробелы и дефисы, а также варианты `Issyk-Kul`, `Ысык-Көл` и `Иссык Куль`. `duration_days` означает точную длительность; `min_duration_days` и `max_duration_days` задают диапазон без автоматического ослабления условий клиента. `%`, `_` и `\` остаются буквальными символами поиска. Оба инструмента каталога используют общий запрос; при известных критериях модель выбирает `search_tours`.
+
+Извлечение относительных дат и проверка даты заявки используют календарную дату Бишкека (UTC+6). После отказа от сводки вопрос без изменения данных получает ответ консультанта; новая сводка появляется при исправлении данных или новом намерении оформить заявку. Созданная из чата заявка привязана к клиенту и доступна ему в `/travel-requests/me/`.
+
+Полный прогон с реальным Gemini требует явного `RUN_LIVE_GEMINI_EVAL=1` и действующего ключа в окружении до загрузки тестовой фикстуры. Для загрузки локального `.env`, запуска изолированной БД и сохранения отчёта:
+
+```powershell
+$env:RUN_LIVE_GEMINI_EVAL='1'
+python -c "from dotenv import load_dotenv; load_dotenv(); from scripts.run_tests import run_tests; raise SystemExit(run_tests(['-q', '-o', 'junit_family=xunit1', '--junitxml=live-test-results.xml']))"
+```
+
+Проверки с живой моделью разделяют один цикл `asyncio`, чтобы клиент SDK не переиспользовал соединения из закрытого цикла. Тесты извлечения отдельно проверяют смену направления, сравнение туров и дату «завтра».

@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from ML.agent import respond
+from mysite.admin.realtime import publish_new_request
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
@@ -24,6 +25,7 @@ from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSessio
 from mysite.database.db import SessionLocal
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.selection_models import TravelSelection
+from mysite.dates import bishkek_today
 
 _locks = {}
 _lock_users = {}
@@ -271,7 +273,7 @@ def _save_message_response(
             s.revision += 1
         preview = build_preview(db, s)
         preview_event = None
-        if intent or s.stage in ('collecting', 'awaiting_confirmation'):
+        if intent or s.stage == 'awaiting_confirmation' or (s.stage == 'collecting' and changed):
             if preview['complete']:
                 if s.stage != 'awaiting_confirmation' or changed or intent:
                     s.stage = 'awaiting_confirmation'
@@ -387,7 +389,7 @@ def build_preview(db, s):
         missing.append('tour_or_destination')
     if state.get('travel_date'):
         try:
-            if date.fromisoformat(state['travel_date']) < date.today():
+            if date.fromisoformat(state['travel_date']) < bishkek_today():
                 missing.append('future_travel_date')
         except (ValueError, TypeError):
             missing.append('valid_travel_date')
@@ -505,6 +507,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
             f'{item["kind"]} #{item["id"]}: {item["name"]}' for item in st['selected_services']
         )
     obj = TravelRequest(
+        client_id=client_id,
         name=st['client_name'],
         phone=st['phone'],
         email=st.get('email'),
@@ -528,8 +531,6 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         if selection:
             selection.status = 'in_progress'
         db.commit()
-        from mysite.admin.realtime import publish_new_request
-
         publish_new_request(obj.id)
     except IntegrityError:
         db.rollback()
