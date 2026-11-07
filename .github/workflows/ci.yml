@@ -101,3 +101,11 @@ jobs:
             -e SECRET_KEY=ci-runtime-test-key-at-least-32-bytes \
             -e DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres \
             kyrgyzgo-ci python -m scripts.enroll_admin_mfa --help
+
+      - name: Validate Caddyfile with the pinned Caddy image
+        run: |
+          image="$(sed -n 's/^ *image: \(caddy:[^ ]*\)$/\1/p' docker-compose.yml)"
+          test -n "$image"
+          docker run --rm -e API_DOMAIN=ci.example.test \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            "$image" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

@@ -545,7 +545,8 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
         )
         if code == 'internal_error':
             code = 'ai_unavailable'
-        logger.error('Catalogue translation failed code=%s; source record is already saved', code)
+        log = logger.warning if code in TRANSIENT_ERRORS else logger.error
+        log('Catalogue translation failed code=%s; source record is already saved', code)
         return code
 
     finally:
