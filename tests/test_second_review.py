@@ -1,14 +1,10 @@
-import io
-import ipaddress
 import json
 import os
 import shutil
 import subprocess
 import sys
-import tarfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -25,7 +21,6 @@ from mysite.database import models as m
 from mysite.database.chat_models import ChatClient, ChatLoginToken, ChatSession
 from mysite.database.db import SessionLocal, engine
 from mysite.database.password_reset_models import PasswordResetToken
-from scripts import ci_deploy
 from tests.test_main_regressions import PASSWORD, headers, register
 from tests.test_main_regressions import selection as selection
 from tests.test_user_flow_regressions import complete, submit
@@ -55,139 +50,30 @@ def test_rendered_compose_reserves_separate_api_and_caddy_addresses(tmp_path):
     assert services['https']['networks']['proxy']['ipv4_address'] == '172.30.240.2'
 
 
-def test_dockerfile_is_shipped_and_legacy_digest_probe_handles_missing_file(monkeypatch, tmp_path):
-    assert 'Dockerfile main.py' in Path('Dockerfile').read_text()
-
-    def output(arguments):
-        code = arguments[-1].replace('/app/Dockerfile', (tmp_path / 'Dockerfile').as_posix())
-        return subprocess.check_output([sys.executable, '-c', code], text=True).strip()
-
-    monkeypatch.setattr(ci_deploy, 'output', output)
-    assert ci_deploy.deployed_runtime_digest(
-        'old', 'Dockerfile'
-    ) == ci_deploy.dockerfile_runtime_digest(b'')
-    source = b'FROM python:3.12-slim\nCMD ["python", "main.py"]\n'
-    (tmp_path / 'Dockerfile').write_bytes(source)
-    assert ci_deploy.deployed_runtime_digest(
-        'new', 'Dockerfile'
-    ) == ci_deploy.dockerfile_runtime_digest(source)
+def test_no_github_actions_job_can_deploy_to_production():
+    """The server deploys itself from green main; GitHub must hold no deploy path or secret."""
+    workflows = sorted(Path('.github/workflows').glob('*.y*ml'))
+    assert workflows
+    for path in workflows:
+        workflow = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+        for name, job in workflow['jobs'].items():
+            text = json.dumps(job)
+            assert 'secrets.' not in text, (path, name)
+            assert 'environment' not in job, (path, name)
+            for forbidden in ('ssh', 'scp', 'rsync', 'manual_deploy', 'ci_deploy', 'deploy.ps1'):
+                assert forbidden not in text.lower(), (path, name, forbidden)
+            assert 'deploy' not in name.lower(), (path, name)
 
 
-def test_production_credentials_are_isolated_from_test_job():
-    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
-    test_job = workflow['jobs']['test']
-    assert 'secrets.' not in json.dumps(test_job)
-    assert 'environment' not in test_job
-    deploy = workflow['jobs']['deploy']
-    assert deploy['environment'] == 'production'
-    assert deploy['needs'] == 'test'
-    assert 'secrets.DEPLOY_SSH_KEY' in json.dumps(deploy)
-
-
-def test_activation_override_preserves_admin_policy():
-    module = ci_deploy
-    networks = [ipaddress.ip_network('192.0.2.10/32')]
-    override = module.compose_override('kyrgyzgo-api:manual-123', ','.join(map(str, networks)))
-    assert 'ADMIN_ALLOWED_IPS: "192.0.2.10/32"' in override
-
-
-def test_schema_changing_image_cannot_be_automatically_activated():
-    with pytest.raises(RuntimeError, match='maintenance migration'):
-        ci_deploy.require_same_schema(['old'], ['new'])
-    ci_deploy.require_same_schema(['same'], ['same'])
-
-
-@pytest.mark.parametrize('schema_changed', [False, True])
-def test_deployment_failure_never_activates_a_new_schema_and_restores_exact_override(
-    monkeypatch, tmp_path, schema_changed
-):
-    root, releases, backups = (tmp_path / name for name in ('root', 'releases', 'backups'))
-    for path in (root, releases, backups):
-        path.mkdir()
-    override = tmp_path / 'override.yml'
-    previous = 'services:\n  api:\n    image: old\n    environment:\n      KEEP: original\n'
-    override.write_text(previous)
-    for name in ('docker-compose.yml', 'Caddyfile'):
-        (root / name).write_text('test fixture')
-    (root / '.env').write_text('ADMIN_ALLOWED_IPS=127.0.0.1/32\n')
-    for name, value in [
-        ('ROOT', root),
-        ('RELEASES', releases),
-        ('BACKUPS', backups),
-        ('OVERRIDE', override),
-        ('DEPLOY_LOCK', tmp_path / 'lock'),
-    ]:
-        monkeypatch.setattr(ci_deploy, name, value)
-    monkeypatch.setitem(sys.modules, 'fcntl', SimpleNamespace(LOCK_EX=1, flock=lambda *args: None))
-    monkeypatch.setattr(ci_deploy.os, 'umask', lambda mode: 0)
-    monkeypatch.setattr(
-        ci_deploy.shutil, 'disk_usage', lambda path: SimpleNamespace(free=10 * 1024**3)
-    )
-    monkeypatch.setattr(
-        ci_deploy,
-        'compose_output',
-        lambda *args: (
-            'old-container'
-            if args[0] == 'ps'
-            else json.dumps(
-                {'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': '127.0.0.1/32'}}}}
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        ci_deploy,
-        'output',
-        lambda args: json.dumps(
-            [
-                {
-                    'State': {'Health': {'Status': 'healthy'}},
-                    'Image': 'old-image-id',
-                    'Config': {'Image': 'old'},
-                }
-            ]
-        ),
-    )
-    monkeypatch.setattr(ci_deploy, 'deployed_runtime_digest', lambda *args: 'legacy-missing')
-    monkeypatch.setattr(ci_deploy, 'deployed_schema', lambda container: ['old'])
-    monkeypatch.setattr(
-        ci_deploy, 'candidate_schema', lambda image: ['new' if schema_changed else 'old']
-    )
-
-    def run(args, **kwargs):
-        if 'pg_dump' in ' '.join(args):
-            kwargs['stdout'].write(b'PGDMPfixture')
-
-    monkeypatch.setattr(ci_deploy, 'run', run)
-    activated = []
-
-    def compose(*args):
-        if args[0] == 'up':
-            activated.append(override.read_text())
-            if len(activated) == 1:
-                raise RuntimeError('Candidate health failure')
-
-    monkeypatch.setattr(ci_deploy, 'compose', compose)
-    source = io.BytesIO()
-    with tarfile.open(fileobj=source, mode='w:gz') as archive:
-        for name in ci_deploy.ALLOWED_FILES:
-            data = (
-                b'FROM python:3.12-slim\nCMD ["python", "main.py"]\n'
-                if name == 'Dockerfile'
-                else b'fixture'
-            )
-            item = tarfile.TarInfo(name)
-            item.size = len(data)
-            archive.addfile(item, io.BytesIO(data))
-    source.seek(0)
-    with pytest.raises(RuntimeError):
-        ci_deploy.deploy('a' * 40, source)
-    assert override.read_text() == previous
-    state = json.loads(next(backups.glob('*/deployment-state.json')).read_text())
-    if schema_changed:
-        assert activated == [] and state['status'] == 'migration_required'
-    else:
-        assert len(activated) == 2 and activated[-1] == previous
-        assert state['status'] == 'rolled_back'
+def test_old_server_deploy_tooling_is_removed():
+    for path in (
+        'scripts/manual_deploy.py',
+        'scripts/ci_deploy.py',
+        'scripts/deploy.ps1',
+        'docs/manual-deployment.md',
+        'docs/automatic-deployment.md',
+    ):
+        assert not Path(path).exists(), path
 
 
 def test_ipv6_rotation_shares_a_prefix_quota_without_exhausting_global_capacity(monkeypatch):

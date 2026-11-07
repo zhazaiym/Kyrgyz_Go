@@ -38,7 +38,7 @@ services:
     profiles: ["https"]
     restart: unless-stopped
     environment:
-      API_DOMAIN: ${API_DOMAIN:-13.53.40.37}
+      API_DOMAIN: ${API_DOMAIN:-13.49.104.87}
     networks:
       proxy:
         ipv4_address: ${CADDY_PROXY_IP:-172.30.240.2}

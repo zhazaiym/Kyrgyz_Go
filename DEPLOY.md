@@ -29,12 +29,14 @@ Admin sessions do not expire on a timer; the login is cleared by the admin
 logout action. Browsers may discard a session cookie when the browser closes.
 
 The admin panel and admin API require a password and TOTP MFA, or a single-use
-recovery code. For an existing deployment, apply the MFA migration during a
-maintenance window, enroll every active admin from a trusted local shell, and
-only then reopen admin access:
+recovery code. The MFA migration is applied automatically on deploy; until an
+admin is enrolled, that admin cannot log in. Enroll every active admin from a
+trusted shell. The script is not in the image, so on the server copy it in first:
 
-```powershell
-python -m scripts.enroll_admin_mfa admin-username
+```bash
+docker compose cp scripts/enroll_admin_mfa.py api:/app/scripts/enroll_admin_mfa.py
+docker compose exec -u root api chown app:app /app/scripts/enroll_admin_mfa.py
+docker compose exec api python -m scripts.enroll_admin_mfa admin-username
 ```
 
 The command displays a one-time authenticator secret, verifies a current code,
@@ -54,10 +56,8 @@ There are three server-enforced roles: `owner` manages all data and admins,
 `manager` manages travel requests and selections, and `catalog_editor` manages
 catalogue and public content. Existing accounts migrate as `owner`; assign
 least-privilege roles through SQLAdmin after an owner has enrolled.
-The trusted deployment helper also requires a valid `ADMIN_ALLOWED_IPS` value
-in the resolved server Compose configuration. The application middleware
-currently does not enforce that value at request time; use a firewall or
-reverse-proxy rule if admin routes must be restricted by network.
+The application does not restrict admin routes by network; use a firewall or
+reverse-proxy rule if that is required.
 
 ### About page content
 
@@ -83,9 +83,6 @@ the database transaction, replaces the rows atomically, and queues translations
 to English, German, and Chinese using the existing worker. No schema migration
 is needed.
 
-The deployment helper carries the existing Compose environment into its
-generated `/home/ubuntu/kyrgyzgo-deploy.override.yml`.
-
 Database addressing:
 
 - PostgreSQL on the same computer as Docker: use
@@ -102,13 +99,13 @@ Database addressing:
 Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
 
 ```dotenv
-CORS_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
-CHAT_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
-FRONTEND_RESET_URL=https://tours-app-teal.vercel.app/ru/reset-password
+CORS_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
+CHAT_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
+FRONTEND_RESET_URL=https://kerben-travel.vercel.app/ru/reset-password
 ```
 
-Multiple origins are separated by `;`. The example file includes the admin
-Vercel origin and localhost ports 3000 and 5173. Add the production site origins
+Multiple origins are separated by `;`. The example file includes the production
+site origin and localhost ports 3000 and 5173. Add the production site origins
 on the server. HTTP CORS accepts the `Authorization` header and preflight requests.
 Chat WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`. The admin
 request notification socket stays on the same origin as SQLAdmin and requires its
@@ -122,42 +119,71 @@ and certificate, point a DNS A record for a domain you control to this server an
 `API_DOMAIN` to that hostname. Keep enough free disk space for Caddy's certificate
 renewal and take a verified PostgreSQL backup before applying migrations.
 
-Back up an existing database before deployment. Every API container start runs
-`alembic upgrade head` and starts Uvicorn only if migrations succeed. A database
-created outside Alembic needs its schema reviewed and baselined first; do not
-blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
-migrations to a separate deployment step.
+Every API container start runs `alembic upgrade head` and starts Uvicorn only if
+migrations succeed. A database created outside Alembic needs its schema reviewed
+and baselined first; do not blindly stamp a populated PostgreSQL database.
+PostgreSQL is required in all environments. Do not scale this service to
+multiple replicas without moving migrations to a separate deployment step.
 
-GitHub Actions runs checks and tests by default. An opt-in `deploy` job is
-prepared locally but remains disabled unless the repository variable
-`DEPLOY_ENABLED` is exactly `true`. It runs only after successful tests on a
-push to `main`; see [automatic deployment](docs/automatic-deployment.md) for
-the required target, verified host keys and secrets. No production rollout
-has been confirmed by the local checks.
-Production updates can also be started manually by an administrator using
-`scripts/deploy.ps1` from a workstation or the server's documented Docker
-commands. The trusted server-side deploy script compares the current database
-revision with the candidate source and reports `migration_required` before
-replacing the running image if they differ. Back up the database, review and
-apply the required migrations from the candidate source with
-`python -m alembic upgrade head`, then deploy the matching image. The current
-source migration head is `20261107_0024`; revisions `20261030_0018` through
-`20261030_0020` replace and repopulate FAQ content, `20261103_0021` adds tour
-reviews, `20261103_0022` adds client-owned travel requests, `20261107_0023`
-adds admin MFA/roles, and `20261107_0024` persists translation jobs. After
-applying `20261107_0023`, enroll active admins using the command above before
-reopening admin access. Do not assume the production
-database is at a particular revision; check it before deployment. Although the
-Docker image runs `alembic upgrade head` on startup, the guarded production
-deploy flow requires schema changes to be applied as a backed-up maintenance
-step first.
-The opt-in job requires fresh `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` secrets
-in the `production` environment and a repository variable `DEPLOY_TARGET`.
-Do not reuse historical server settings without verifying them. Keep
-`DEPLOY_ENABLED` unset until the actual server and trusted helper are ready.
-Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
-Activate the matching image after the migration and before reopening catalogue
-writes.
+## Как обновляется прод
+
+Прод — `13.49.104.87` (проект в `~/Kyrgyz_Go`, контейнеры `kyrgyz_go-api-1`,
+`kyrgyz_go-postgres-1`, `kyrgyz_go-https-1`). Сервер обновляет себя сам; GitHub
+Actions только проверяет код и не имеет доступа к серверу (секретов в GitHub нет,
+это проверяет `tests/test_second_review.py::test_no_github_actions_job_can_deploy_to_production`).
+
+**`main` = прод.** Каждый коммит в `main` с зелёным CI через 2-3 минуты стоит на
+сервере вместе с миграциями. Незаконченное — в ветку и PR.
+
+Автодеплой (`/usr/local/bin/kyrgyzgo-autodeploy`, таймер
+`kyrgyzgo-autodeploy.timer`, ведёт владелец сервера):
+
+1. Раз в 2 минуты `git fetch origin main`.
+2. Для нового коммита читает check-runs через публичный API GitHub. Проверки ещё
+   идут — ждёт. Упали — коммит навсегда в пропущенных; его изменения принесёт
+   следующий зелёный коммит.
+3. Зелёный: `pg_dump` в `~/kyrgyzgo-backups` (хранится 14 штук), текущий образ
+   помечается `kyrgyzgo-api:prev`.
+4. `git reset --hard`, `docker compose build api`, `docker compose up -d --wait`.
+   Контейнер при старте сам выполняет `alembic upgrade head`.
+5. Не поднялось — код и образ откатываются на `prev`. **База не откатывается.**
+
+Команды владельца сервера:
+
+| Задача | Команда |
+|---|---|
+| Журнал автодеплоя | `journalctl -u kyrgyzgo-autodeploy -f` |
+| Какая версия стоит | `git -C ~/Kyrgyz_Go log -1 --oneline` |
+| Пауза / возобновление | `sudo systemctl stop kyrgyzgo-autodeploy.timer` / `sudo systemctl start kyrgyzgo-autodeploy.timer` |
+| Повторить пропущенный коммит | `rm ~/.local/state/kyrgyzgo-autodeploy/skip` |
+| Откат кода | revert-коммит в `main` (сервер поставит его как обычный) |
+| Восстановление базы | `docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < дамп` |
+| Лог ответов чата | `docker logs kyrgyz_go-api-1 \| grep "AI response"` |
+
+`docker compose restart` не перечитывает `.env`, после правки `.env` нужен
+`docker compose up -d api`. Скрипт для прода запускается в контейнере только если
+он есть в образе (Dockerfile копирует из `scripts/` отдельные файлы): иначе
+`docker compose cp`, затем `chown app:app` и `docker compose exec api python -m ...`.
+`docker compose run api` не подходит: у `api` фиксированный IP в сети `proxy`.
+
+## Перед мержем в main
+
+- Миграции только совместимые: добавлять таблицы и nullable-колонки (или колонки
+  со значением по умолчанию); удалять и переименовывать — отдельным релизом, когда
+  код уже не читает старое. Миграция применится сама сразу после мержа, окна
+  обслуживания не будет.
+- Всё, что требует ручного шага на сервере (новая настройка, запись в базе,
+  внешний сервис), — за флагом окружения, выключенным по умолчанию.
+- Новая переменная окружения — со значением по умолчанию и строкой в
+  `.env.example`; приложение стартует без неё. Владельцу сервера сказать заранее.
+- Скрипты, нужные на проде, — в образ (Dockerfile) и с тестом.
+- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы, SMTP) — только в серверном
+  `.env`: не в репо, GitHub, чатах, логах и тестах.
+- Локально прогнать те же проверки, что CI (`.github/workflows/ci.yml`).
+
+Current source migration head: `20261107_0025` (`0023` admin MFA/roles, `0024`
+translation jobs, `0025` catalogue search: `pg_trgm`, `unaccent`, nullable
+`search_keywords`). Pause catalogue writes only if a release explicitly needs it.
 
 ### Uploaded photos
 
@@ -211,8 +237,9 @@ Create an administrator interactively after the API starts:
 docker compose exec api python create_admin.py
 ```
 
-For manual updates, back up PostgreSQL, update the source, then run
-`docker compose up --build -d` when the server can handle a build. Stop the API with `docker compose down`.
+Production updates itself from `main` (see «Как обновляется прод»). On another
+server, back up PostgreSQL, update the source, then run `docker compose up --build -d`.
+Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
 requires an external PostgreSQL database.
 
@@ -220,10 +247,10 @@ requires an external PostgreSQL database.
 
 Alternatively, use the included Caddy proxy with automatic HTTPS:
 
-1. Use your public IP (currently `13.53.40.37`), or point a domain's DNS A/AAAA
+1. Use your public IP (currently `13.49.104.87`), or point a domain's DNS A/AAAA
    records to the server. Allow inbound TCP ports 80 and 443. Stop any other
    service using these ports after checking how the current API is hosted.
-2. Set `API_DOMAIN=13.53.40.37` (or your domain) and keep
+2. Set `API_DOMAIN=13.49.104.87` (or your domain) and keep
    `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
@@ -233,7 +260,7 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.
-4. Verify `https://13.53.40.37/` and `/contacts/` without authorization, using your
+4. Verify `https://13.49.104.87/` and `/contacts/` without authorization, using your
    domain instead if configured. Check the certificate without bypassing TLS verification.
 
 The single `docker-compose.yml` includes an optional `https` profile. Without
