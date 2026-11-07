@@ -17,9 +17,9 @@ UPLOAD_PATHS = {'/admin/media', '/admin/media/upload'}
 def upload_admin_allowed(scope) -> bool:
     # Локальные импорты не связывают middleware с загрузкой
     # модулей API при импорте main.py.
-    from mysite.api.admin import SECRET_KEY, get_current_admin
+    from mysite.api.admin import SECRET_KEY, get_current_admin, require_admin_roles
+    from mysite.api.admin_sessions import setting, sql_session_admin
     from mysite.database.db import SessionLocal
-    from mysite.database.models import Admin
 
     request = Request(scope)
     path = scope.get('path', '').rstrip('/')
@@ -36,7 +36,8 @@ def upload_admin_allowed(scope) -> bool:
 
         with SessionLocal() as db:
             try:
-                get_current_admin(request=request, credentials=credentials, db=db)
+                admin = get_current_admin(request=request, credentials=credentials, db=db)
+                require_admin_roles('catalog_editor')(admin)
             except HTTPException:
                 return False
 
@@ -48,7 +49,9 @@ def upload_admin_allowed(scope) -> bool:
         return False
 
     try:
-        signed_data = TimestampSigner(SECRET_KEY).unsign(cookie.encode('utf-8'), max_age=None)
+        signed_data = TimestampSigner(SECRET_KEY).unsign(
+            cookie.encode('utf-8'), max_age=setting('ADMIN_SESSION_HOURS') * 3600
+        )
         session = json.loads(b64decode(signed_data, validate=True))
 
         if not isinstance(session, dict):
@@ -61,8 +64,8 @@ def upload_admin_allowed(scope) -> bool:
         return False
 
     with SessionLocal() as db:
-        admin = db.get(Admin, admin_id)
-        return bool(admin and admin.is_active)
+        admin = sql_session_admin(db, session)
+        return bool(admin and admin.role in {'owner', 'catalog_editor'})
 
 
 class AdminAccessMiddleware:

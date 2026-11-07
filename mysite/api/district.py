@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.db import get_db
 from mysite.database.models import District, Region
@@ -15,13 +16,15 @@ district_router = APIRouter(prefix='/districts', tags=['Districts'])
 
 
 @district_router.post(
-    '/', response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=DistrictOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_district(district: DistrictInputSchema, db: Session = Depends(get_db)):
     region_db = db.get(Region, district.region_id)
 
     if region_db is None:
-        raise HTTPException(status_code=404, detail='Область табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     district_db = District(**district.model_dump())
 
@@ -38,13 +41,15 @@ def detail_district(district_id: int, lang: Language = 'ru', db: Session = Depen
     district_db = db.get(District, district_id)
 
     if district_db is None:
-        raise HTTPException(status_code=404, detail='Район табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(district_db, lang)
 
 
 @district_router.put(
-    '/{district_id}/', response_model=DistrictOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{district_id}/',
+    response_model=DistrictOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_district(
     district_id: int, district: DistrictUpdateSchema, db: Session = Depends(get_db)
@@ -52,25 +57,25 @@ def update_district(
     district_db = db.get(District, district_id)
 
     if district_db is None:
-        raise HTTPException(status_code=404, detail='Район табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = district.model_dump(exclude_unset=True)
 
     if 'region_id' in data:
         if data['region_id'] is None:
-            raise HTTPException(status_code=400, detail='Область милдеттүү')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         region_db = db.get(Region, data['region_id'])
 
         if region_db is None:
-            raise HTTPException(status_code=404, detail='Область табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
         if data['region_id'] != district_db.region_id and district_db.hotels:
-            raise HTTPException(status_code=400, detail='Районго мейманканалар байланышкан')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         if key == 'name' and value is None:
-            raise HTTPException(status_code=400, detail='Райондун аты бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
         setattr(district_db, key, value)
 
@@ -81,15 +86,17 @@ def update_district(
     return district_db
 
 
-@district_router.delete('/{district_id}/', dependencies=[Depends(get_current_admin)])
+@district_router.delete(
+    '/{district_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_district(district_id: int, db: Session = Depends(get_db)):
     district_db = db.get(District, district_id)
 
     if district_db is None:
-        raise HTTPException(status_code=404, detail='Район табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     if district_db.hotels:
-        raise HTTPException(status_code=400, detail='Бул районго мейманканалар байланышкан')
+        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     db.delete(district_db)
     db.commit()

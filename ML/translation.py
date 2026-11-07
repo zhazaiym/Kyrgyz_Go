@@ -24,22 +24,28 @@ def translate_fields(source: dict):
         return _translate_fields(source)
     except PROVIDER_ERRORS as exc:
         raise classify_error(exc) from None
+    except (ValueError, TypeError):
+        raise AIError('ai_invalid_response') from None
 
 
 def _translate_fields(source):
-    response = model.invoke(
-        [
-            SystemMessage(
-                content=(
-                    'Translate the provided Russian tourism fields into English (en), '
-                    'German (de), and Simplified Chinese (zh). Preserve names and numbers. '
-                    'Return only a JSON object keyed by en, de, zh, each containing '
-                    'exactly the supplied field names. Keep null and empty values unchanged.'
-                )
-            ),
-            HumanMessage(content=json.dumps(source, ensure_ascii=False)),
-        ]
-    )
+    try:
+        response = model.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        'Translate the provided Russian tourism fields into English (en), '
+                        'German (de), and Simplified Chinese (zh). Preserve names and numbers. '
+                        'Return only a JSON object keyed by en, de, zh, each containing '
+                        'exactly the supplied field names. Keep null and empty values unchanged.'
+                    )
+                ),
+                HumanMessage(content=json.dumps(source, ensure_ascii=False)),
+            ]
+        )
+    except (ValueError, TypeError):
+        raise AIError('ai_unavailable') from None
+
     reason = (
         str(getattr(response, 'response_metadata', {}).get('finish_reason', ''))
         .upper()

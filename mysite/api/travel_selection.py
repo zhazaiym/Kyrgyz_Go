@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.api.selection_status import linked_request, processing_status, requests_for_selections
@@ -38,7 +39,7 @@ class SelectionUpdate(SelectionInput):
 
 def validate_items(db, tour_id, hotel_id, transport_id):
     if all(value is None for value in (tour_id, hotel_id, transport_id)):
-        raise HTTPException(status_code=422, detail='Выберите хотя бы одну услугу')
+        raise HTTPException(status_code=422, detail=error_detail('validation_error'))
 
     for model, item_id, name in [
         (Tour, tour_id, 'Тур'),
@@ -65,7 +66,7 @@ def get_selection(db, selection_id, client_id, *, for_update=False):
     selection = query.first()
 
     if not selection or selection.client_id != client_id:
-        raise HTTPException(status_code=404, detail='Поездка не найдена')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return selection
 
@@ -219,14 +220,12 @@ def update_selection(
     selection = get_selection(db, selection_id, client.id, for_update=True)
 
     if selection.status != 'draft' or selection.session_id:
-        raise HTTPException(
-            status_code=409, detail='Поездка уже передана в чат. Создайте новую поездку'
-        )
+        raise HTTPException(status_code=409, detail=error_detail('conflict'))
 
     changes = data.model_dump(exclude_unset=True)
 
     if not changes:
-        raise HTTPException(status_code=422, detail='Нет данных для изменения')
+        raise HTTPException(status_code=422, detail=error_detail('validation_error'))
 
     tour_id = changes.get('tour_id', selection.tour_id)
 
@@ -259,7 +258,7 @@ def start_selection_chat(
         session = db.get(ChatSession, selection.session_id)
 
         if not session or session.client_id != client.id:
-            raise HTTPException(status_code=409, detail='Связанный чат недоступен')
+            raise HTTPException(status_code=409, detail=error_detail('conflict'))
 
         return {
             'selection_id': selection.id,
@@ -269,7 +268,7 @@ def start_selection_chat(
         }
 
     if selection.status != 'draft':
-        raise HTTPException(status_code=409, detail='Поездка уже находится в обработке')
+        raise HTTPException(status_code=409, detail=error_detail('conflict'))
 
     validate_items(db, selection.tour_id, selection.hotel_id, selection.transport_id)
 

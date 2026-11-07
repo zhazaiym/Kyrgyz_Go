@@ -3,15 +3,16 @@
 <div class="d-flex align-items-center justify-content-center vh-100">
   <form class="col-lg-6 col-md-6 card card-md" action="{{ url_for('admin:login') }}" method="POST" autocomplete="off">
     <div class="card-body">
-      <h2 class="card-title text-center mb-4">Kerben Travel administrator login</h2>
-      {% for field, label, kind in [('username', 'Username', 'text'), ('password', 'Password', 'password'), ('totp_code', 'Authenticator or recovery code', 'text')] %}
+      <h2 class="card-title text-center mb-4">Вход в админку Kerben Travel</h2>
+      {% for field, label, kind in [('username', 'Логин', 'text'), ('password', 'Пароль', 'password'), ('totp_code', 'Код из приложения или код восстановления', 'text')] %}
       <div class="mb-3">
         <label class="form-label" for="{{ field }}">{{ label }}</label>
-        <input id="{{ field }}" name="{{ field }}" type="{{ kind }}" class="form-control{% if error %} is-invalid{% endif %}" autocomplete="off" required>
+        <input id="{{ field }}" name="{{ field }}" type="{{ kind }}" class="form-control{% if error %} is-invalid{% endif %}" {% if field == 'totp_code' %}autocomplete="one-time-code" maxlength="32"{% else %}autocomplete="off" required{% endif %}>
         {% if error and loop.first %}<div class="invalid-feedback">{{ error }}</div>{% endif %}
       </div>
       {% endfor %}
-      <div class="form-footer"><button type="submit" class="btn btn-primary w-100">Sign in</button></div>
+      <label class="form-check"><input type="checkbox" name="remember_device" class="form-check-input"> Доверять этому браузеру 30 дней</label>
+      <div class="form-footer"><button type="submit" class="btn btn-primary w-100">Войти</button></div>
     </div>
   </form>
 </div>

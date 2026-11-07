@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Tour, TourProgram
@@ -14,11 +15,13 @@ tour_program_router = APIRouter(prefix='/tour-programs', tags=['Tour Programs'])
 
 
 @tour_program_router.post(
-    '/', response_model=TourProgramOutSchema, dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=TourProgramOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def create_tour_program(data: TourProgramInputSchema, db: Session = Depends(get_db)):
     if not db.get(Tour, data.tour_id):
-        raise HTTPException(status_code=404, detail='Тур табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     program_db = TourProgram(**data.model_dump())
     db.add(program_db)
@@ -55,24 +58,26 @@ def list_tour_programs(
 def detail_tour_program(program_id: int, lang: Language = 'ru', db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db or not program_db.tour.is_active:
-        raise HTTPException(status_code=404, detail='Программа табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
     return localized(program_db, lang)
 
 
 @tour_program_router.put(
-    '/{program_id}/', response_model=TourProgramOutSchema, dependencies=[Depends(get_current_admin)]
+    '/{program_id}/',
+    response_model=TourProgramOutSchema,
+    dependencies=[Depends(require_admin_roles('catalog_editor'))],
 )
 def update_tour_program(
     program_id: int, data: TourProgramUpdateSchema, db: Session = Depends(get_db)
 ):
     program_db = db.get(TourProgram, program_id)
     if not program_db:
-        raise HTTPException(status_code=404, detail='Программа табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     values = data.model_dump(exclude_unset=True)
     if 'tour_id' in values:
         if values['tour_id'] is None or not db.get(Tour, values['tour_id']):
-            raise HTTPException(status_code=404, detail='Тур табылган жок')
+            raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     for key, value in values.items():
         setattr(program_db, key, value)
@@ -83,11 +88,13 @@ def update_tour_program(
     return program_db
 
 
-@tour_program_router.delete('/{program_id}/', dependencies=[Depends(get_current_admin)])
+@tour_program_router.delete(
+    '/{program_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
+)
 def delete_tour_program(program_id: int, db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db:
-        raise HTTPException(status_code=404, detail='Программа табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     db.delete(program_db)
     db.commit()

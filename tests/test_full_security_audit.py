@@ -1,6 +1,5 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import jwt
@@ -51,11 +50,12 @@ def test_admin_token_is_revoked_by_deactivation(client):
         db.add(admin)
         db.commit()
         identity = admin.id
-    token = jwt.encode(
-        {'sub': str(identity), 'exp': datetime.now(timezone.utc) + timedelta(hours=1)},
-        SECRET_KEY,
-        algorithm='HS256',
-    )
+    from mysite.api.admin_sessions import new_session, token_pair
+
+    with SessionLocal() as db:
+        session, refresh = new_session(db, identity)
+        token = token_pair(session, refresh)['access_token']
+        db.commit()
     auth = {'Authorization': 'Bearer ' + token}
     assert client.get('/admin/me/', headers=auth).status_code == 200
     with SessionLocal() as db:

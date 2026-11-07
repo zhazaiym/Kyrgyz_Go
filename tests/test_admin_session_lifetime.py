@@ -27,7 +27,7 @@ def test_admin_session_survives_time_and_ends_after_explicit_logout(monkeypatch)
 
     with TestClient(app, base_url='https://testserver') as client:
         login = client.get('/login')
-        assert 'max-age=' not in login.headers['set-cookie'].lower()
+        assert 'max-age=604800' in login.headers['set-cookie'].lower()
 
         monkeypatch.setattr(
             TimestampSigner, 'get_timestamp', lambda signer: original_timestamp(signer) + 7200

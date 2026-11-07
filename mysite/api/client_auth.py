@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from mysite.api.errors import error_detail
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_login_attempt, enforce_request_limits
 from mysite.database.booking_validation import optional_email
@@ -107,7 +108,7 @@ def register(data: RegistrationCredentials, request: Request, db: Session = Depe
         'client-register', request, username, ip_limit=10, identity_limit=3, window_seconds=3600
     )
     if not re.fullmatch(r'[a-z0-9_]{3,50}', username):
-        raise HTTPException(422, 'Логин: латинские буквы, цифры и _ (3–50 символов)')
+        raise HTTPException(422, error_detail('validation_error'))
     client = ChatClient(
         username=username, email=data.email, password_hash=passwords.hash(data.password)
     )
@@ -116,7 +117,7 @@ def register(data: RegistrationCredentials, request: Request, db: Session = Depe
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, 'Этот логин или email уже используется')
+        raise HTTPException(409, error_detail('conflict'))
     db.refresh(client)
     return issue_token(db, client)
 
@@ -130,7 +131,7 @@ def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db
             if identifier is None:
                 raise ValueError('Email is required')
         except ValueError as exc:
-            raise HTTPException(422, 'Введите корректный email') from exc
+            raise HTTPException(422, error_detail('validation_error')) from exc
     client = authenticate_client(
         db, identifier, data.password, email_only=data.email is not None, request=request
     )

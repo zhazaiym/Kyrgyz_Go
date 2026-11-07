@@ -17,7 +17,7 @@ COPY --chown=app:app Dockerfile main.py create_admin.py alembic.ini ./
 COPY --chown=app:app ML ./ML
 COPY --chown=app:app mysite ./mysite
 COPY --chown=app:app alembic ./alembic
-COPY --chown=app:app scripts/__init__.py scripts/replace_about_content.py ./scripts/
+COPY --chown=app:app scripts/ ./scripts/
 
 USER app
 EXPOSE 8000

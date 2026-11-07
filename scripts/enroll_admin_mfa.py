@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from mysite.admin.enrollment import enroll_totp
 from mysite.api.admin import SECRET_KEY, verify_password
-from mysite.api.admin_mfa import (consume_admin_mfa, encrypt_totp_secret, generate_recovery_codes,
-                                  generate_totp_secret, hash_recovery_code, matching_totp_step)
+from mysite.api.admin_mfa import consume_admin_mfa
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin
 
@@ -44,22 +44,7 @@ def main():
             admin.totp_secret_encrypted = None
             admin.totp_last_used_step = None
             admin.recovery_code_hashes = []
-        secret = generate_totp_secret()
-        print(f'TOTP secret (one-time display): {secret}')
-        print(
-            'Authenticator URI: '
-            f'otpauth://totp/Kerben%20Travel:{args.username}?secret={secret}'
-            '&issuer=Kerben%20Travel&algorithm=SHA1&digits=6&period=30'
-        )
-        matched_step = matching_totp_step(
-            secret, getpass.getpass('Enter current authenticator code: ')
-        )
-        if matched_step is None:
-            raise SystemExit('Code did not verify; no changes saved')
-        codes = generate_recovery_codes()
-        admin.totp_secret_encrypted = encrypt_totp_secret(secret, SECRET_KEY)
-        admin.totp_last_used_step = matched_step
-        admin.recovery_code_hashes = [hash_recovery_code(code) for code in codes]
+        codes = enroll_totp(admin, SECRET_KEY)
         db.commit()
         print('Store these single-use recovery codes securely; they will not be shown again:')
         print('\n'.join(codes))

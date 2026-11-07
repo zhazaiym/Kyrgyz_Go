@@ -27,19 +27,11 @@ def source_value_changed(old, new):
     return _source_value(old) != _source_value(new)
 
 
-def translation_is_ready(value, source, source_hash):
-    """Check that a nonempty translation matches the current source."""
-    return (
-        isinstance(value, str) and bool(value.strip()) and source_hash == source_field_hash(source)
-    )
-
-
 def translation_ready(value, stored_hash, source):
-    """Check completeness; an empty source requires no translation."""
-    if source in (None, ''):
-        return True
-
-    return translation_is_ready(value, source, stored_hash)
+    """An empty source needs no translation; other values must match its hash."""
+    return source in (None, '') or (
+        isinstance(value, str) and bool(value.strip()) and stored_hash == source_field_hash(source)
+    )
 
 
 def active_manual_fields(fields, hashes, source):

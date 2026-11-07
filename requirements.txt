@@ -19,3 +19,4 @@ SQLAlchemy==2.0.51
 starlette==1.9.0
 uvicorn[standard]==0.52.1
 tzdata
+prometheus-client==0.26.0

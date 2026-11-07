@@ -75,4 +75,4 @@ Gemini is stubbed by default. A live run requires both `--live-gemini` and
 eight provider calls. Never point the harness at a deployed host or application
 database.
 
-See [API.md](API.md) for the HTTP and WebSocket contract, [DEPLOY.md](DEPLOY.md) for deployment configuration, and [docs/README.md](docs/README.md) for the documentation index. Production deployment is manual; follow [docs/manual-deployment.md](docs/manual-deployment.md) and check the database migration procedure before updating a server.
+See [API.md](API.md) for the HTTP and WebSocket contract, [DEPLOY.md](DEPLOY.md) for deployment configuration, and [docs/README.md](docs/README.md) for the documentation index. The server deploys tested main revisions itself; see [DEPLOY.md](DEPLOY.md) for migrations and rollout order.

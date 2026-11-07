@@ -39,16 +39,17 @@ def test_travel_request_creation_requires_selection_payload(client, customer_hea
     assert response.status_code == 422
 
 
-def test_admin_only_has_chat_requests_view(client, admin_headers):
+def test_admin_has_one_unified_request_view(client, admin_headers):
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
     try:
         page = client.get('/admin/')
         assert page.status_code == 200
-        assert '/admin/chat-request/list' in page.text
-        assert '/admin/travel-request/list' not in page.text
-        assert client.get('/admin/travel-request/list').status_code == 404
-        assert client.get('/admin/travel-request/create').status_code == 404
+        assert '/admin/chat-request/list' not in page.text
+        assert '/admin/travel-request/list' in page.text
+        assert client.get('/admin/travel-request/list').status_code == 200
+        assert client.get('/admin/chat-request/list').status_code == 404
+        assert client.get('/admin/travel-request/create').status_code == 403
     finally:
         client.get('/admin/logout')

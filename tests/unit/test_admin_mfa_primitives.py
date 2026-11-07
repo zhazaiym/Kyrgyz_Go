@@ -57,12 +57,20 @@ def test_totp_code_cannot_be_replayed(monkeypatch):
 
 
 def test_admin_role_matrix_only_grants_scoped_route_groups():
-    from mysite.api.admin import admin_role_allows
+    from types import SimpleNamespace
 
-    assert admin_role_allows('owner', '/admin/admins')
-    assert admin_role_allows('manager', '/admin/requests/')
-    assert admin_role_allows('manager', '/manager/travel-selections/')
-    assert not admin_role_allows('manager', '/admin/media/')
-    assert admin_role_allows('catalog_editor', '/tours/12/translate/')
-    assert not admin_role_allows('catalog_editor', '/admin/requests/')
-    assert not admin_role_allows('catalog_editor', '/admin/admins/')
+    import pytest
+    from fastapi import HTTPException
+
+    from mysite.api.admin import require_admin_roles
+
+    for required in ('manager', 'catalog_editor'):
+        check = require_admin_roles(required)
+        for role in ('owner', 'manager', 'catalog_editor'):
+            admin = SimpleNamespace(role=role)
+            if role in ('owner', required):
+                assert check(admin) is admin
+            else:
+                with pytest.raises(HTTPException) as denied:
+                    check(admin)
+                assert denied.value.status_code == 403

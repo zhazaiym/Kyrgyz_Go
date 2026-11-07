@@ -1,21 +1,25 @@
 import os
 import secrets
-from datetime import timedelta
 from pathlib import Path
+from uuid import UUID
 
 import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from mysite.api.admin_mfa import consume_admin_mfa
+from mysite.api.admin_sessions import (new_session, remember_browser, rotate_refresh, session_live,
+                                       token_pair, token_session_id, verify_second_factor)
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.api.selection_status import require_status_transition
+from mysite.database.admin_security_models import AdminSession, AdminTrustedDevice
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
 from mysite.database.schemas.admin import AdminLoginSchema, AdminOutSchema, TokenSchema
@@ -41,45 +45,10 @@ password_hash = BoundedPasswords()
 dummy_admin_hash = password_hash.hash(secrets.token_urlsafe(32))
 
 ALGORITHM = 'HS256'
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
     return password_hash.verify(password, hashed_password)
-
-
-def admin_role_allows(role: str, path: str) -> bool:
-    if role == 'owner':
-        return True
-    if path == '/admin/me/':
-        return True
-    if path.startswith(('/admin/requests', '/manager/')):
-        return role == 'manager'
-    catalog_paths = (
-        '/admin/media',
-        '/tour-categories',
-        '/tours',
-        '/countries',
-        '/regions',
-        '/districts',
-        '/hotels',
-        '/hotel-images',
-        '/transports',
-        '/transport-images',
-        '/helicopter-tours',
-        '/helicopter-images',
-        '/trekkings',
-        '/trekking-images',
-        '/trekking-programs',
-        '/home',
-        '/contacts',
-        '/faqs',
-        '/abouts',
-        '/about-sections',
-        '/tour-images',
-        '/tour-programs',
-    )
-    return role == 'catalog_editor' and path.startswith(catalog_paths)
 
 
 def get_current_admin(
@@ -89,7 +58,7 @@ def get_current_admin(
 ) -> Admin:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail='Токен жараксыз же мөөнөтү бүткөн',
+        detail=error_detail('authentication_required'),
         headers={'WWW-Authenticate': 'Bearer'},
     )
 
@@ -98,65 +67,174 @@ def get_current_admin(
     token = credentials.credentials
     try:
         payload = jwt.decode(
-            token, SECRET_KEY, algorithms=[ALGORITHM], options={'require': ['exp', 'sub']}
+            token, SECRET_KEY, algorithms=[ALGORITHM], options={'require': ['exp', 'sub', 'sid']}
         )
         admin_id = payload.get('sub')
         if admin_id is None:
             raise credentials_exception
         admin_id = int(admin_id)
-    except (InvalidTokenError, ValueError, TypeError):
+        sid = str(UUID(payload.get('sid')))
+    except (InvalidTokenError, ValueError, TypeError, AttributeError):
         raise credentials_exception
 
-    admin_db = db.get(Admin, admin_id)
-    if admin_db is None or not admin_db.is_active:
+    result = (
+        db.query(Admin, AdminSession)
+        .join(AdminSession, AdminSession.admin_id == Admin.id)
+        .filter(Admin.id == admin_id, AdminSession.id == sid, Admin.is_active.is_(True))
+        .first()
+    )
+    if result is None or not session_live(result[1]):
         raise credentials_exception
-    if not admin_role_allows(admin_db.role, request.url.path):
-        raise HTTPException(status_code=403, detail='Insufficient administrator role')
-    return admin_db
+    return result[0]
 
 
 def require_admin_roles(*roles):
     def dependency(current_admin: Admin = Depends(get_current_admin)):
         if current_admin.role != 'owner' and current_admin.role not in roles:
-            raise HTTPException(status_code=403, detail='Insufficient administrator role')
+            raise HTTPException(status_code=403, detail=error_detail('forbidden'))
         return current_admin
 
+    dependency.admin_roles = roles
     return dependency
 
 
-@admin_router.post('/login/', response_model=TokenSchema)
+@admin_router.post('/login/', response_model=TokenSchema, response_model_exclude_none=True)
 def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends(get_db)):
-    admin_db = db.query(Admin).filter(Admin.username == admin.username).first()
-    admin_id = admin_db.id if admin_db else None
-    account_key = (
-        f'admin:{admin_id}'
-        if admin_id is not None
-        else (f'unknown:{admin.username.strip().casefold()}')
-    )
-    is_active = bool(admin_db and admin_db.is_active)
-    password_hash = admin_db.hashed_password if admin_db else dummy_admin_hash
+    found = db.query(Admin).filter(Admin.username == admin.username).first()
+    admin_id = found.id if found else None
+    account_key = f'admin:{admin_id}' if found else f'unknown:{admin.username.strip().casefold()}'
+    encoded = found.hashed_password if found else dummy_admin_hash
+    active = bool(found and found.is_active)
     db.rollback()
     enforce_login_attempt('admin-login', request, account_key)
-    valid = verify_password(admin.password, password_hash)
-    if admin_id is None or not valid:
-        raise HTTPException(status_code=401, detail='Логин же пароль туура эмес')
-
-    if not is_active:
-        raise HTTPException(status_code=403, detail='Админ активдүү эмес')
-
-    admin_db = db.query(Admin).filter(Admin.id == admin_id).with_for_update().first()
-    if admin_db is None or not admin_db.is_active or admin_db.hashed_password != password_hash:
-        raise HTTPException(status_code=401, detail='Invalid administrator credentials')
-    if not consume_admin_mfa(admin_db, admin.totp_code, SECRET_KEY):
-        raise HTTPException(status_code=401, detail='Invalid administrator MFA code')
+    valid = verify_password(admin.password, encoded)
+    invalid = JSONResponse({'code': 'invalid_credentials'}, status_code=401)
+    if not admin_id or not valid or not active:
+        return invalid
+    found = db.get(Admin, admin_id, with_for_update=True, populate_existing=True)
+    if not found or not found.is_active or found.hashed_password != encoded:
+        return invalid
+    accepted, used_code = verify_second_factor(db, found, admin.totp_code, admin.device_token)
+    if not accepted:
+        return invalid
+    row, refresh = new_session(db, found.id, request.headers.get('user-agent', ''))
+    result = token_pair(row, refresh)
+    if used_code and admin.remember_device:
+        device, raw = remember_browser(db, found.id, request.headers.get('user-agent', ''))
+        result.update(device_token=raw, device_id=device.id)
     db.commit()
-    expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    token = jwt.encode({'sub': str(admin_id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
-    return {'access_token': token, 'token_type': 'bearer'}
+    return result
+
+
+class RefreshInput(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)
+
+
+@admin_router.post('/token/refresh/', response_model=TokenSchema, response_model_exclude_none=True)
+def refresh_admin(data: RefreshInput, db: Session = Depends(get_db)):
+    result = rotate_refresh(db, data.refresh_token)
+    if result is None:
+        return JSONResponse({'code': 'session_expired'}, status_code=401)
+    return result
+
+
+@admin_router.post('/logout/', status_code=204)
+def logout_admin(data: RefreshInput, db: Session = Depends(get_db)):
+    sid = token_session_id(data.refresh_token)
+    if sid:
+        row = db.get(AdminSession, sid, with_for_update=True)
+        if row and row.revoked_at is None:
+            row.revoked_at = utcnow()
+            db.commit()
+    return Response(status_code=204)
+
+
+def _own_rows(db, model, admin_id):
+    return (
+        db.query(model)
+        .filter(model.admin_id == admin_id)
+        .order_by(model.created_at.desc(), model.id)
+    )
+
+
+@admin_router.get('/sessions/')
+def list_sessions(
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    return [
+        {
+            key: getattr(row, key)
+            for key in (
+                'id',
+                'created_at',
+                'last_used_at',
+                'expires_at',
+                'revoked_at',
+                'user_agent',
+            )
+        }
+        for row in _own_rows(db, AdminSession, current_admin.id).all()
+    ]
+
+
+@admin_router.get('/devices/')
+def list_devices(
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    return [
+        {
+            key: getattr(row, key)
+            for key in ('id', 'label', 'created_at', 'last_used_at', 'expires_at', 'revoked_at')
+        }
+        for row in _own_rows(db, AdminTrustedDevice, current_admin.id).all()
+    ]
+
+
+def _revoke_own(db, model, identity, admin_id):
+    row = db.get(model, identity, with_for_update=True)
+    if row is None or row.admin_id != admin_id:
+        raise HTTPException(404, detail=error_detail('not_found'))
+    row.revoked_at = utcnow()
+    db.commit()
+    return Response(status_code=204)
+
+
+@admin_router.delete('/sessions/{identity}/', status_code=204)
+def revoke_session(
+    identity: UUID,
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    return _revoke_own(db, AdminSession, str(identity), current_admin.id)
+
+
+@admin_router.delete('/devices/{identity}/', status_code=204)
+def revoke_device(
+    identity: UUID,
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    return _revoke_own(db, AdminTrustedDevice, str(identity), current_admin.id)
+
+
+@admin_router.delete('/devices/', status_code=204)
+def revoke_devices(
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    db.query(AdminTrustedDevice).filter(
+        AdminTrustedDevice.admin_id == current_admin.id, AdminTrustedDevice.revoked_at.is_(None)
+    ).update({'revoked_at': utcnow()}, synchronize_session=False)
+    db.commit()
+    return Response(status_code=204)
 
 
 @admin_router.get('/me/', response_model=AdminOutSchema)
-def get_admin_profile(current_admin: Admin = Depends(get_current_admin)):
+def get_admin_profile(
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+):
     return current_admin
 
 
@@ -166,7 +244,7 @@ class RequestStatusUpdate(BaseModel):
 
 @admin_router.get('/requests/', response_model=list[TravelRequestOutSchema])
 def list_travel_requests(
-    current_admin: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(require_admin_roles('manager')),
     db: Session = Depends(get_db),
     pagination: Pagination = Depends(),
 ):
@@ -176,12 +254,12 @@ def list_travel_requests(
 @admin_router.get('/requests/{request_id}/', response_model=TravelRequestOutSchema)
 def get_travel_request(
     request_id: int,
-    current_admin: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(require_admin_roles('manager')),
     db: Session = Depends(get_db),
 ):
     request = db.get(TravelRequest, request_id)
     if request is None:
-        raise HTTPException(404, 'Заявка не найдена')
+        raise HTTPException(404, error_detail('not_found'))
     return request
 
 
@@ -189,12 +267,12 @@ def get_travel_request(
 def update_travel_request_status(
     request_id: int,
     data: RequestStatusUpdate,
-    current_admin: Admin = Depends(get_current_admin),
+    current_admin: Admin = Depends(require_admin_roles('manager')),
     db: Session = Depends(get_db),
 ):
     request = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
     if request is None:
-        raise HTTPException(404, 'Заявка не найдена')
+        raise HTTPException(404, error_detail('not_found'))
     require_status_transition(request.status, data.status)
     request.status = data.status
     db.commit()

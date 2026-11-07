@@ -79,6 +79,10 @@ def validate_storage_values(entity, values, supplied):
             'https',
         }:
             raise ValueError(f'Unsafe URL scheme in {name}')
+        if name in {'image', 'main_image', 'qr_code'}:
+            parsed = urlsplit(value)
+            if parsed.netloc and parsed.path.startswith('/media/'):
+                values[name] = parsed.path
     minimum, maximum = values.get('min_people'), values.get('max_people')
     if (
         {'min_people', 'max_people'} & supplied

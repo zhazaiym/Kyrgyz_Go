@@ -3,6 +3,8 @@ import atexit
 import os
 import tempfile
 
+os.environ['PYTHON_DOTENV_DISABLED'] = '1'
+
 import pytest
 from fastapi.testclient import TestClient
 from pwdlib import PasswordHash
@@ -67,6 +69,7 @@ def offline_catalogue_translations(monkeypatch):
     setting.cache_clear()
     validate_resource_settings.cache_clear()
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'false')
+    monkeypatch.setattr('mysite.translations.jobs.reserve_translation_call', lambda: None)
     monkeypatch.setattr(
         'mysite.translations.content.translate_fields',
         lambda source: {
@@ -110,7 +113,12 @@ def offline_catalogue_translations(monkeypatch):
 
 @pytest.fixture(scope='session')
 def client():
-    with MFAAwareTestClient(app, client=('127.0.0.1', 50000)) as test_client:
+    from unittest.mock import patch
+
+    with (
+        patch('mysite.translations.jobs.recover_missing_translations', return_value=0),
+        MFAAwareTestClient(app, client=('127.0.0.1', 50000)) as test_client,
+    ):
         yield test_client
 
     engine.dispose()

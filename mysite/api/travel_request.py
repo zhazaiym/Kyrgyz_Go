@@ -5,8 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from mysite.admin.realtime import publish_new_request
-from mysite.api.admin import get_current_admin
+from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import require_status_transition
@@ -18,8 +19,8 @@ from mysite.database.schemas.requests import TravelRequestOutSchema, TravelReque
 from mysite.database.selection_models import TravelSelection
 from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
 from mysite.database.traveler_validation import MAX_TRAVELERS, validate_travelers_count
-from mysite.local_time import local_today
-from mysite.phone_validation import normalize_phone as normalize_phone_value
+from mysite.dates import bishkek_today
+from mysite.phone_validation import Phone
 
 travel_request_router = APIRouter(prefix='/travel-requests', tags=['Travel Requests'])
 
@@ -30,13 +31,8 @@ class TravelRequestCreate(BaseModel):
     selection_id: int = Field(gt=0)
     travel_date: date
     travelers_count: int = Field(gt=0, le=MAX_TRAVELERS)
-    phone: str = Field(min_length=7, max_length=25)
+    phone: Phone = Field(min_length=7, max_length=25)
     message: str | None = Field(default=None, max_length=2000)
-
-    @field_validator('phone')
-    @classmethod
-    def normalize_phone(cls, value: str) -> str:
-        return normalize_phone_value(value)
 
     @field_validator('message')
     @classmethod
@@ -53,8 +49,8 @@ def create_travel_request(
     client: ChatClient = Depends(current_client),
     db: Session = Depends(get_db),
 ):
-    if data.travel_date < local_today():
-        raise HTTPException(422, detail='Дата поездки не может быть в прошлом')
+    if data.travel_date < bishkek_today():
+        raise HTTPException(422, detail=error_detail('invalid_travel_date'))
 
     selection = (
         db.query(TravelSelection)
@@ -63,9 +59,9 @@ def create_travel_request(
         .first()
     )
     if selection is None:
-        raise HTTPException(404, detail='Selection not found')
+        raise HTTPException(404, detail=error_detail('not_found'))
     if selection.status != 'draft' or selection.session_id:
-        raise HTTPException(409, detail='Selection is no longer available for a direct request')
+        raise HTTPException(409, detail=error_detail('conflict'))
 
     state = {
         'tour_id': selection.tour_id,
@@ -74,14 +70,14 @@ def create_travel_request(
     }
     services, missing = selected_services(db, state)
     if missing or not services:
-        raise HTTPException(409, detail='Selection has no active services')
+        raise HTTPException(409, detail=error_detail('conflict'))
 
     profile = db.query(ClientProfile).filter(ClientProfile.client_id == client.id).first()
     tour = db.get(Tour, selection.tour_id) if selection.tour_id is not None else None
     try:
         validate_travelers_count(data.travelers_count, tour)
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise HTTPException(422, error_detail('invalid_travelers_count')) from exc
     request = TravelRequest(
         client_id=client.id,
         selection_id=selection.id,
@@ -131,7 +127,7 @@ def cancel_my_travel_request(
         .first()
     )
     if request is None:
-        raise HTTPException(404, detail='Travel request not found')
+        raise HTTPException(404, detail=error_detail('not_found'))
     require_status_transition(request.status, RequestStatusChoices.cancelled)
     request.status = RequestStatusChoices.cancelled
     db.commit()
@@ -140,7 +136,9 @@ def cancel_my_travel_request(
 
 
 @travel_request_router.get(
-    '/', response_model=list[TravelRequestOutSchema], dependencies=[Depends(get_current_admin)]
+    '/',
+    response_model=list[TravelRequestOutSchema],
+    dependencies=[Depends(require_admin_roles('manager'))],
 )
 def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination = Depends()):
     return query_travel_requests(db, pagination.offset, pagination.limit)
@@ -149,13 +147,13 @@ def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination =
 @travel_request_router.get(
     '/{request_id}/',
     response_model=TravelRequestOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('manager'))],
 )
 def detail_travel_request(request_id: int, db: Session = Depends(get_db)):
     request_db = db.get(TravelRequest, request_id)
 
     if request_db is None:
-        raise HTTPException(status_code=404, detail='Заявка табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return request_db
 
@@ -163,7 +161,7 @@ def detail_travel_request(request_id: int, db: Session = Depends(get_db)):
 @travel_request_router.put(
     '/{request_id}/',
     response_model=TravelRequestOutSchema,
-    dependencies=[Depends(get_current_admin)],
+    dependencies=[Depends(require_admin_roles('manager'))],
 )
 def update_travel_request(
     request_id: int, request: TravelRequestUpdateSchema, db: Session = Depends(get_db)
@@ -171,7 +169,7 @@ def update_travel_request(
     request_db = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
 
     if request_db is None:
-        raise HTTPException(status_code=404, detail='Заявка табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     data = request.model_dump(exclude_unset=True)
     if 'status' in data:
@@ -190,20 +188,20 @@ def update_travel_request(
     return request_db
 
 
-@travel_request_router.delete('/{request_id}/', dependencies=[Depends(get_current_admin)])
+@travel_request_router.delete(
+    '/{request_id}/', dependencies=[Depends(require_admin_roles('manager'))]
+)
 def delete_travel_request(request_id: int, db: Session = Depends(get_db)):
     request_db = db.get(TravelRequest, request_id)
 
     if request_db is None:
-        raise HTTPException(status_code=404, detail='Заявка табылган жок')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     if (
         request_db.selection_id is not None
         or db.query(ChatBookingLink.id).filter(ChatBookingLink.request_id == request_id).first()
     ):
-        raise HTTPException(
-            409, 'Submitted chat requests must be retained; update their status instead'
-        )
+        raise HTTPException(409, error_detail('conflict'))
     db.delete(request_db)
     db.commit()
 

@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mysite.api.client_auth import current_client
+from mysite.api.errors import error_detail
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
@@ -16,7 +17,7 @@ tour_reviews_router = APIRouter(prefix='/tours/{tour_id}/reviews', tags=['Tour R
 def require_active_tour(db: Session, tour_id: int) -> Tour:
     tour = db.query(Tour).filter(Tour.id == tour_id, Tour.is_active.is_(True)).first()
     if tour is None:
-        raise HTTPException(status_code=404, detail='Tour not found')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
     return tour
 
 
@@ -53,7 +54,7 @@ def create_tour_review(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail='You have already reviewed this tour') from exc
+        raise HTTPException(status_code=409, detail=error_detail('conflict')) from exc
     db.refresh(review)
     return review
 
@@ -76,7 +77,7 @@ def delete_tour_review(
         .first()
     )
     if review is None:
-        raise HTTPException(status_code=404, detail='Review not found')
+        raise HTTPException(status_code=404, detail=error_detail('not_found'))
     db.delete(review)
     db.commit()
     response.status_code = status.HTTP_204_NO_CONTENT

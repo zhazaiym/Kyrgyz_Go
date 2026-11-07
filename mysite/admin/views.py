@@ -1,12 +1,10 @@
 from copy import deepcopy
 
 from sqladmin import ModelView
-from sqlalchemy import select
 from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
-from mysite.database.chat_models import ChatBookingLink
 from mysite.database.db import SessionLocal
 from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
@@ -15,11 +13,51 @@ from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, Di
                                     TrekkingProgram)
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
                                          manual_translation_changed,
-                                         manual_translation_needs_refresh, mark_manual_translations)
+                                         manual_translation_needs_refresh, mark_manual_translations,
+                                         release_stale_manual_translations)
 from mysite.translations.jobs import enqueue_translation
 from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, normalize_text, source_field_hash,
                                         source_value_changed)
 from mysite.translations.translator import translate_tour
+
+
+class SelectedItemGuard:
+    async def delete_model(self, request, pk):
+        from sqlalchemy.exc import IntegrityError
+
+        from mysite.api.errors import ERROR_MESSAGES
+
+        try:
+            await super().delete_model(request, pk)
+        except IntegrityError:
+            raise ValueError(ERROR_MESSAGES['selected_item_in_use']) from None
+
+    async def on_model_delete(self, model, request):
+        from mysite.api.deletion_guards import protect_selected_item
+
+        def check():
+            with SessionLocal() as db:
+                from fastapi import HTTPException
+
+                try:
+                    protect_selected_item(db, type(model), model.id)
+                except HTTPException as exc:
+                    raise ValueError(exc.detail['message']) from None
+
+        await run_in_threadpool(check)
+
+
+class RequestSourceFilter:
+    title = 'Источник'
+    parameter_name = 'source'
+    has_operator = False
+    template = 'sqladmin/filters/lookup_filter.html'
+
+    async def lookups(self, request, model, run_query):
+        return [('__all', 'Все'), ('chat', 'Чат'), ('site', 'Сайт')]
+
+    async def get_filtered_query(self, query, value, model):
+        return query.where(TravelRequest.source == value) if value in {'chat', 'site'} else query
 
 
 class LocalizedAdminMixin:
@@ -55,6 +93,9 @@ class LocalizedAdminMixin:
             else:
                 data['translations'] = model.translations or {}
         if source_changed or ('translations' in data and refresh_cleared_fields):
+            data['translations'] = release_stale_manual_translations(
+                data.get('translations', model.translations), source
+            )
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
@@ -94,8 +135,7 @@ class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model=TourCategory):
     column_list = [TourCategory.id, TourCategory.name]
 
 
-class TourAdmin(ModelView, model=Tour):
-    can_delete = False
+class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
     column_list = [Tour.id, Tour.title]
 
     # Админге «Ночей» талаасын көрсөтпөйбүз
@@ -167,8 +207,7 @@ class DistrictAdmin(LocalizedAdminMixin, ModelView, model=District):
     column_list = [District.id, District.name]
 
 
-class HotelAdmin(LocalizedAdminMixin, ModelView, model=Hotel):
-    can_delete = False
+class HotelAdmin(SelectedItemGuard, LocalizedAdminMixin, ModelView, model=Hotel):
     column_list = [Hotel.id, Hotel.name]
 
 
@@ -176,8 +215,7 @@ class HotelImageAdmin(ModelView, model=HotelImage):
     column_list = [HotelImage.id, HotelImage.image]
 
 
-class TransportAdmin(LocalizedAdminMixin, ModelView, model=Transport):
-    can_delete = False
+class TransportAdmin(SelectedItemGuard, LocalizedAdminMixin, ModelView, model=Transport):
     column_list = [Transport.id, Transport.name]
 
     form_args = {'seats': {'render_kw': {'type': 'number', 'min': 1, 'step': 1}}}
@@ -231,6 +269,7 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     name_plural = 'Все заявки'
     column_list = [
         TravelRequest.id,
+        TravelRequest.source,
         TravelRequest.name,
         TravelRequest.phone,
         TravelRequest.destination,
@@ -242,11 +281,14 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     column_searchable_list = [TravelRequest.name, TravelRequest.phone, TravelRequest.destination]
     column_sortable_list = [
         TravelRequest.id,
+        TravelRequest.source,
         TravelRequest.travel_date,
         TravelRequest.status,
         TravelRequest.created_at,
     ]
-    column_default_sort = (TravelRequest.created_at, True)
+    column_default_sort = [(TravelRequest.created_at, True), (TravelRequest.id, True)]
+    column_filters = [RequestSourceFilter()]
+    column_labels = {TravelRequest.source: 'Источник'}
     can_view_details = True
 
     can_create = False
@@ -254,47 +296,10 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     form_columns = [TravelRequest.status]
 
 
-class ChatRequestAdmin(TravelRequestAdmin):
-    identity = 'chat-request'
-    name = 'Заявка из чата'
-    name_plural = 'Заявки из чата'
-    can_create = False
-    can_delete = False
-    form_columns = [TravelRequest.status]
-
-    def list_query(self, request):
-        return (
-            super()
-            .list_query(request)
-            .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
-        )
-
-    def count_query(self, request):
-        return (
-            super()
-            .count_query(request)
-            .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
-        )
-
-    def form_details_query(self, request):
-        return (
-            super()
-            .form_details_query(request)
-            .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
-        )
-
-    def form_edit_query(self, request):
-        return (
-            super()
-            .form_edit_query(request)
-            .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
-        )
-
-
 def _view_roles(view):
     if view is AdminAdmin:
         allowed = {'owner'}
-    elif view is ChatRequestAdmin:
+    elif view is TravelRequestAdmin:
         allowed = {'owner', 'manager'}
     else:
         allowed = {'owner', 'catalog_editor'}
@@ -332,6 +337,6 @@ for _admin_view in (
     TrekkingProgramAdmin,
     ContactAdmin,
     FAQAdmin,
-    ChatRequestAdmin,
+    TravelRequestAdmin,
 ):
     _view_roles(_admin_view)

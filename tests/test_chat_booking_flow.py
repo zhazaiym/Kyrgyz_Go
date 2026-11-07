@@ -83,14 +83,17 @@ def test_complete_chat_requires_approval_and_shows_in_admin(
         assert db.get(TravelRequest, request_id).name == 'Approval Guest'
 
     client.get('/admin/logout')
-    assert client.get('/admin/chat-request/list', follow_redirects=False).status_code in (302, 303)
+    assert client.get('/admin/travel-request/list', follow_redirects=False).status_code in (
+        302,
+        303,
+    )
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
-    page = client.get('/admin/chat-request/list')
+    page = client.get('/admin/travel-request/list')
     assert page.status_code == 200
     assert 'Approval Guest' in page.text
-    details = client.get(f'/admin/chat-request/details/{request_id}')
+    details = client.get(f'/admin/travel-request/details/{request_id}')
     assert details.status_code == 200
     for value in [
         'Approval Guest',
@@ -102,7 +105,7 @@ def test_complete_chat_requires_approval_and_shows_in_admin(
     ]:
         assert value in details.text
     edited = client.post(
-        f'/admin/chat-request/edit/{request_id}',
+        f'/admin/travel-request/edit/{request_id}',
         data={'status': 'in_progress', 'save': 'Save'},
         follow_redirects=False,
     )
@@ -176,7 +179,7 @@ def test_bare_yes_after_preview_does_not_submit(client, monkeypatch):
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
 
 
-def test_chat_admin_excludes_ordinary_requests(client, admin_headers):
+def test_unified_admin_includes_ordinary_requests(client, admin_headers):
     with SessionLocal() as db:
         ordinary = TravelRequest(name='Ordinary external request', phone='+996700999999')
         db.add(ordinary)
@@ -185,11 +188,11 @@ def test_chat_admin_excludes_ordinary_requests(client, admin_headers):
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
-    page = client.get('/admin/chat-request/list')
+    page = client.get('/admin/travel-request/list')
     assert page.status_code == 200
-    assert 'Ordinary external request' not in page.text
-    assert client.get(f'/admin/chat-request/details/{request_id}').status_code == 404
-    assert client.get(f'/admin/chat-request/edit/{request_id}').status_code == 404
+    assert 'Ordinary external request' in page.text
+    assert client.get(f'/admin/travel-request/details/{request_id}').status_code == 200
+    assert client.get(f'/admin/travel-request/edit/{request_id}').status_code == 200
     client.get('/admin/logout')
 
 
@@ -362,7 +365,7 @@ def test_websocket_booking_reaches_admin_with_collected_data(client, admin_heade
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
-    details = client.get(f'/admin/chat-request/details/{request_id}')
+    details = client.get(f'/admin/travel-request/details/{request_id}')
     assert details.status_code == 200
     for value in [
         'Approval Guest',
@@ -452,7 +455,7 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
-    details = client.get(f'/admin/chat-request/details/{request_id}')
+    details = client.get(f'/admin/travel-request/details/{request_id}')
     assert details.status_code == 200
     for value in [
         'Анна',

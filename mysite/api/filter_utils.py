@@ -1,5 +1,6 @@
 from fastapi import Query
 from sqlalchemy import String, case, cast, func, or_, select
+from sqlalchemy.orm import selectinload
 
 from mysite.database.models import Tour, TourTranslation
 from mysite.translations.content import CONTENT_FIELDS
@@ -90,6 +91,8 @@ def _display_field(model, field, lang, tour_translation=None):
 
 def filtered_list(db, model, filters, pagination, active_only=False, lang='ru'):
     query = db.query(model)
+    if model is Tour and lang != 'ru':
+        query = query.options(selectinload(Tour.translations))
 
     if active_only:
         query = query.filter(model.is_active.is_(True))

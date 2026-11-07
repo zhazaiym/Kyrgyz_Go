@@ -21,7 +21,10 @@
 | Клиент | Клиентский Bearer-токен |
 | Администратор | Административный Bearer-токен |
 
-Отдельной ограниченной роли менеджера пока нет. Менеджерские маршруты используют административный токен, который также даёт права администратора. Название аккаунта `test_manager` не уменьшает его права. Для SQLAdmin есть отдельная cookie-сессия после входа через HTML-форму; Bearer-токен автоматически её не создаёт.
+Роли ограничивают доступ: `owner` управляет всем, `manager` — заявками и подборками,
+`catalog_editor` — каталогом и публичным контентом. Права задаются явно на API-маршрутах.
+Для SQLAdmin вход через HTML-форму создаёт отдельную cookie-сессию; Bearer-токен
+автоматически её не создаёт. И API, и SQLAdmin проверяют серверные записи сессий.
 
 ## 2. Основной путь пользователя
 
@@ -222,7 +225,7 @@ ws.onmessage = ({ data }) => {
 - В формах SQLAdmin у полей `image`, `main_image` и `qr_code` есть кнопка выбора файла: фото загружается на сервер, и ссылка сама подставляется в поле.
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
-- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы списков/создания/редактирования/деталей SQLAdmin - HTML-интерфейс с cookie-сессией и входом администратора. Ограничения доступа по IP для этих маршрутов нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
+- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password, totp_code и необязательный remember_device), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
 - Подсказка для SQLAdmin: чтобы очистить перевод и запросить автоматический перевод, задайте конкретному полю пустую строку. Отсутствующий ключ в JSON сохраняет текущее значение. Не редактируйте служебные `_source_hashes` и `_manual_fields`.
 
 ## 10. Все HTTP endpoint
@@ -3018,6 +3021,34 @@ the route is hidden with a 404 response.
 
 ## Administrator authentication
 
-`POST /admin/login/` requires `username`, `password`, and `totp_code`. The code may be a six-digit TOTP or one unused recovery code. SQLAdmin uses the same second factor. For an existing deployment, apply the MFA migration during a maintenance window, enroll each active admin with `python -m scripts.enroll_admin_mfa <username>`, then reopen admin access.
+`POST /admin/login/` requires `username` and `password`. It also accepts `totp_code`,
+`device_token` and `remember_device` (default `false`). An enrolled account needs a
+valid trusted-device token or a TOTP/unused recovery code. The rollout flag applies
+only to accounts that have not been enrolled; see [DEPLOY.md](DEPLOY.md).
+
+A successful response includes `access_token`, `token_type`, `expires_in`,
+`refresh_token` and `refresh_expires_at`. A code login with `remember_device=true`
+also returns `device_token` and `device_id`. Credential errors all return exactly
+`401 {"code":"invalid_credentials"}`; the existing 429 limiter remains unchanged.
+
+`POST /admin/token/refresh/` accepts `{ "refresh_token": "..." }` and returns a new
+token pair. A previous refresh is accepted for 30 seconds and reproduces the same
+pair across workers. Later reuse revokes the session and returns
+`401 {"code":"session_expired"}`. `POST /admin/logout/` accepts the same body,
+revokes its session and returns 204. Access tokens include a server-checked `sid`.
+
+`GET /admin/sessions/`, `DELETE /admin/sessions/{id}/`, `GET /admin/devices/`,
+`DELETE /admin/devices/{id}/` and `DELETE /admin/devices/` manage the caller's own
+records, for every administrator role. Responses omit token hashes. Other admins'
+records are not accessible through these endpoints; owners manage them in SQLAdmin.
+
+The backend rollout keeps access-token lifetime at 60 minutes. Set
+`ADMIN_ACCESS_TOKEN_MINUTES=15` after the Vercel frontend supports refresh. Refresh
+expires after 30 unused days and at most 90 days after login; browser trust lasts
+30 days. SQLAdmin uses the same revocable session/device storage.
+
+Uploaded images return relative `/media/...` paths; resolve them against the API
+base URL. Standard HTTP errors use `detail.code` and a Russian `detail.message`
+from `mysite/api/errors.py`. Structured chat/auth errors retain their existing codes.
 
 Roles are enforced by the API and SQLAdmin: `owner` can manage all data and administrator roles; `manager` can manage travel requests and selections; `catalog_editor` can manage catalogue and public content.

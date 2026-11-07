@@ -8,7 +8,7 @@ from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
 from mysite.translations.source import (active_manual_fields, normalize_text, source_field_hash,
-                                        source_value_changed, translation_is_ready)
+                                        source_value_changed, translation_ready)
 from mysite.translations.translator import translate_fields
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
@@ -67,7 +67,7 @@ def localized(record, lang='ru'):
         if source_value in (None, ''):
             continue
 
-        if translation_is_ready(value, source_value, source_hashes.get(field)):
+        if translation_ready(value, source_hashes.get(field), source_value):
             result[field] = value
 
     return result

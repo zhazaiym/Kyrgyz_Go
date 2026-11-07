@@ -3,10 +3,12 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import (JSON, Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Index,
-                        Integer, Numeric, String, Text, UniqueConstraint, event, inspect, select)
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+                        Integer, Numeric, String, Text, UniqueConstraint, case, event, inspect,
+                        select)
+from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
+from mysite.database import admin_security_models  # noqa: F401
 from mysite.database import chat_models, selection_models  # noqa: F401
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
@@ -453,6 +455,18 @@ class TravelRequest(Base):
     __table_args__ = (UniqueConstraint('selection_id', name='uq_travel_requests_selection_id'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = column_property(
+        case(
+            (
+                select(chat_models.ChatBookingLink.id)
+                .where(chat_models.ChatBookingLink.request_id == id)
+                .correlate_except(chat_models.ChatBookingLink)
+                .exists(),
+                'chat',
+            ),
+            else_='site',
+        )
+    )
     client_id: Mapped[int | None] = mapped_column(
         ForeignKey(
             'chat_clients.id', ondelete='SET NULL', name='fk_travel_requests_client_id_chat_clients'

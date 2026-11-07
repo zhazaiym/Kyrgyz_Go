@@ -1,22 +1,22 @@
 """Queue catalogue translations after commit, without holding a request DB session."""
 
 import logging
-import time
 from datetime import timedelta
 from queue import Queue
-from threading import BoundedSemaphore, Lock, Thread
+from threading import BoundedSemaphore, Event, Lock, Thread
 
 from sqlalchemy import event, inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
+from ML.errors import AIError, classify_error
 from mysite.api.observability import record_translation_job, set_translation_queue_depth
 from mysite.database.db import Base, SessionLocal
 from mysite.database.models import Tour, TourTranslation, TranslationJob
 from mysite.database.token_utils import utcnow
+from mysite.translations.quota import reserve_translation_call
 from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, active_manual_fields,
-                                        source_field_hash, source_value_changed,
-                                        translation_is_ready)
+                                        source_field_hash, source_value_changed, translation_ready)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,15 @@ translation_queue = Queue()
 _worker_lock = Lock()
 _workers_started = False
 _pending_jobs = {}
-MAX_TRANSLATION_ATTEMPTS = 5
+MAX_TRANSLATION_ATTEMPTS = 3
+TRANSIENT_ERRORS = {'ai_unavailable', 'ai_rate_limit', 'ai_timeout', 'busy', 'failed'}
+_dispatcher_stop = Event()
+
+
+def _terminal(job):
+    return job.status in {'completed', 'obsolete'} or (
+        job.status == 'failed' and job.last_error not in TRANSIENT_ERRORS
+    )
 
 
 def schedule_translation(record, fields, translator):
@@ -69,53 +77,41 @@ def committed_jobs(session):
 
 
 def persist_translation_job(entity, identity, source):
-    entity_name = entity.__tablename__
-    with SessionLocal() as db:
-        job = (
-            db.query(TranslationJob)
-            .filter_by(entity=entity_name, record_id=identity)
-            .with_for_update()
-            .first()
-        )
-        if job is None:
-            job = TranslationJob(entity=entity_name, record_id=identity, source=source)
-            db.add(job)
-        else:
-            source_changed = job.source != source
-            if not source_changed and job.status in {'failed', 'completed', 'obsolete'}:
-                return False
-            if not source_changed and job.status in {'pending', 'running'}:
-                pass
-            else:
-                job.source = source
-                job.status = 'pending'
-                job.attempts = 0
-                job.last_error = None
-                job.lease_until = None
-                job.next_attempt_at = utcnow()
-        if job.id is None:
-            job.next_attempt_at = utcnow()
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            with SessionLocal() as retry_db:
-                job = (
-                    retry_db.query(TranslationJob)
-                    .filter_by(entity=entity_name, record_id=identity)
-                    .with_for_update()
-                    .one()
+    # Retry only the concurrent first INSERT. Existing pending/running state
+    # remains intact, including attempts and the provider's retry deadline.
+    for collision in range(2):
+        with SessionLocal() as db:
+            job = (
+                db.query(TranslationJob)
+                .filter_by(entity=entity.__tablename__, record_id=identity)
+                .with_for_update()
+                .first()
+            )
+            if job is None:
+                job = TranslationJob(
+                    entity=entity.__tablename__,
+                    record_id=identity,
+                    source=source,
+                    next_attempt_at=utcnow(),
                 )
-                if job.source == source and job.status in {'failed', 'completed', 'obsolete'}:
-                    return False
+                db.add(job)
+            elif job.source == source and _terminal(job):
+                return False
+            elif job.source != source or job.status == 'failed':
                 job.source = source
                 job.status = 'pending'
                 job.attempts = 0
                 job.last_error = None
                 job.lease_until = None
                 job.next_attempt_at = utcnow()
-                retry_db.commit()
-    return True
+            try:
+                db.commit()
+            except IntegrityError:
+                if collision:
+                    raise
+                continue
+            return True
+    return False
 
 
 def enqueue_translation(entity, identity, source, translator):
@@ -124,6 +120,12 @@ def enqueue_translation(entity, identity, source, translator):
         return False
     with _worker_lock:
         if not _workers_started:
+            _dispatcher_stop.clear()
+            Thread(
+                target=_dispatch_due_translations,
+                name='catalogue-translation-dispatch',
+                daemon=True,
+            ).start()
             for index in range(2):
                 Thread(
                     target=_translation_worker,
@@ -157,15 +159,45 @@ def _translation_worker():
                 source, translator = pending
                 result, retry_delay = _run_persisted_translation(job, source, translator)
                 record_translation_job(result)
+        except Exception:
+            logger.error('Translation worker unavailable; durable job will be recovered')
         finally:
             translation_queue.task_done()
             set_translation_queue_depth(translation_queue.qsize())
-        if pending is not None and retry_delay:
-            time.sleep(retry_delay)
-            with _worker_lock:
-                _pending_jobs[job] = (source, translator)
-                translation_queue.put(job)
-                set_translation_queue_depth(translation_queue.qsize())
+
+
+def _dispatch_due_translations():
+    """Retry delays never occupy translation workers."""
+    from mysite.translations.content import generate_translations
+
+    entities = {mapper.class_.__tablename__: mapper.class_ for mapper in Base.registry.mappers}
+    while not _dispatcher_stop.wait(1):
+        try:
+            now = utcnow()
+            with SessionLocal() as db:
+                rows = (
+                    db.query(TranslationJob)
+                    .filter(
+                        TranslationJob.status.in_(('pending', 'running')),
+                        TranslationJob.next_attempt_at <= now,
+                        (TranslationJob.lease_until.is_(None))
+                        | (TranslationJob.lease_until <= now),
+                    )
+                    .order_by(TranslationJob.next_attempt_at, TranslationJob.id)
+                    .limit(100)
+                    .all()
+                )
+                due = [(entities.get(row.entity), row.record_id, dict(row.source)) for row in rows]
+            for entity, identity, source in due:
+                if entity is not None:
+                    enqueue_translation(
+                        entity,
+                        identity,
+                        source,
+                        _translate_tour if entity is Tour else generate_translations,
+                    )
+        except Exception:
+            logger.error('Translation dispatch unavailable; retrying from durable queue')
 
 
 def _run_persisted_translation(job, source, translator):
@@ -197,9 +229,9 @@ def _run_persisted_translation(job, source, translator):
         if result == 'translated' and not _stored_translation_is_complete(job[0], identity, source):
             result = 'invalid_translation'
     except Exception as exc:
-        logger.error('Translation worker failed (%s)', type(exc).__name__)
-        result = 'failed'
-        attempts = MAX_TRANSLATION_ATTEMPTS
+        result = exc.code if isinstance(exc, AIError) else 'ai_unavailable'
+        logger.error('Translation worker failed code=%s', result)
+        attempts = 1
 
     retry_delay = 0
     with SessionLocal() as db:
@@ -220,10 +252,10 @@ def _run_persisted_translation(job, source, translator):
             if result in {'translated', 'source_changed', 'missing'}:
                 row.status = 'completed' if result == 'translated' else 'obsolete'
                 row.last_error = None
-            elif attempts < MAX_TRANSLATION_ATTEMPTS:
+            elif result in TRANSIENT_ERRORS or attempts < MAX_TRANSLATION_ATTEMPTS:
                 row.status = 'pending'
                 row.last_error = result
-                retry_delay = min(60, 2**attempts)
+                retry_delay = min(3600, 2 ** min(attempts, 12))
                 row.next_attempt_at = utcnow() + timedelta(seconds=retry_delay)
             else:
                 row.status = 'failed'
@@ -270,7 +302,7 @@ def _translation_is_complete(translations, source):
             if original in (None, ''):
                 continue
 
-            if not translation_is_ready(values.get(field), original, hashes.get(field)):
+            if not translation_ready(values.get(field), hashes.get(field), original):
                 return False
 
     return True
@@ -417,6 +449,7 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
             ):
                 return 'source_changed'
 
+        reserve_translation_call()
         translated = _valid_translation_result(translator(source), source)
 
         if not translated:
@@ -453,8 +486,8 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                     for field, value in values.items():
                         existing = getattr(row, field)
 
-                        if field in manual_fields and translation_is_ready(
-                            existing, source[field], hashes.get(field)
+                        if field in manual_fields and translation_ready(
+                            existing, hashes.get(field), source[field]
                         ):
                             continue
 
@@ -480,8 +513,8 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
                     )
 
                     for field, value in values.items():
-                        if field in manual_fields and translation_is_ready(
-                            previous.get(field), source[field], hashes.get(field)
+                        if field in manual_fields and translation_ready(
+                            previous.get(field), hashes.get(field), source[field]
                         ):
                             continue
 
@@ -501,10 +534,19 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
 
     except Exception as exc:
         # Provider exception messages may contain sensitive information.
-        logger.error(
-            'Catalogue translation failed (%s); source record is already saved', type(exc).__name__
+        code = (
+            exc.code
+            if isinstance(exc, AIError)
+            else (
+                'invalid_translation'
+                if isinstance(exc, (ValueError, TypeError))
+                else classify_error(exc).code
+            )
         )
-        return 'failed'
+        if code == 'internal_error':
+            code = 'ai_unavailable'
+        logger.error('Catalogue translation failed code=%s; source record is already saved', code)
+        return code
 
     finally:
         capacity.release()

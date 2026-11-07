@@ -1,7 +1,7 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["backups", "docs", "migrations", ".ml-test-tmp", ".chat-deploy", ".test-tmp-email-auth", "chat-check-dm4sqobk"]
+extend-exclude = ["backups", "docs", ".ml-test-tmp"]
 
 [tool.ruff.lint]
 select = ["F", "E4", "E7", "E9"]

@@ -1,6 +1,7 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -63,11 +64,13 @@ async def lifespan(app):
     from mysite.translations.jobs import recover_missing_translations
 
     async def recover_translations():
-        try:
-            queued = await asyncio.to_thread(recover_missing_translations)
-            logger.info('Recovered %d incomplete translation jobs', queued)
-        except Exception:
-            logger.exception('Could not queue missing catalogue translations')
+        while True:
+            try:
+                queued = await asyncio.to_thread(recover_missing_translations)
+                logger.info('Recovered %d incomplete translation jobs', queued)
+            except Exception:
+                logger.exception('Could not queue missing catalogue translations')
+            await asyncio.sleep(900)
 
     translation_recovery = asyncio.create_task(recover_translations())
     try:
@@ -90,13 +93,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from mysite.api.errors import http_error_response
+
+app.add_exception_handler(StarletteHTTPException, http_error_response)
+
 
 # CORS
 app.add_middleware(ResourceLimitsMiddleware)
 app.add_middleware(AdminAccessMiddleware)
-cors_allowed_origins = list(
-    configured_origins('CORS_ALLOWED_ORIGINS', 'http://localhost:3000;http://127.0.0.1:3000')
-)
+from mysite.api.observability import HTTPMetricsMiddleware
+
+app.add_middleware(HTTPMetricsMiddleware)
+cors_allowed_origins = list(configured_origins('CORS_ALLOWED_ORIGINS'))
 if '*' in cors_allowed_origins:
     raise RuntimeError('CORS_ALLOWED_ORIGINS must list trusted origins explicitly')
 
@@ -167,7 +177,8 @@ app.include_router(observability_router)
 
 # MEDIA FILES
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount(MEDIA_URL, StaticFiles(directory=MEDIA_ROOT), name='media')
+if os.getenv('SERVE_MEDIA_LOCALLY', 'true').lower() == 'true':
+    app.mount(MEDIA_URL, StaticFiles(directory=MEDIA_ROOT), name='media')
 
 
 # ADMIN PANEL
