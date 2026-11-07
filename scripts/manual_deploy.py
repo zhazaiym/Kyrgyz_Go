@@ -63,7 +63,9 @@ def run_local_tests(root):
     subprocess.run([sys.executable, '-m', 'scripts.run_tests', '-q'], cwd=root, check=True)
 
 
-def ssh_arguments(executable, key, known_hosts):
+def ssh_arguments(executable, key, known_hosts, host=HOST):
+    if not re.fullmatch(r'[a-z_][a-z0-9_-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*', host):
+        raise ValueError('Invalid SSH deployment target; expected user@hostname')
     return [
         str(executable),
         '-T',
@@ -81,7 +83,7 @@ def ssh_arguments(executable, key, known_hosts):
         'ServerAliveInterval=15',
         '-o',
         'ServerAliveCountMax=20',
-        HOST,
+        host,
     ]
 
 
@@ -100,11 +102,23 @@ def upload_archive(arguments, archive, snapshot):
 def main():
     parser = argparse.ArgumentParser(description='Upload the working source tree directly over SSH')
     parser.add_argument('--key', type=Path, default=Path.home() / '.ssh/kyrgyzgo_ec2_deploy')
+    parser.add_argument('--host', default=HOST, help='Explicit SSH target: user@hostname')
+    parser.add_argument('--known-hosts', type=Path, help='Trusted SSH host keys for the target')
+    parser.add_argument('--revision', help='Exact Git revision for CI deployment provenance')
     parser.add_argument(
         '--check', action='store_true', help='Validate packaging and SSH without deployment'
     )
     parser.add_argument('--skip-tests', action='store_true', help='Explicitly skip local tests')
     options = parser.parse_args()
+    if options.host != HOST and options.known_hosts is None:
+        parser.error('A new server requires --known-hosts with its verified host key')
+    if options.revision and not re.fullmatch('[0-9a-f]{40}', options.revision):
+        parser.error('--revision must be an exact 40-character Git SHA')
+    trusted_hosts = None
+    if options.known_hosts is not None:
+        trusted_hosts = options.known_hosts.expanduser().read_text(encoding='utf-8')
+        if not trusted_hosts.strip():
+            parser.error('--known-hosts must not be empty')
     root = Path(__file__).resolve().parents[1]
     key = options.key.expanduser().resolve()
     if not key.is_file():
@@ -122,10 +136,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='kyrgyzgo-deploy-') as temporary:
         archive = Path(temporary) / 'source.tar.gz'
         known_hosts = Path(temporary) / 'known_hosts'
-        known_hosts.write_text(HOST_KEY, encoding='ascii')
+        known_hosts.write_text(
+            trusted_hosts if trusted_hosts is not None else HOST_KEY, encoding='utf-8'
+        )
         create_archive(root, archive)
-        snapshot = hashlib.sha256(archive.read_bytes()).hexdigest()[:40]
-        arguments = ssh_arguments(executable, key, known_hosts)
+        snapshot = options.revision or hashlib.sha256(archive.read_bytes()).hexdigest()[:40]
+        arguments = ssh_arguments(executable, key, known_hosts, host=options.host)
         print('Source snapshot:', snapshot, flush=True)
         preflight = (
             'test -r /usr/local/lib/kyrgyzgo/ci_deploy.py && '
@@ -140,7 +156,7 @@ def main():
             print('CHECK PASSED: source archive and SSH validated; no deployment performed.')
             return
         upload_archive(arguments, archive, snapshot)
-        print('DEPLOYMENT SUCCEEDED: backend is healthy at https://13.53.40.37')
+        print('DEPLOYMENT SUCCEEDED: server checks passed for ' + options.host)
 
 
 if __name__ == '__main__':

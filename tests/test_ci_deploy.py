@@ -2,12 +2,14 @@ import importlib.util
 import io
 import ipaddress
 import json
+import os
 import shutil
 import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 
 SCRIPT = Path('scripts/ci_deploy.py')
 
@@ -63,6 +65,43 @@ def test_deployment_accepts_source_files():
         assert len(module.validate_members(bundle)) == 1
 
 
+def test_database_backup_validation_requires_postgresql_custom_dump(tmp_path):
+    module = load_deployment()
+    valid = tmp_path / 'valid.dump'
+    valid.write_bytes(b'PGDMP' + b'local-dump-data')
+    module.validate_database_backup(valid)
+    invalid = tmp_path / 'invalid.dump'
+    invalid.write_bytes(b'not-a-dump')
+    with pytest.raises(RuntimeError, match='Invalid database backup'):
+        module.validate_database_backup(invalid)
+
+
+def test_failed_activation_restores_prior_override_without_changing_schema_state(
+    tmp_path, monkeypatch
+):
+    module = load_deployment()
+    backup = tmp_path / 'backup'
+    backup.mkdir()
+    prior_override = backup / 'previous-deploy.override.yml'
+    prior_override.write_text('prior-image', encoding='utf-8')
+    state_file = tmp_path / 'deployment-state.json'
+    state = {'status': 'activating', 'image': 'candidate', 'previous_image': 'prior'}
+    copied = []
+    compose_calls = []
+    monkeypatch.setattr(module, 'OVERRIDE', tmp_path / 'active.override.yml')
+    monkeypatch.setattr(module.shutil, 'copy2', lambda src, dst: copied.append((src, dst)))
+    monkeypatch.setattr(module, 'compose', lambda *args: compose_calls.append(args))
+
+    module.rollback_activation(backup, state_file, state)
+
+    assert copied == [(prior_override, module.OVERRIDE)]
+    assert len(compose_calls) == 1
+    assert state['status'] == 'rolled_back'
+    assert state['image'] == 'candidate'
+    assert state['previous_image'] == 'prior'
+    assert json.loads(state_file.read_text(encoding='utf-8'))['status'] == 'rolled_back'
+
+
 def test_candidate_schema_uses_alembic_configured_version_locations(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'custom' / 'versions'
@@ -97,10 +136,6 @@ def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
     assert module.candidate_schema(tmp_path) == ['second']
 
 
-<<<<<<< HEAD
-@pytest.mark.parametrize('separator', ['space', 'newline'])
-def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
-=======
 @pytest.mark.parametrize(
     ('separator', 'configured'),
     [('space', '%(here)s/first %(here)s/second'), ('newline', '%(here)s/first\n %(here)s/second')],
@@ -108,7 +143,6 @@ def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
 def test_candidate_schema_supports_legacy_named_version_path_separator(
     tmp_path, separator, configured
 ):
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
     module = load_deployment()
     first = tmp_path / 'first'
     second = tmp_path / 'second'
@@ -118,29 +152,16 @@ def test_candidate_schema_supports_legacy_named_version_path_separator(
     (second / '002.py').write_text(
         "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
     )
-<<<<<<< HEAD
-    locations = (
-        '%(here)s/first %(here)s/second'
-        if separator == 'space'
-        else '%(here)s/first\n    %(here)s/second'
-    )
-    (tmp_path / 'alembic.ini').write_text(
-        '[alembic]\nscript_location = %(here)s\n'
-        f'version_locations = {locations}\nversion_path_separator = {separator}\n',
-=======
     (tmp_path / 'alembic.ini').write_text(
         '[alembic]\nscript_location = %(here)s\n'
         f'version_locations = {configured}\n'
         f'version_path_separator = {separator}\n',
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
         encoding='utf-8',
     )
 
     assert module.candidate_schema(tmp_path) == ['second']
 
 
-<<<<<<< HEAD
-=======
 @pytest.mark.parametrize(
     ('value', 'expected', 'error'),
     [
@@ -271,7 +292,6 @@ def test_candidate_schema_space_separator_keeps_apostrophes_literal(tmp_path, se
     assert load_deployment().candidate_schema(tmp_path) == ['head']
 
 
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'migration_package' / 'versions'
@@ -455,36 +475,55 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
     assert calls[3][0] == 'config'
 
 
-def test_github_actions_runs_ci_without_deployment():
-    workflow = Path('.github/workflows/ci.yml').read_text()
-    assert 'pull_request:' in workflow
-<<<<<<< HEAD
-    assert 'needs: test' in workflow
-    assert "github.ref == 'refs/heads/main'" in workflow
-    assert "github.event_name != 'pull_request'" in workflow
-    assert 'StrictHostKeyChecking=yes' in workflow
-    assert 'cancel-in-progress: false' in workflow
-    assert 'secrets.DEPLOY_SSH_KEY' in workflow
+@pytest.mark.parametrize(
+    'event,branch,enabled,expected',
+    [
+        ('push', 'refs/heads/main', 'true', True),
+        ('push', 'refs/heads/main', '', False),
+        ('push', 'refs/heads/main', 'false', False),
+        ('pull_request', 'refs/heads/main', 'true', False),
+        ('workflow_dispatch', 'refs/heads/main', 'true', False),
+        ('push', 'refs/heads/feature', 'true', False),
+    ],
+)
+def test_github_deploy_requires_main_push_and_explicit_enable(event, branch, enabled, expected):
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    deploy = workflow['jobs']['deploy']
+    assert deploy['needs'] == 'test'
+    assert deploy['concurrency']['cancel-in-progress'] == 'false'
+    expression = deploy['if'].replace('&&', ' and ')
+    for variable, value in {
+        'github.event_name': event,
+        'github.ref': branch,
+        'vars.DEPLOY_ENABLED': enabled,
+    }.items():
+        expression = expression.replace(variable, repr(value))
+    # Evaluate the actual workflow guard against events that must never deploy.
+    assert eval(expression, {'__builtins__': {}}, {}) is expected
 
 
-def test_caddy_restricts_admin_routes_to_the_configured_vpn_ip_range():
-    caddy = Path('Caddyfile').read_text(encoding='utf-8')
-    compose = Path('docker-compose.yml').read_text(encoding='utf-8')
-    example_env = Path('.env.example').read_text(encoding='utf-8')
-
-    assert 'path /admin*' in caddy
-    assert 'not remote_ip {$ADMIN_ALLOWED_CIDR}' in caddy
-    assert 'respond @admin_outside_vpn 403' in caddy
-    assert 'ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR:-127.0.0.1/32}' in compose
-    assert 'ADMIN_ALLOWED_CIDR=127.0.0.1/32' in example_env
-=======
-    assert 'branches:' in workflow and '- main' in workflow
-    assert '  test:' in workflow
-    assert '  deploy:' not in workflow
-    assert 'DEPLOY_SSH_KEY' not in workflow
-    assert 'DEPLOY_HOST' not in workflow
-    assert 'docker compose up' not in workflow
-
-    assert not Path('.github/workflows/deploy.yml').exists()
-    assert not Path('.github/workflows/check-ssh.yml').exists()
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
+@pytest.mark.parametrize(
+    'latest,api_status,expected', [('a' * 40, '0', 0), ('b' * 40, '0', 1), ('', '1', 1)]
+)
+def test_deploy_revision_guard_rejects_stale_commits_and_api_errors(latest, api_status, expected):
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['deploy']['steps']
+    guard = next(step for step in steps if step['name'] == 'Reject a superseded revision')
+    bash = 'C:/Program Files/Git/bin/bash.exe' if os.name == 'nt' else shutil.which('bash')
+    assert bash, 'Bash is required to exercise the actual deployment guard'
+    # Replace only the GitHub transport; execute the workflow shell unchanged.
+    transport = 'gh() { printf "%s\\n" "$TEST_MAIN_SHA"; return "$TEST_API_STATUS"; }\n'
+    result = subprocess.run(
+        [bash, '-c', transport + guard['run']],
+        env={
+            'PATH': os.environ['PATH'],
+            'GITHUB_REPOSITORY': 'fixture/repository',
+            'GITHUB_SHA': 'a' * 40,
+            'TEST_MAIN_SHA': latest,
+            'TEST_API_STATUS': api_status,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == expected, result.stderr

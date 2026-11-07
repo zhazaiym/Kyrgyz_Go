@@ -1,4 +1,3 @@
-import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request

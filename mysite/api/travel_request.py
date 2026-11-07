@@ -1,4 +1,3 @@
-import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,10 +17,7 @@ from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.schemas.requests import TravelRequestOutSchema, TravelRequestUpdateSchema
 from mysite.database.selection_models import TravelSelection
 from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
-from mysite.database.traveler_validation import (
-    MAX_TRAVELERS,
-    validate_travelers_count,
-)
+from mysite.database.traveler_validation import MAX_TRAVELERS, validate_travelers_count
 from mysite.local_time import local_today
 from mysite.phone_validation import normalize_phone as normalize_phone_value
 
@@ -29,7 +25,6 @@ travel_request_router = APIRouter(prefix='/travel-requests', tags=['Travel Reque
 
 
 class TravelRequestCreate(BaseModel):
-
     model_config = ConfigDict(extra='forbid')
 
     selection_id: int = Field(gt=0)

@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
 from mysite.api.network_identity import client_network, rate_limits_enabled
+from mysite.api.observability import record_websocket_connection
 from mysite.api.origin_config import configured_origins
 
 RESOURCE_LIMITS = {
@@ -23,10 +24,12 @@ RESOURCE_LIMITS = {
     'HTTP_REQUESTS_PER_MINUTE': (120, 100_000),
     'HTTP_IP_BUCKETS': (8192, 65_536),
     'MAX_REQUEST_BODY_BYTES': (1_048_576, 16_777_216),
+    'MAX_IMAGE_UPLOAD_BYTES': (10_485_760, 33_554_432),
     'REQUEST_BODY_TIMEOUT': (10, 60),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
 }
+IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload'}
 
 
 @lru_cache(maxsize=len(RESOURCE_LIMITS))
@@ -153,6 +156,8 @@ class ResourceLimitsMiddleware:
             ):
                 return await reject(431, 'Request headers are too large')
             maximum = setting('MAX_REQUEST_BODY_BYTES')
+            if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
+                maximum = setting('MAX_IMAGE_UPLOAD_BYTES') + 65_536
             lengths = request_headers.getlist('content-length')
             if lengths:
                 try:
@@ -174,8 +179,7 @@ class ResourceLimitsMiddleware:
                 own = f'{scope.get("scheme", "http")}://{request_headers.get("host", "")}'
                 allowed = set(
                     configured_origins(
-                        'CORS_ALLOWED_ORIGINS',
-                        'http://localhost:3000;http://127.0.0.1:3000',
+                        'CORS_ALLOWED_ORIGINS', 'http://localhost:3000;http://127.0.0.1:3000'
                     )
                 )
                 if (origin and origin != own and origin not in allowed) or request_headers.get(
@@ -185,7 +189,7 @@ class ResourceLimitsMiddleware:
             try:
                 path = scope.get('path', '')
                 cheap_read = scope.get('method') in {'GET', 'HEAD'} and (
-                    path == '/' or path.startswith('/admin/statics/')
+                    path == '/' or path.startswith(('/admin/statics/', '/media/'))
                 )
                 if not cheap_read:
                     self.http_quota(address)
@@ -207,7 +211,6 @@ class ResourceLimitsMiddleware:
                             break
             except TimeoutError:
                 return await reject(408, 'Request body timed out')
-            body = b''.join(chunks)
             delivered = False
 
             async def replay():
@@ -220,19 +223,11 @@ class ResourceLimitsMiddleware:
                     if not more_body:
                         delivered = True
 
-                    return {
-                        'type': 'http.request',
-                        'body': chunk,
-                        'more_body': more_body,
-                    }
+                    return {'type': 'http.request', 'body': chunk, 'more_body': more_body}
 
                 if not delivered:
                     delivered = True
-                    return {
-                        'type': 'http.request',
-                        'body': b'',
-                        'more_body': False,
-                    }
+                    return {'type': 'http.request', 'body': b'', 'more_body': False}
 
                 return await receive()
 
@@ -253,6 +248,15 @@ class ResourceLimitsMiddleware:
         if not admitted:
             await send({'type': 'websocket.close', 'code': 1013})
             return
+        accepted = False
+
+        async def track_connection(message):
+            nonlocal accepted
+            if message['type'] == 'websocket.accept' and not accepted:
+                accepted = True
+                record_websocket_connection(True)
+            await send(message)
+
         try:
 
             async def bounded_receive():
@@ -264,8 +268,10 @@ class ResourceLimitsMiddleware:
                         raise WebSocketDisconnect(1009)
                 return message
 
-            await self.app(scope, bounded_receive, send)
+            await self.app(scope, bounded_receive, track_connection)
         finally:
+            if accepted:
+                record_websocket_connection(False)
             with self.lock:
                 self.ws_active -= 1
                 self.ws_clients[address] -= 1

@@ -1,8 +1,8 @@
 """Restore client ownership for requests created through chat."""
 
 import sqlalchemy as sa
-from alembic import op
 
+from alembic import op
 
 revision = 'b1268424d4ef'
 down_revision = '20261103_0022'

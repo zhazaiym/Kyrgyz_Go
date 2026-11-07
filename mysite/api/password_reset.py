@@ -49,7 +49,7 @@ def send_reset_email(email: str, token: str):
     link = frontend_url + separator + urlencode({'token': token})
 
     message = EmailMessage()
-    message['Subject'] = 'KyrgyzGo - Восстановление пароля'
+    message['Subject'] = 'Kerben Travel - Восстановление пароля'
     message['From'] = sender
     message['To'] = email
 
@@ -126,7 +126,7 @@ def _deliver_reset(email, raw_token, reset_id):
 
 
 @router.post('/reset-password')
-def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
+def reset_password(data: ResetPasswordInput, request: Request, db: Session = Depends(get_db)):
     with Session(bind=db.get_bind(), autoflush=False) as lookup:
         candidate = (
             lookup.query(PasswordResetToken).filter_by(token_hash=digest(data.token)).first()
@@ -175,7 +175,7 @@ def reset_password(data: ResetPasswordInput, db: Session = Depends(get_db)):
         PasswordResetToken.used_at.is_(None),
     ).update({'used_at': utcnow()}, synchronize_session=False)
 
-    clear_account_login_attempt(db, 'client-login', f'client:{client.id}')
+    clear_account_login_attempt(db, 'client-login', request, f'client:{client.id}')
     db.commit()
 
     return {'ok': True, 'message': 'Пароль изменён. Войдите снова'}

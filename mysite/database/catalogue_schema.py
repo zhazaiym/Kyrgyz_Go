@@ -1,11 +1,10 @@
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from mysite.database.models import PriceUnitChoices, TourTypeChoices
-from mysite.database.schemas.catalogue import HelicopterTourOutSchema, TrekkingOutSchema
-from pydantic import Field
-from mysite.database.schemas.catalogue import TrekkingProgramOutSchema
+from mysite.database.schemas.catalogue import (HelicopterTourOutSchema, TrekkingOutSchema,
+                                               TrekkingProgramOutSchema)
 
 
 class CatalogueCardSchema(BaseModel):

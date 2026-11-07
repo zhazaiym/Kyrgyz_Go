@@ -15,7 +15,9 @@ venv/
 .ruff_cache/
 .pytest_cache/
 backups/
+media/
 pytest-cache-files-*/
 .ml-test-tmp/
 
 .chat-deploy/
+live-test-results.xml

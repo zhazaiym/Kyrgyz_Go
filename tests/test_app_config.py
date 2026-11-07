@@ -42,3 +42,22 @@ def test_http_cors_origins_come_from_environment(origin, expected_status, expect
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [str(expected_status), str(expected_origin)]
+
+
+@pytest.mark.parametrize('script', ['create_admin'])
+def test_standalone_scripts_register_every_referenced_table(script):
+    code = (
+        f'import {script}; '
+        'from mysite.database.db import Base; '
+        'print(len(Base.metadata.sorted_tables))'
+    )
+    result = subprocess.run(
+        [sys.executable, '-B', '-c', code],
+        cwd=os.getcwd(),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

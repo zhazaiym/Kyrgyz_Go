@@ -7,15 +7,9 @@ from fastapi import Query
 from sqlalchemy import inspect
 
 from mysite.translations.jobs import schedule_translation
-from mysite.translations.source import (
-    active_manual_fields,
-    normalize_text,
-    source_field_hash,
-    source_value_changed,
-    translation_is_ready,
-)
+from mysite.translations.source import (active_manual_fields, normalize_text, source_field_hash,
+                                        source_value_changed, translation_is_ready)
 from mysite.translations.translator import translate_fields
-
 
 Language = Annotated[str, Query(pattern='^(ru|en|de|zh)$')]
 
@@ -36,14 +30,7 @@ CONTENT_FIELDS = {
         'instruction',
         'included',
     ),
-    'trekkings': (
-        'title',
-        'description',
-        'route',
-        'included',
-        'requirements',
-        'difficulty',
-    ),
+    'trekkings': ('title', 'description', 'route', 'included', 'requirements', 'difficulty'),
     'faqs': ('question', 'answer'),
     'contacts': ('country', 'city', 'address'),
     'tour_programs': ('title', 'description'),
@@ -63,11 +50,7 @@ def localized(record, lang='ru'):
         if column.key != 'translations'
     }
 
-    translations = (
-        record.translations
-        if isinstance(record.translations, dict)
-        else {}
-    )
+    translations = record.translations if isinstance(record.translations, dict) else {}
 
     translation = translations.get(lang, {}) if lang != 'ru' else {}
     if not isinstance(translation, dict):
@@ -84,101 +67,67 @@ def localized(record, lang='ru'):
         if source_value in (None, ''):
             continue
 
-        if translation_is_ready(
-            value,
-            source_value,
-            source_hashes.get(field),
-        ):
+        if translation_is_ready(value, source_value, source_hashes.get(field)):
             result[field] = value
 
     return result
 
 
-def mark_manual_translations(
-    translations,
-    source,
-    existing=None,
-    *,
-    compared_to=None,
-):
+def mark_manual_translations(translations, source, existing=None, *, compared_to=None):
     if isinstance(translations, str):
         try:
-            translations = (
-                json.loads(translations)
-                if translations.strip()
-                else {}
-            )
+            translations = json.loads(translations) if translations.strip() else {}
         except json.JSONDecodeError as exc:
             raise ValueError('Translations must be valid JSON') from exc
-
     if not isinstance(translations, dict):
         return existing if isinstance(existing, dict) else {}
-
     result = dict(existing) if isinstance(existing, dict) else {}
     comparison = compared_to if isinstance(compared_to, dict) else result
-
     for language in ('en', 'de', 'zh'):
         values = translations.get(language)
-
-        # Missing languages were not submitted. Preserve worker updates.
         if not isinstance(values, dict):
+            # Missing languages were not present in the submitted form. Preserve
+            # worker updates that arrived after the form was rendered.
             continue
-
         previous = result.get(language)
         previous = dict(previous) if isinstance(previous, dict) else {}
-
         baseline = comparison.get(language)
         baseline = baseline if isinstance(baseline, dict) else {}
-
         hashes = previous.get('_source_hashes')
         hashes = dict(hashes) if isinstance(hashes, dict) else {}
-
         submitted_hashes = values.get('_source_hashes', {})
-        if not isinstance(submitted_hashes, dict):
-            submitted_hashes = {}
-
+        submitted_hashes = submitted_hashes if isinstance(submitted_hashes, dict) else {}
         old_manual = previous.get('_manual_fields', [])
         manual = set(old_manual if isinstance(old_manual, list) else [])
-
         for field, raw_value in values.items():
             if field not in source or not isinstance(raw_value, str):
                 continue
-
             value = normalize_text(raw_value)
             old_value = normalize_text(baseline.get(field))
-
             if not value.strip():
                 current_value = normalize_text(previous.get(field))
-
-                # A stale empty form must not erase a newer worker update.
+                # A worker may have committed a newer translation after the
+                # form's baseline was read. An empty stale form value must not
+                # erase that concurrent update.
                 if current_value != old_value:
                     continue
-
                 previous.pop(field, None)
                 hashes.pop(field, None)
                 manual.discard(field)
                 continue
-
             if value != old_value:
                 current_hash = source_field_hash(source[field])
                 form_hash = submitted_hashes.get(field, hashes.get(field))
-
-                # Do not mark a translation from an old source as current.
                 if field in previous and form_hash != current_hash:
+                    # The form carries a translation for an older source revision.
+                    # Preserve it as stale so the current source remains visible.
                     continue
-
                 previous[field] = value
                 hashes[field] = current_hash
                 manual.add(field)
-
         previous['_source_hashes'] = hashes
         previous['_manual_fields'] = sorted(manual)
-
-        if any(field in previous for field in source):
-            result[language] = previous
-        else:
-            result.pop(language, None)
-
+        result[language] = previous
     return result
 
 
@@ -188,35 +137,26 @@ def manual_translation_changed(incoming, existing):
             incoming = json.loads(incoming) if incoming.strip() else {}
         except json.JSONDecodeError:
             return True
-
     if not isinstance(incoming, dict):
         return bool(incoming)
-
     existing = existing if isinstance(existing, dict) else {}
-
     for language in ('en', 'de', 'zh'):
         values = incoming.get(language)
         if not isinstance(values, dict):
             continue
-
         previous = existing.get(language)
         if not isinstance(previous, dict):
             previous = {}
-
         for field in values:
-            if not isinstance(field, str) or field.startswith('_'):
+            if not isinstance(field, str):
                 continue
-
+            if field.startswith('_'):
+                continue
             value = normalize_text(values.get(field))
-            old_value = normalize_text(previous.get(field))
-
-            if (
-                isinstance(value, str)
-                and not value.strip()
-                and previous.get(field)
-            ) or value != old_value:
+            if (isinstance(value, str) and not value.strip() and previous.get(field)) or (
+                value != normalize_text(previous.get(field))
+            ):
                 return True
-
     return False
 
 
@@ -227,30 +167,24 @@ def manual_translation_needs_refresh(incoming, existing, latest=None):
             incoming = json.loads(incoming) if incoming.strip() else {}
         except json.JSONDecodeError:
             return False
-
     if not isinstance(incoming, dict):
         return False
-
     existing = existing if isinstance(existing, dict) else {}
     latest = latest if isinstance(latest, dict) else existing
-
     for language in ('en', 'de', 'zh'):
         values = incoming.get(language)
         previous = existing.get(language)
         current = latest.get(language)
-
         if not isinstance(values, dict) or not isinstance(previous, dict):
             continue
-
         current = current if isinstance(current, dict) else {}
-
         for field, value in values.items():
-            if not isinstance(field, str) or field.startswith('_'):
+            if not isinstance(field, str):
                 continue
-
+            if field.startswith('_'):
+                continue
             baseline_value = normalize_text(previous.get(field))
             current_value = normalize_text(current.get(field))
-
             if (
                 isinstance(value, str)
                 and not normalize_text(value).strip()
@@ -258,7 +192,6 @@ def manual_translation_needs_refresh(incoming, existing, latest=None):
                 and current_value == baseline_value
             ):
                 return True
-
     return False
 
 
@@ -280,9 +213,7 @@ def release_stale_manual_translations(translations, source):
             hashes = {}
 
         values['_manual_fields'] = active_manual_fields(
-            values.get('_manual_fields', []),
-            hashes,
-            source,
+            values.get('_manual_fields', []), hashes, source
         )
 
         result[language] = values
@@ -297,25 +228,15 @@ def update_translations(record):
     changed = state.pending or any(
         state.attrs[field].history.has_changes()
         and source_value_changed(
-            (
-                state.attrs[field].history.deleted[0]
-                if state.attrs[field].history.deleted
-                else None
-            ),
+            (state.attrs[field].history.deleted[0] if state.attrs[field].history.deleted else None),
             getattr(record, field),
         )
         for field in fields
     )
 
     if changed:
-        source = {
-            field: getattr(record, field)
-            for field in fields
-        }
+        source = {field: getattr(record, field) for field in fields}
 
-        record.translations = release_stale_manual_translations(
-            record.translations,
-            source,
-        )
+        record.translations = release_stale_manual_translations(record.translations, source)
 
         schedule_translation(record, fields, generate_translations)

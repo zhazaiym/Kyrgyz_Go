@@ -10,11 +10,7 @@ from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
 from mysite.database.models import Admin
 from mysite.database.selection_models import TravelSelection
-from mysite.database.selection_statuses import (
-    SelectionStatus,
-    SELECTION_TO_REQUEST_STATUS,
-)
-
+from mysite.database.selection_statuses import SELECTION_TO_REQUEST_STATUS, SelectionStatus
 
 manager_selection_router = APIRouter(
     prefix='/manager/travel-selections', tags=['Manager Travel Selections']
@@ -75,6 +71,7 @@ def detail_manager_selection(
 
     return data
 
+
 @manager_selection_router.patch('/{selection_id}/status/')
 def update_selection_status(
     selection_id: int,
@@ -82,31 +79,20 @@ def update_selection_status(
     current_admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    selection = db.get(
-        TravelSelection,
-        selection_id,
-        with_for_update=True,
-        populate_existing=True,
-    )
+    selection = db.get(TravelSelection, selection_id, with_for_update=True, populate_existing=True)
 
     if selection is None:
         raise HTTPException(404, 'Поездка не найдена')
 
     # Сначала получаем связанную заявку.
-    travel_request = linked_request(
-        db,
-        selection,
-        for_update=True,
-    )
+    travel_request = linked_request(db, selection, for_update=True)
 
     # Проверяем ограничения до изменения объектов.
     if data.status == SelectionStatus.draft and (
-        selection.session_id is not None
-        or travel_request is not None
+        selection.session_id is not None or travel_request is not None
     ):
         raise HTTPException(
-            409,
-            'Нельзя вернуть в черновик поездку с чатом или отправленной заявкой',
+            409, 'Нельзя вернуть в черновик поездку с чатом или отправленной заявкой'
         )
 
     current_status = processing_status(selection, travel_request)

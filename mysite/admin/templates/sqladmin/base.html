@@ -2,7 +2,7 @@
 
 {% block tail %}
 {{ super() }}
-{% if request.url.path.endswith('/travel-request/list') %}
+{% if request.url.path.endswith('/travel-request/list') or request.url.path.endswith('/chat-request/list') %}
 <script>
 (() => {
   let socket;
@@ -27,6 +27,47 @@
     if (socket && socket.readyState === WebSocket.OPEN) socket.send('ping');
   }, 25000);
   window.addEventListener('pagehide', () => window.clearTimeout(reconnectTimer));
+})();
+</script>
+{% endif %}
+{% if request.url.path.endswith('/create') or '/edit/' in request.url.path %}
+<script>
+(() => {
+  for (const input of document.querySelectorAll('input[name="image"], input[name="main_image"], input[name="qr_code"]')) {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/jpeg,image/png,image/webp';
+    picker.className = 'form-control mt-2';
+    const status = document.createElement('div');
+    status.className = 'form-hint';
+    const preview = document.createElement('img');
+    preview.className = 'mt-2 rounded';
+    preview.style.maxHeight = '160px';
+    const show = () => {
+      preview.hidden = !input.value;
+      if (input.value) preview.src = input.value;
+    };
+    picker.addEventListener('change', async () => {
+      if (!picker.files.length) return;
+      const body = new FormData();
+      body.append('file', picker.files[0]);
+      status.textContent = 'Загрузка фото...';
+      try {
+        const response = await fetch('/admin/media/upload', { method: 'POST', body, credentials: 'same-origin' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || response.status);
+        input.value = result.url;
+        status.textContent = 'Фото загружено, ссылка подставлена.';
+        show();
+      } catch (error) {
+        status.textContent = `Не удалось загрузить: ${error.message}`;
+      }
+      picker.value = '';
+    });
+    input.addEventListener('input', show);
+    input.after(picker, status, preview);
+    show();
+  }
 })();
 </script>
 {% endif %}

@@ -1,10 +1,15 @@
-# KYRGYZGO deployment
+# Kerben Travel backend deployment
 
 ## Docker + external PostgreSQL
 
 The project includes a FastAPI API, SQLAlchemy/psycopg2 database access,
-Alembic migrations, SQLAdmin, and an optional Gemini-powered chat. Docker
+Alembic migrations, SQLAdmin, and a Gemini-powered AI chat. Docker
 Compose runs only the API. PostgreSQL remains on your host or database server.
+
+The AI model is called through Google's Gemini API; there is no separate AI
+container. Set a valid `GEMINI_API_KEY` in the API environment for chat replies.
+The WebSocket greeting and HTTP healthcheck do not verify Gemini. Without a
+working key, a connected chat can still return `ai_unavailable` after a message.
 
 Required on the server: Docker Engine with the Compose plugin, access to
 PostgreSQL, and an HTTPS reverse proxy (for example Nginx). Python and Postman
@@ -20,22 +25,35 @@ environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
-<<<<<<< HEAD
-The included Caddy proxy also restricts every `/admin*` route to
-`ADMIN_ALLOWED_CIDR`. Keep the default localhost-only range until you configure
-the fixed egress address of the administrator VPN. A request from any of 100
-other public IPs is denied at the proxy (0 password attempts reach the app);
-the admitted VPN egress is then subject to the existing five-attempts-per-minute
-account/IP limit (up to 10 attempts across a fixed-window boundary). Do not make
-this range public or set it to `0.0.0.0/0`.
-=======
 Admin sessions do not expire on a timer; the login is cleared by the admin
 logout action. Browsers may discard a session cookie when the browser closes.
 
-The admin panel and admin API are reachable from any source IP. Access to admin
-data and changes still requires a valid admin login. The login limiter permits
-at most **20 attempts/minute per source IP** and **5 attempts/minute for each
-account/IP pair**. Use a strong admin password and HTTPS in production.
+The admin panel and admin API require a password and TOTP MFA, or a single-use
+recovery code. For an existing deployment, apply the MFA migration during a
+maintenance window, enroll every active admin from a trusted local shell, and
+only then reopen admin access:
+
+```powershell
+python -m scripts.enroll_admin_mfa admin-username
+```
+
+The command displays a one-time authenticator secret, verifies a current code,
+then stores the TOTP secret encrypted with a key derived from `SECRET_KEY` and
+stores only hashes of recovery codes. Keep `SECRET_KEY` stable; rotating it
+requires re-enrolling administrators. The login limiter permits at most
+**20 attempts/minute per source IP** and **5 attempts/minute for each
+account/IP pair**. Use HTTPS in production.
+
+If an enrolled account loses its device and recovery codes, an active owner can
+authorize a reset from a trusted shell with
+`python -m scripts.enroll_admin_mfa target-username --reset-by owner-username`;
+the command verifies the owner's password and MFA before replacing the target's
+MFA secret.
+
+There are three server-enforced roles: `owner` manages all data and admins,
+`manager` manages travel requests and selections, and `catalog_editor` manages
+catalogue and public content. Existing accounts migrate as `owner`; assign
+least-privilege roles through SQLAdmin after an owner has enrolled.
 The trusted deployment helper also requires a valid `ADMIN_ALLOWED_IPS` value
 in the resolved server Compose configuration. The application middleware
 currently does not enforce that value at request time; use a firewall or
@@ -67,7 +85,6 @@ is needed.
 
 The deployment helper carries the existing Compose environment into its
 generated `/home/ubuntu/kyrgyzgo-deploy.override.yml`.
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 
 Database addressing:
 
@@ -111,29 +128,46 @@ created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
 
-GitHub Actions runs checks and tests only; it never connects to EC2 or deploys.
-Production updates are started manually by an administrator using
+GitHub Actions runs checks and tests by default. An opt-in `deploy` job is
+prepared locally but remains disabled unless the repository variable
+`DEPLOY_ENABLED` is exactly `true`. It runs only after successful tests on a
+push to `main`; see [automatic deployment](docs/automatic-deployment.md) for
+the required target, verified host keys and secrets. No production rollout
+has been confirmed by the local checks.
+Production updates can also be started manually by an administrator using
 `scripts/deploy.ps1` from a workstation or the server's documented Docker
 commands. The trusted server-side deploy script compares the current database
 revision with the candidate source and reports `migration_required` before
 replacing the running image if they differ. Back up the database, review and
 apply the required migrations from the candidate source with
 `python -m alembic upgrade head`, then deploy the matching image. The current
-source migration head is `20261103_0022`; revisions `20261030_0018` through
+source migration head is `20261107_0024`; revisions `20261030_0018` through
 `20261030_0020` replace and repopulate FAQ content, `20261103_0021` adds tour
-reviews, and `20261103_0022` adds client-owned travel requests. Do not assume the production
+reviews, `20261103_0022` adds client-owned travel requests, `20261107_0023`
+adds admin MFA/roles, and `20261107_0024` persists translation jobs. After
+applying `20261107_0023`, enroll active admins using the command above before
+reopening admin access. Do not assume the production
 database is at a particular revision; check it before deployment. Although the
 Docker image runs `alembic upgrade head` on startup, the guarded production
 deploy flow requires schema changes to be applied as a backed-up maintenance
 step first.
-The repository no longer uses GitHub Actions deployment secrets. Remove the
-old `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, and `DEPLOY_USER`
-repository secrets. If the old CI public key is still in the server's
-`authorized_keys`, remove that CI-only key while preserving the separate manual
-deployment key.
+The opt-in job requires fresh `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` secrets
+in the `production` environment and a repository variable `DEPLOY_TARGET`.
+Do not reuse historical server settings without verifying them. Keep
+`DEPLOY_ENABLED` unset until the actual server and trusted helper are ready.
 Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
 Activate the matching image after the migration and before reopening catalogue
 writes.
+
+### Uploaded photos
+
+Admins upload JPEG, PNG or WEBP photos from the SQLAdmin forms or through
+`POST /admin/media/`. The API stores them as WEBP in the `media` Compose volume
+(`/app/media`, override with `MEDIA_ROOT`) and serves them from `/media/`; the
+database keeps only the returned absolute URL. Back up the `media` volume together
+with PostgreSQL: a database restore without it leaves broken photo links. URLs
+include the API host, so a move to a new domain needs the stored URLs rewritten.
+`MAX_IMAGE_UPLOAD_BYTES` limits one upload (default 10 MB).
 
 ### Start and verify
 
@@ -217,26 +251,12 @@ by IP. Keep the certificate volumes and proxy running so renewal is automatic.
 See the [Caddy HTTPS guide](https://caddyserver.com/docs/quick-starts/https) and
 [Let's Encrypt IP certificates](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability).
 
-### Test catalogue and translations
-
-After migrations, explicitly add test catalogue data with:
-
-```bash
-docker compose exec api python seed_demo.py
-```
-
-Without Docker, run `python seed_demo.py` against the configured `DATABASE_URL`.
-This creates 20 entries in each of tours, hotels, transport, trekking, helicopter
-tours and FAQ (120 catalogue entries total), with
-`ТЕСТ` labels, placeholder prices/photos and ru/en/de/zh texts. Numbered variants
-use synthetic coordinates and prices. Re-running the
-command preserves existing entries and does not create duplicates. Data is
-never seeded automatically in production.
-
 Public catalogue GETs accept `?lang=ru|en|de|zh`; the default is Russian.
 Translations are generated on content changes through the API or SQLAdmin and
 stored in the database. If generation fails or a field has no translation, GET
-returns the original text. The SQLAdmin `translations` JSON field also supports
+returns the original text. Translation jobs are stored in PostgreSQL and retry
+transient failures up to five times with backoff; stale source text is discarded.
+The SQLAdmin `translations` JSON field also supports
 manual translations, for example `{"en":{"question":"Question?","answer":"Answer."}}`.
 Existing records need to be saved with changed source text or supplied manual
 translations to populate their translations. Public GETs make no AI calls.
@@ -374,3 +394,10 @@ python -m scripts.run_tests -q
 ```
 
 `DATABASE_URL` is mandatory. Unsupported database backends fail at startup.
+# Monitoring
+
+The Prometheus text endpoint is `GET /metrics`. It returns 404 unless
+`METRICS_BEARER_TOKEN` is set to a random value of at least 32 characters.
+Send it as `Authorization: Bearer <token>` and keep the token in the deployment
+secret store. Metrics contain bounded operation/outcome labels and durations;
+they do not include prompts, message text, account names, or session ids.

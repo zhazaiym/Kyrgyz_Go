@@ -33,12 +33,16 @@ def create_trekking_image(trekking_image: TrekkingImageInputSchema, db: Session 
 @trekking_image_router.get(
     '/', response_model=list[TrekkingImageOutSchema], dependencies=[Depends(current_client)]
 )
-def list_trekking_images(db: Session = Depends(get_db), pagination: Pagination = Depends()):
+def list_trekking_images(
+    trekking_id: int | None = None,
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
+):
+    query = db.query(TrekkingImage).join(Trekking).filter(Trekking.is_active.is_(True))
+    if trekking_id is not None:
+        query = query.filter(TrekkingImage.trekking_id == trekking_id)
     return (
-        db.query(TrekkingImage)
-        .join(Trekking)
-        .filter(Trekking.is_active.is_(True))
-        .order_by(TrekkingImage.order, TrekkingImage.id)
+        query.order_by(TrekkingImage.order, TrekkingImage.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()

@@ -1,4 +1,4 @@
-# Структура KYRGYZGO API
+# Структура API Kerben Travel
 
 ## Основные части
 

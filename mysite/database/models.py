@@ -2,11 +2,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
 
-from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
-                        Text, UniqueConstraint, event, inspect, select)
+from sqlalchemy import (JSON, Boolean, CheckConstraint, Date, DateTime, Enum, ForeignKey, Index,
+                        Integer, Numeric, String, Text, UniqueConstraint, event, inspect, select)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
+from mysite.database import chat_models, selection_models  # noqa: F401
 from mysite.database.contact_validation import validate_whatsapp_link
 from mysite.database.db import Base
 from mysite.database.request_status import validate_status_transition
@@ -48,7 +49,42 @@ class Admin(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(30), default='owner', server_default='owner', nullable=False
+    )
+    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    totp_last_used_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recovery_code_hashes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    __table_args__ = (
+        CheckConstraint("role IN ('owner', 'manager', 'catalog_editor')", name='ck_admin_role'),
+    )
+
+
+class TranslationJob(Base):
+    __tablename__ = 'translation_jobs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity: Mapped[str] = mapped_column(String(80), nullable=False)
+    record_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='pending', nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint('entity', 'record_id', name='uq_translation_job_target'),
+        Index('ix_translation_jobs_status_due', 'status', 'next_attempt_at'),
+    )
 
 
 class About(LocalizedContent, Base):

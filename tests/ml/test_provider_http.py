@@ -1,5 +1,3 @@
-"""Exercise the installed LangChain + Gemini HTTP stack, with no network sockets."""
-
 import asyncio
 
 import httpx

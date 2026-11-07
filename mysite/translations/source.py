@@ -2,13 +2,7 @@
 
 import hashlib
 
-
-TOUR_TRANSLATION_FIELDS = (
-    'title',
-    'description',
-    'included',
-    'excluded',
-)
+TOUR_TRANSLATION_FIELDS = ('title', 'description', 'included', 'excluded')
 
 
 def normalize_text(value):
@@ -26,10 +20,7 @@ def _source_value(value):
 def source_field_hash(value):
     normalized = str(_source_value(value))
 
-    return hashlib.md5(
-        normalized.encode('utf-8'),
-        usedforsecurity=False,
-    ).hexdigest()
+    return hashlib.md5(normalized.encode('utf-8'), usedforsecurity=False).hexdigest()
 
 
 def source_value_changed(old, new):
@@ -39,9 +30,7 @@ def source_value_changed(old, new):
 def translation_is_ready(value, source, source_hash):
     """Check that a nonempty translation matches the current source."""
     return (
-        isinstance(value, str)
-        and bool(value.strip())
-        and source_hash == source_field_hash(source)
+        isinstance(value, str) and bool(value.strip()) and source_hash == source_field_hash(source)
     )
 
 
@@ -50,11 +39,7 @@ def translation_ready(value, stored_hash, source):
     if source in (None, ''):
         return True
 
-    return translation_is_ready(
-        value,
-        source,
-        stored_hash,
-    )
+    return translation_is_ready(value, source, stored_hash)
 
 
 def active_manual_fields(fields, hashes, source):
@@ -68,13 +53,15 @@ def active_manual_fields(fields, hashes, source):
     if not isinstance(source, dict):
         return []
 
-    return sorted({
-        field
-        for field in fields
-        if isinstance(field, str)
-        and field in source
-        and hashes.get(field) == source_field_hash(source[field])
-    })
+    return sorted(
+        {
+            field
+            for field in fields
+            if isinstance(field, str)
+            and field in source
+            and hashes.get(field) == source_field_hash(source[field])
+        }
+    )
 
 
 def attach_source_hashes(translations, source):
@@ -95,11 +82,7 @@ def attach_source_hashes(translations, source):
         hashes = dict(hashes) if isinstance(hashes, dict) else {}
 
         for field, translated in values.items():
-            if (
-                field in source
-                and isinstance(translated, str)
-                and translated.strip()
-            ):
+            if field in source and isinstance(translated, str) and translated.strip():
                 hashes[field] = source_field_hash(source[field])
 
         values['_source_hashes'] = hashes

@@ -35,7 +35,12 @@ def list_tour_images(
     query = db.query(TourImage).join(Tour).filter(Tour.is_active.is_(True))
     if tour_id is not None:
         query = query.filter(TourImage.tour_id == tour_id)
-    return query.order_by(TourImage.order, TourImage.id).offset(pagination.offset).limit(pagination.limit).all()
+    return (
+        query.order_by(TourImage.order, TourImage.id)
+        .offset(pagination.offset)
+        .limit(pagination.limit)
+        .all()
+    )
 
 
 @tour_image_router.get(

@@ -33,7 +33,6 @@ ALLOWED_FILES = {
     'requirements.txt',
     'main.py',
     'create_admin.py',
-    'seed_demo.py',
     'alembic.ini',
 }
 
@@ -251,6 +250,22 @@ def require_same_schema(current, candidate):
             'Schema revision changes require a separate backed-up maintenance migration '
             'before automatic deployment. Production has not been replaced.'
         )
+
+
+def validate_database_backup(path):
+    with Path(path).open('rb') as database:
+        if database.read(5) != b'PGDMP':
+            raise RuntimeError('Invalid database backup')
+
+
+def rollback_activation(backup, state_file, state):
+    """Restore the previous Compose image and persist the rollback outcome."""
+    shutil.copy2(Path(backup) / 'previous-deploy.override.yml', OVERRIDE)
+    state['status'] = 'rolling_back'
+    Path(state_file).write_text(json.dumps(state, indent=2))
+    compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
+    state['status'] = 'rolled_back'
+    Path(state_file).write_text(json.dumps(state, indent=2))
 
 
 def deployed_schema(container):
@@ -488,9 +503,7 @@ def deploy(revision, source):
                 ],
                 stdout=destination,
             )
-        with (backup / 'database.dump').open('rb') as database:
-            if database.read(5) != b'PGDMP':
-                raise RuntimeError('Invalid database backup')
+        validate_database_backup(backup / 'database.dump')
         dockerfile = 'Dockerfile'
         if same_base_runtime:
             dockerfile = 'Dockerfile.runtime'
@@ -523,11 +536,7 @@ def deploy(revision, source):
                     raise RuntimeError('Public HTTPS health check failed')
             state['status'] = 'healthy'
         except BaseException:
-            shutil.copy2(backup / 'previous-deploy.override.yml', OVERRIDE)
-            state['status'] = 'rolling_back'
-            state_file.write_text(json.dumps(state, indent=2))
-            compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
-            state['status'] = 'rolled_back'
+            rollback_activation(backup, state_file, state)
             raise
         finally:
             state_file.write_text(json.dumps(state, indent=2))

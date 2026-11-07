@@ -11,11 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-
-UPLOAD_PATHS = {
-    '/admin/media',
-    '/admin/media/upload',
-}
+UPLOAD_PATHS = {'/admin/media', '/admin/media/upload'}
 
 
 def upload_admin_allowed(scope) -> bool:
@@ -36,14 +32,11 @@ def upload_admin_allowed(scope) -> bool:
         if scheme.lower() != 'bearer' or not token.strip():
             return False
 
-        credentials = HTTPAuthorizationCredentials(
-            scheme='Bearer',
-            credentials=token.strip(),
-        )
+        credentials = HTTPAuthorizationCredentials(scheme='Bearer', credentials=token.strip())
 
         with SessionLocal() as db:
             try:
-                get_current_admin(credentials=credentials, db=db)
+                get_current_admin(request=request, credentials=credentials, db=db)
             except HTTPException:
                 return False
 
@@ -55,10 +48,7 @@ def upload_admin_allowed(scope) -> bool:
         return False
 
     try:
-        signed_data = TimestampSigner(SECRET_KEY).unsign(
-            cookie.encode('utf-8'),
-            max_age=None,
-        )
+        signed_data = TimestampSigner(SECRET_KEY).unsign(cookie.encode('utf-8'), max_age=None)
         session = json.loads(b64decode(signed_data, validate=True))
 
         if not isinstance(session, dict):
@@ -67,13 +57,7 @@ def upload_admin_allowed(scope) -> bool:
         admin_id = session.get('admin_id')
         if type(admin_id) is not int or admin_id <= 0:
             return False
-    except (
-        BadSignature,
-        binascii.Error,
-        ValueError,
-        TypeError,
-        UnicodeError,
-    ):
+    except (BadSignature, binascii.Error, ValueError, TypeError, UnicodeError):
         return False
 
     with SessionLocal() as db:
@@ -97,8 +81,7 @@ class AdminAccessMiddleware:
 
             if not allowed:
                 response = JSONResponse(
-                    {'detail': 'Требуется вход администратора'},
-                    status_code=401,
+                    {'detail': 'Требуется вход администратора'}, status_code=401
                 )
                 return await response(scope, receive, send)
 

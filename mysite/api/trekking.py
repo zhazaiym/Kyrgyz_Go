@@ -42,10 +42,7 @@ def detail_trekking(trekking_id: int, lang: Language = 'ru', db: Session = Depen
         raise HTTPException(status_code=404, detail='Треккинг табылган жок')
 
     result = localized(trekking_db, lang)
-    result['programs'] = [
-        localized(program, lang)
-        for program in trekking_db.programs
-    ]
+    result['programs'] = [localized(program, lang) for program in trekking_db.programs]
     return result
 
 

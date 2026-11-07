@@ -8,7 +8,7 @@ _HOME_CONTENT = {
     'ru': {
         'title': 'Мы создаём путешествия, которые объединяют мир.',
         'description': (
-            'Kerben Travels — команда профессионалов, влюблённых в путешествия. '
+            'Kerben Travel — команда профессионалов, влюблённых в путешествия. '
             'Организуем туры по Центральной Азии и всему миру, а также принимаем '
             'гостей в Кыргызстане.'
         ),
@@ -21,7 +21,7 @@ _HOME_CONTENT = {
     'en': {
         'title': 'We create journeys that bring the world together.',
         'description': (
-            'Kerben Travels is a team of travel professionals. We organize tours '
+            'Kerben Travel is a team of travel professionals. We organize tours '
             'across Central Asia and around the world, and welcome guests to Kyrgyzstan.'
         ),
         'details': (
@@ -33,7 +33,7 @@ _HOME_CONTENT = {
     'de': {
         'title': 'Wir schaffen Reisen, die die Welt verbinden.',
         'description': (
-            'Kerben Travels ist ein Team von Reiseprofis. Wir organisieren Reisen '
+            'Kerben Travel ist ein Team von Reiseprofis. Wir organisieren Reisen '
             'durch Zentralasien und die ganze Welt und heißen Gäste in Kirgisistan willkommen.'
         ),
         'details': (
@@ -45,7 +45,7 @@ _HOME_CONTENT = {
     'zh': {
         'title': '我们打造连接世界的旅程。',
         'description': (
-            'Kerben Travels 是一支热爱旅行的专业团队。我们组织中亚及世界各地的旅行，'
+            'Kerben Travel 是一支热爱旅行的专业团队。我们组织中亚及世界各地的旅行，'
             '也在吉尔吉斯斯坦接待宾客。'
         ),
         'details': '从首次咨询到您平安返家，我们都会妥善安排每个细节：接送、住宿、餐饮和游览。',

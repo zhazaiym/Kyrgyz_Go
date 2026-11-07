@@ -19,15 +19,8 @@ from mysite.database.tour_review_models import TourReview
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
-from mysite.translations.source import (
-    TOUR_TRANSLATION_FIELDS,
-    active_manual_fields,
-    normalize_text,
-    source_value_changed,
-    translation_is_ready,
-)
-from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, source_value_changed,
-                                        translation_ready)
+from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, active_manual_fields,
+                                        normalize_text, source_value_changed, translation_is_ready)
 from mysite.translations.translator import translate_tour
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])
@@ -61,11 +54,7 @@ def get_localized_tour(
         for field in TRANSLATED_FIELDS if detail or include_description else ('title',):
             value = getattr(translation_db, field)
 
-            if translation_is_ready(
-                value,
-                getattr(tour_db, field),
-                source_hashes.get(field),
-            ):
+            if translation_is_ready(value, getattr(tour_db, field), source_hashes.get(field)):
                 result[field] = value
 
     return result

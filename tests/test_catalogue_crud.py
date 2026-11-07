@@ -140,3 +140,45 @@ def test_content_records_can_be_managed_by_admin(client, admin_headers):
     assert client.get(f'/about-sections/{section["id"]}/').status_code == 200
     assert client.get(f'/faqs/{faq["id"]}/').status_code == 200
     assert client.get(f'/contacts/{contact["id"]}/', headers=admin_headers).status_code == 200
+
+
+def test_gallery_lists_filter_by_parent(client, admin_headers, customer_headers):
+    country = create(client, '/countries/', {'name': 'Gallery Country'}, admin_headers)
+    region = create(
+        client, '/regions/', {'name': 'Gallery Region', 'country_id': country['id']}, admin_headers
+    )
+    district = create(
+        client,
+        '/districts/',
+        {'name': 'Gallery District', 'region_id': region['id']},
+        admin_headers,
+    )
+    hotel = {
+        'name': 'Gallery Hotel',
+        'price': '60.00',
+        'region_id': region['id'],
+        'district_id': district['id'],
+    }
+    parents = [
+        ('/transports/', {'name': 'Gallery Van', 'seats': 7, 'price': '90.00'}, 'transport'),
+        ('/hotels/', hotel, 'hotel'),
+        ('/helicopter-tours/', {'title': 'Gallery Flight', 'price': '450.00'}, 'helicopter'),
+        ('/trekkings/', {'title': 'Gallery Trek', 'price': '120.00'}, 'trekking'),
+    ]
+    for path, payload, name in parents:
+        first = create(client, path, payload, admin_headers)
+        second = create(client, path, payload, admin_headers)
+        for parent in (first, second):
+            create(
+                client,
+                f'/{name}-images/',
+                {f'{name}_id': parent['id'], 'image': f'https://example.com/{parent["id"]}.jpg'},
+                admin_headers,
+            )
+
+        response = client.get(
+            f'/{name}-images/', params={f'{name}_id': first['id']}, headers=customer_headers
+        )
+
+        assert response.status_code == 200, response.text
+        assert [image[f'{name}_id'] for image in response.json()] == [first['id']]

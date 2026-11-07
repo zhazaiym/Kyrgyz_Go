@@ -1,12 +1,14 @@
 import asyncio
 import json
 import threading
+from uuid import uuid4
 
 import pytest
 
 from mysite.api import chat_service, chat_ws
 from mysite.database.chat_models import ChatMessage
 from mysite.database.db import SessionLocal
+from mysite.database.models import FAQ
 from tests.test_chat_auth import bearer, register
 
 
@@ -249,3 +251,25 @@ def test_cancellation_after_prepare_commit_removes_only_its_pending_message(clie
     with SessionLocal() as db:
         assert db.query(ChatMessage).filter_by(session_id=sid, role='user').count() == 0
     assert sid not in chat_service._locks
+
+
+def test_faq_search_does_not_return_unrelated_first_rows():
+    from ML.tools import search_company_faq
+
+    marker = uuid4().hex
+    with SessionLocal() as db:
+        faq = FAQ(question=f'Unrelated policy {marker}', answer='This answer is not relevant.')
+        db.add(faq)
+        db.commit()
+        identity = faq.id
+
+    try:
+        result = search_company_faq.invoke({'question': f'Unrelated marker {uuid4().hex}'})
+        assert result == []
+        assert search_company_faq.invoke({'question': 'Hi'}) == []
+    finally:
+        with SessionLocal() as db:
+            faq = db.get(FAQ, identity)
+            if faq is not None:
+                db.delete(faq)
+                db.commit()

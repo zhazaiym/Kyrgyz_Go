@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import yaml
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -72,11 +73,15 @@ def test_dockerfile_is_shipped_and_legacy_digest_probe_handles_missing_file(monk
     ) == ci_deploy.dockerfile_runtime_digest(source)
 
 
-def test_no_github_actions_job_can_deploy_to_production():
-    workflow = Path('.github/workflows/ci.yml').read_text()
-    assert '  deploy:' not in workflow
-    assert 'kyrgyzgo-production' not in workflow
-    assert 'DEPLOY_SSH_KEY' not in workflow
+def test_production_credentials_are_isolated_from_test_job():
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    test_job = workflow['jobs']['test']
+    assert 'secrets.' not in json.dumps(test_job)
+    assert 'environment' not in test_job
+    deploy = workflow['jobs']['deploy']
+    assert deploy['environment'] == 'production'
+    assert deploy['needs'] == 'test'
+    assert 'secrets.DEPLOY_SSH_KEY' in json.dumps(deploy)
 
 
 def test_activation_override_preserves_admin_policy():
@@ -244,15 +249,12 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     assert f'valid_{kind}' not in removed.json()['booking_preview']['missing_fields']
     assert removed.json()['stage'] == 'awaiting_confirmation'
     assert removed.json()['booking_preview']['can_confirm']
-<<<<<<< HEAD
-=======
     from mysite.api.booking_text import booking_text
 
     assert (
         removed.json()['answer']
         != booking_text(removed.json()['booking_preview']['data'])['service_removed']
     )
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
     with SessionLocal() as db:
         assert f'{kind}_id' not in db.get(ChatSession, sid).state
     stranger, _ = register(client)
@@ -265,10 +267,7 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
         json={'session_id': sid, 'revision': removed.json()['revision'], 'confirmed': True},
     )
     assert confirmed.status_code == 200
-<<<<<<< HEAD
-=======
     assert confirmed.json()['status'] == 'submitted'
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 
 
 def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):
@@ -334,25 +333,14 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
         assert socket.receive_json()['code'] == 'invalid_message'
 
 
-<<<<<<< HEAD
-@pytest.mark.parametrize('admin', [False, True])
-def test_login_limit_blocks_one_ip_without_locking_the_account(
-    client, admin_headers, monkeypatch, admin
-):
-    account, email = register(client)
-    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
-    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_800_000_000)
-    identity = {'username': 'test-admin'} if admin else {'email': email}
-    route = '/admin/login/' if admin else '/auth/login'
-    attempts = 5 if admin else 8
-=======
 def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, monkeypatch):
     account, email = register(client)
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    # Keep all attempts in one fixed window; real minute rollover legitimately resets it.
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_200)
     identity = {'email': email}
     route = '/auth/login'
     attempts = 8
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
     with (
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
         TestClient(app, client=('198.51.100.131', 1)) as owner,

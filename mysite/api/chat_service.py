@@ -12,9 +12,11 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from ML.agent import respond
+from mysite.admin.realtime import publish_new_request
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
+from mysite.api.observability import record_booking_conflict
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import linked_request, processing_status
@@ -24,9 +26,7 @@ from mysite.database.db import SessionLocal
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.selection_models import TravelSelection
 from mysite.database.traveler_validation import validate_travelers_count
-from mysite.local_time import local_today
-from mysite.admin.realtime import publish_new_request
-
+from mysite.dates import bishkek_today
 
 _locks = {}
 _lock_users = {}
@@ -274,15 +274,15 @@ def _save_message_response(
             s.revision += 1
         preview = build_preview(db, s)
         preview_event = None
-
-        if intent or s.stage in ('collecting', 'awaiting_confirmation'):
+        if intent or s.stage == 'awaiting_confirmation' or (s.stage == 'collecting' and changed):
             if preview['complete']:
-                if changed or intent:
+                if s.stage != 'awaiting_confirmation' or changed or intent:
                     s.stage = 'awaiting_confirmation'
                     preview = build_preview(db, s)
                     preview_event = preview
                     summary = _preview_summary(db, preview)
                     answer = summary
+                s.stage = 'awaiting_confirmation'
             else:
                 s.stage = 'collecting'
         if not answer.strip():
@@ -392,7 +392,7 @@ def build_preview(db, s):
         missing.append('tour_or_destination')
     if state.get('travel_date'):
         try:
-            if date.fromisoformat(state['travel_date']) < local_today():
+            if date.fromisoformat(state['travel_date']) < bishkek_today():
                 missing.append('future_travel_date')
         except (ValueError, TypeError):
             missing.append('valid_travel_date')
@@ -445,17 +445,11 @@ def recover_confirmation(db, session, message=None):
 
 def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     if not confirmed:
-        raise HTTPException(
-            400,
-            'Необходимо явное подтверждение',
-        )
+        raise HTTPException(400, 'Необходимо явное подтверждение')
 
     existing = (
         db.query(ChatBookingLink)
-        .filter(
-            ChatBookingLink.session_id == s.id,
-            ChatBookingLink.revision == revision,
-        )
+        .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
         .first()
     )
 
@@ -463,19 +457,13 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         return already_submitted(existing.request_id, client_id)
 
     if s.stage != 'awaiting_confirmation':
-        raise HTTPException(
-            409,
-            'Сначала получите полную сводку заявки в чате',
-        )
+        raise HTTPException(409, 'Сначала получите полную сводку заявки в чате')
 
     preview = build_preview(db, s)
 
     if revision != s.revision:
-        raise HTTPException(
-            409,
-            'Данные изменились, запросите новый preview',
-        )
-
+        record_booking_conflict()
+        raise HTTPException(409, 'Данные изменились, запросите новый preview')
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
 
@@ -488,16 +476,12 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         .with_for_update()
         .first()
     )
-
-    if selection and processing_status(
-        selection,
-        linked_request(db, selection),
-    ) in ('cancelled', 'completed'):
-        raise HTTPException(
-            409,
-            'Подборка уже отменена или завершена',
-        )
-
+    if selection and processing_status(selection, linked_request(db, selection)) in (
+        'cancelled',
+        'completed',
+    ):
+        record_booking_conflict()
+        raise HTTPException(409, 'Подборка уже отменена или завершена')
     try:
         advance_message_version(db, s)
     except HTTPException as exc:
@@ -506,16 +490,13 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
         existing = (
             db.query(ChatBookingLink)
-            .filter(
-                ChatBookingLink.session_id == s.id,
-                ChatBookingLink.revision == revision,
-            )
+            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
             .first()
         )
 
         if existing:
             return already_submitted(existing.request_id, client_id)
-
+        record_booking_conflict()
         raise
 
     tour_note = ''
@@ -536,8 +517,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
     if st['selected_services']:
         notes += '\nSelected services: ' + '; '.join(
-            f'{item["kind"]} #{item["id"]}: {item["name"]}'
-            for item in st['selected_services']
+            f'{item["kind"]} #{item["id"]}: {item["name"]}' for item in st['selected_services']
         )
 
     obj = TravelRequest(
@@ -545,11 +525,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         name=st['client_name'],
         phone=st['phone'],
         email=st.get('email'),
-        travel_date=(
-            date.fromisoformat(st['travel_date'])
-            if st.get('travel_date')
-            else None
-        ),
+        travel_date=(date.fromisoformat(st['travel_date']) if st.get('travel_date') else None),
         duration_days=st.get('duration_days'),
         travelers_count=st['people_count'],
         destination=destination,
@@ -566,10 +542,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
         db.add(
             ChatBookingLink(
-                client_id=client_id,
-                session_id=s.id,
-                request_id=request_id,
-                revision=s.revision,
+                client_id=client_id, session_id=s.id, request_id=request_id, revision=s.revision
             )
         )
 
@@ -577,37 +550,22 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
         if selection:
             selection.status = 'in_progress'
-
         db.commit()
-
+        publish_new_request(obj.id)
     except IntegrityError:
         db.rollback()
 
         existing = (
             db.query(ChatBookingLink)
-            .filter(
-                ChatBookingLink.session_id == s.id,
-                ChatBookingLink.revision == revision,
-            )
+            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
             .first()
         )
 
         if existing:
             return already_submitted(existing.request_id, client_id)
-
-        raise HTTPException(
-            409,
-            'Конфликт подтверждения заявки',
-        )
-
-    # Уведомление отправляем после успешного сохранения заявки.
-    publish_new_request(request_id)
-
-    return {
-        'status': 'submitted',
-        'request_id': request_id,
-        'client_code': f'KG-{client_id:06d}',
-    }
+        record_booking_conflict()
+        raise HTTPException(409, 'Конфликт подтверждения заявки')
+    return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 
 
 def _confirm_booking_for_client(session_id, client_id, token, revision, confirmed):

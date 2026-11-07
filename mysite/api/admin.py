@@ -11,6 +11,7 @@ from jwt import InvalidTokenError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from mysite.api.admin_mfa import consume_admin_mfa
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_login_attempt
@@ -47,7 +48,42 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return password_hash.verify(password, hashed_password)
 
 
+def admin_role_allows(role: str, path: str) -> bool:
+    if role == 'owner':
+        return True
+    if path == '/admin/me/':
+        return True
+    if path.startswith(('/admin/requests', '/manager/')):
+        return role == 'manager'
+    catalog_paths = (
+        '/admin/media',
+        '/tour-categories',
+        '/tours',
+        '/countries',
+        '/regions',
+        '/districts',
+        '/hotels',
+        '/hotel-images',
+        '/transports',
+        '/transport-images',
+        '/helicopter-tours',
+        '/helicopter-images',
+        '/trekkings',
+        '/trekking-images',
+        '/trekking-programs',
+        '/home',
+        '/contacts',
+        '/faqs',
+        '/abouts',
+        '/about-sections',
+        '/tour-images',
+        '/tour-programs',
+    )
+    return role == 'catalog_editor' and path.startswith(catalog_paths)
+
+
 def get_current_admin(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(admin_bearer),
     db: Session = Depends(get_db),
 ) -> Admin:
@@ -74,7 +110,18 @@ def get_current_admin(
     admin_db = db.get(Admin, admin_id)
     if admin_db is None or not admin_db.is_active:
         raise credentials_exception
+    if not admin_role_allows(admin_db.role, request.url.path):
+        raise HTTPException(status_code=403, detail='Insufficient administrator role')
     return admin_db
+
+
+def require_admin_roles(*roles):
+    def dependency(current_admin: Admin = Depends(get_current_admin)):
+        if current_admin.role != 'owner' and current_admin.role not in roles:
+            raise HTTPException(status_code=403, detail='Insufficient administrator role')
+        return current_admin
+
+    return dependency
 
 
 @admin_router.post('/login/', response_model=TokenSchema)
@@ -88,7 +135,7 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     )
     is_active = bool(admin_db and admin_db.is_active)
     password_hash = admin_db.hashed_password if admin_db else dummy_admin_hash
-    db.close()
+    db.rollback()
     enforce_login_attempt('admin-login', request, account_key)
     valid = verify_password(admin.password, password_hash)
     if admin_id is None or not valid:
@@ -97,6 +144,12 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     if not is_active:
         raise HTTPException(status_code=403, detail='Админ активдүү эмес')
 
+    admin_db = db.query(Admin).filter(Admin.id == admin_id).with_for_update().first()
+    if admin_db is None or not admin_db.is_active or admin_db.hashed_password != password_hash:
+        raise HTTPException(status_code=401, detail='Invalid administrator credentials')
+    if not consume_admin_mfa(admin_db, admin.totp_code, SECRET_KEY):
+        raise HTTPException(status_code=401, detail='Invalid administrator MFA code')
+    db.commit()
     expire = utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token = jwt.encode({'sub': str(admin_id), 'exp': expire}, SECRET_KEY, algorithm=ALGORITHM)
     return {'access_token': token, 'token_type': 'bearer'}

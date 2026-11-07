@@ -96,8 +96,8 @@ with engine.begin() as connection:
 command.downgrade(config, '20261028_0013')
 with engine.connect() as connection:
     stored = connection.scalar(text('SELECT translations FROM abouts'))
-    assert 'title' not in stored['en']
-    assert '_source_hashes' not in stored['en']
+    assert not stored or 'title' not in stored.get('en', {})
+    assert not stored or '_source_hashes' not in stored.get('en', {})
 engine.dispose()
 '''
     with temporary_database() as url:

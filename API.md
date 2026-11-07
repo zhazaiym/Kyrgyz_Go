@@ -1,4 +1,4 @@
-# KyrgyzGo API для фронтенда
+# Kerben Travel API для фронтенда
 
 Контракт API, сверенный с кодом репозитория. Используйте базовый URL, настроенный через `API_DOMAIN`; этот документ сам по себе не означает, что текущая версия уже выложена. Проверяйте активный контракт через `GET /openapi.json` и Swagger `/docs`.
 
@@ -218,6 +218,8 @@ ws.onmessage = ({ data }) => {
 
 - `GET /` возвращает `{message:"Welcome to KYRGYZGO API"}`. Это HTTP-проверка доступности, а не проверка Gemini или содержимого каталога.
 - `GET /home/content/?lang=ru|en|de|zh` возвращает локализованные поля главной страницы `{lang, title, description, details, promise}`. `lang` необязателен и по умолчанию равен `ru`.
+- `GET /media/<год>/<месяц>/<имя>.webp` отдаёт загруженные фото. Ссылки на них приходят во фронт в обычных полях `image` и `main_image`, рядом с внешними ссылками.
+- В формах SQLAdmin у полей `image`, `main_image` и `qr_code` есть кнопка выбора файла: фото загружается на сервер, и ссылка сама подставляется в поле.
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
 - `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы списков/создания/редактирования/деталей SQLAdmin - HTML-интерфейс с cookie-сессией и входом администратора. Ограничения доступа по IP для этих маршрутов нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
@@ -295,6 +297,16 @@ ws.onmessage = ({ data }) => {
 Тело: `RequestStatusUpdate` (см. раздел 11).
 
 Успех: **200**, TravelRequestOutSchema.
+
+### Загрузка фото
+
+#### `POST /admin/media/`
+
+Загрузить фото и получить ссылку на него. Доступ: **Администратор**.
+
+Тело: `multipart/form-data` с полем `file`. Принимаются JPEG, PNG и WEBP до 10 МБ (`MAX_IMAGE_UPLOAD_BYTES`). Сервер поворачивает фото по EXIF, убирает метаданные, уменьшает до 2560 px по большей стороне и сохраняет в WEBP.
+
+Успех: **201**, `{url}`. Ссылку передавайте в поле `image` или `main_image` при создании или изменении записи. Не картинка - **400**, больше лимита - **413**.
 
 ### Категории туров
 
@@ -782,6 +794,7 @@ ws.onmessage = ({ data }) => {
 
 | Параметр | Где | Обязателен | Тип | Правила |
 | --- | --- | --- | --- | --- |
+| `hotel_id` | query | нет | integer или null | - |
 | `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
 | `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
 
@@ -917,6 +930,7 @@ ws.onmessage = ({ data }) => {
 
 | Параметр | Где | Обязателен | Тип | Правила |
 | --- | --- | --- | --- | --- |
+| `transport_id` | query | нет | integer или null | - |
 | `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
 | `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
 
@@ -1051,6 +1065,7 @@ ws.onmessage = ({ data }) => {
 
 | Параметр | Где | Обязателен | Тип | Правила |
 | --- | --- | --- | --- | --- |
+| `helicopter_id` | query | нет | integer или null | - |
 | `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
 | `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
 
@@ -1185,6 +1200,7 @@ ws.onmessage = ({ data }) => {
 
 | Параметр | Где | Обязателен | Тип | Правила |
 | --- | --- | --- | --- | --- |
+| `trekking_id` | query | нет | integer или null | - |
 | `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
 | `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
 
@@ -2992,3 +3008,16 @@ ws.onmessage = ({ data }) => {
 - После logout закрывается WebSocket, клиентский токен удаляется.
 - Ошибка/таймаут AI завершает индикатор ожидания и не отображается как успешный ответ.
 - Менеджерский токен не попадает в публичный клиентский bundle.
+# Metrics
+
+`GET /metrics` exposes Prometheus text metrics when `METRICS_BEARER_TOKEN` is
+configured. Supply `Authorization: Bearer <token>`. Without a configured token
+the route is hidden with a 404 response.
+
+
+
+## Administrator authentication
+
+`POST /admin/login/` requires `username`, `password`, and `totp_code`. The code may be a six-digit TOTP or one unused recovery code. SQLAdmin uses the same second factor. For an existing deployment, apply the MFA migration during a maintenance window, enroll each active admin with `python -m scripts.enroll_admin_mfa <username>`, then reopen admin access.
+
+Roles are enforced by the API and SQLAdmin: `owner` can manage all data and administrator roles; `manager` can manage travel requests and selections; `catalog_editor` can manage catalogue and public content.

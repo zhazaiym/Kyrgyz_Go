@@ -4,113 +4,48 @@ from sqladmin import ModelView
 from sqlalchemy import select
 from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
-
-from mysite.database.chat_models import ChatBookingLink
-from copy import deepcopy
-
-from sqladmin import ModelView
-from sqlalchemy import select
-from sqlalchemy.orm import object_session
-from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
 
 from mysite.database.chat_models import ChatBookingLink
 from mysite.database.db import SessionLocal
-from mysite.database.models import (
-    FAQ,
-    About,
-    AboutSection,
-    Admin,
-    Contact,
-    District,
-    HelicopterImage,
-    HelicopterTour,
-    Hotel,
-    HotelImage,
-    Region,
-    Tour,
-    TourCategory,
-    TourImage,
-    TourProgram,
-    Transport,
-    TransportImage,
-    TravelRequest,
-    Trekking,
-    TrekkingImage,
-    TrekkingProgram,
-)
-from mysite.translations.content import (
-    CONTENT_FIELDS,
-    generate_translations,
-    manual_translation_changed,
-    manual_translation_needs_refresh,
-    mark_manual_translations,
-    release_stale_manual_translations,
-)
+from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
+                                    HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
+                                    Tour, TourCategory, TourImage, TourProgram, Transport,
+                                    TransportImage, TravelRequest, Trekking, TrekkingImage,
+                                    TrekkingProgram)
+from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
+                                         manual_translation_changed,
+                                         manual_translation_needs_refresh, mark_manual_translations)
 from mysite.translations.jobs import enqueue_translation
-from mysite.translations.source import (
-    TOUR_TRANSLATION_FIELDS,
-    normalize_text,
-    source_field_hash,
-    source_value_changed,
-)
+from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, normalize_text, source_field_hash,
+                                        source_value_changed)
 from mysite.translations.translator import translate_tour
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
-        request.state.catalogue_source = None
-
         form_translation_snapshot = deepcopy(model.translations)
         session = object_session(model)
-
         if not is_created and session is not None:
-            # Получаем актуальные переводы перед объединением с формой.
-            await run_in_threadpool(
-                session.refresh,
-                model,
-                with_for_update=True,
-            )
-
+            # Serialize this form save with translation workers and merge against
+            # the submitted snapshot instead of overwriting a worker's newer JSON.
+            await run_in_threadpool(session.refresh, model, with_for_update=True)
         for field in fields:
             if field in data:
                 data[field] = normalize_text(data[field])
-
-        changed_fields = {
-            field
+        source_changed = is_created or any(
+            field in data and source_value_changed(getattr(model, field, None), data[field])
             for field in fields
-            if field in data
-            and source_value_changed(
-                getattr(model, field, None),
-                data[field],
-            )
-        }
-
-        source_changed = is_created or bool(changed_fields)
-
-        source = {
-            field: data.get(field, getattr(model, field, None))
-            for field in fields
-        }
-
-        translations_changed = False
+        )
+        source = {field: data.get(field, getattr(model, field, None)) for field in fields}
         refresh_cleared_fields = False
-
         if 'translations' in data:
             submitted_translations = data['translations']
-
-            translations_changed = manual_translation_changed(
-                submitted_translations,
-                form_translation_snapshot,
-            )
-
             refresh_cleared_fields = manual_translation_needs_refresh(
-                submitted_translations,
-                form_translation_snapshot,
-                model.translations,
+                submitted_translations, form_translation_snapshot, model.translations
             )
-
-            if translations_changed:
+            if manual_translation_changed(submitted_translations, form_translation_snapshot):
                 data['translations'] = mark_manual_translations(
                     submitted_translations,
                     source,
@@ -119,31 +54,19 @@ class LocalizedAdminMixin:
                 )
             else:
                 data['translations'] = model.translations or {}
-
-        if source_changed:
-            data['translations'] = release_stale_manual_translations(
-                data.get('translations', model.translations),
-                source,
-            )
-
-        if source_changed or translations_changed or refresh_cleared_fields:
+        if source_changed or ('translations' in data and refresh_cleared_fields):
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
         source = getattr(request.state, 'catalogue_source', None)
-
         if source is not None:
-            enqueue_translation(
-                type(model),
-                model.id,
-                source,
-                generate_translations,
-            )
+            enqueue_translation(type(model), model.id, source, generate_translations)
+
 
 class AdminAdmin(ModelView, model=Admin):
-    column_list = [Admin.username, Admin.is_active]
+    column_list = [Admin.username, Admin.role, Admin.is_active]
     can_create = False
-    form_columns = [Admin.username, Admin.is_active]
+    form_columns = [Admin.username, Admin.role, Admin.is_active]
     column_details_exclude_list = [Admin.hashed_password]
 
 
@@ -366,3 +289,49 @@ class ChatRequestAdmin(TravelRequestAdmin):
             .form_edit_query(request)
             .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
         )
+
+
+def _view_roles(view):
+    if view is AdminAdmin:
+        allowed = {'owner'}
+    elif view is ChatRequestAdmin:
+        allowed = {'owner', 'manager'}
+    else:
+        allowed = {'owner', 'catalog_editor'}
+
+    def can_access(self, request: Request):
+        admin_id = request.session.get('admin_id')
+        if not request.session.get('admin_mfa') or admin_id is None:
+            return False
+        with SessionLocal() as db:
+            admin = db.get(Admin, admin_id)
+            return bool(admin and admin.is_active and admin.role in allowed)
+
+    view.is_accessible = can_access
+    view.is_visible = can_access
+
+
+for _admin_view in (
+    AdminAdmin,
+    AboutAdmin,
+    AboutSectionAdmin,
+    TourCategoryAdmin,
+    TourImageAdmin,
+    TourAdmin,
+    TourProgramAdmin,
+    RegionAdmin,
+    DistrictAdmin,
+    HotelAdmin,
+    HotelImageAdmin,
+    TransportAdmin,
+    TransportImageAdmin,
+    HelicopterTourAdmin,
+    HelicopterImageAdmin,
+    TrekkingAdmin,
+    TrekkingImageAdmin,
+    TrekkingProgramAdmin,
+    ContactAdmin,
+    FAQAdmin,
+    ChatRequestAdmin,
+):
+    _view_roles(_admin_view)

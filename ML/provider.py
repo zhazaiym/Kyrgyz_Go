@@ -1,4 +1,4 @@
-"""Lazy Gemini construction. SDK owns bounded network retries; no retry stacking."""
+"""SDK owns bounded network retries; no retry stacking."""
 
 import os
 from functools import lru_cache

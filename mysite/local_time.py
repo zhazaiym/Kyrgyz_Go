@@ -1,7 +1,6 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-
 BISHKEK_TIMEZONE = ZoneInfo('Asia/Bishkek')
 
 

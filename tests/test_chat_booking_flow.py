@@ -1,4 +1,6 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -70,7 +72,7 @@ def test_complete_chat_requires_approval_and_shows_in_admin(
     monkeypatch.setattr(chat_service, 'respond', unexpected)
     submitted = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
     repeated = asyncio.run(chat_service.process_message(session_id, identity, token, approval))
-    assert 'Ваши данные переданы менеджеру KYRGYZGO' in submitted['answer']
+    assert 'Ваши данные переданы менеджеру Kerben Travel' in submitted['answer']
     assert 'скоро свяжется с вами' in submitted['answer']
     assert (
         submitted['booking_submitted']['request_id'] == repeated['booking_submitted']['request_id']
@@ -250,6 +252,40 @@ def test_incomplete_request_cannot_be_confirmed(client, monkeypatch):
     assert response.status_code == 409
     with SessionLocal() as db:
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
+
+
+def test_concurrent_confirmation_from_separate_workers_is_idempotent(client):
+    from fastapi import HTTPException
+
+    from mysite.api.chat_service import confirm_booking
+
+    token, identity, session_id = start_chat(client, 'parallel_confirmation')
+    with SessionLocal() as db:
+        session = db.get(ChatSession, session_id)
+        session.state = complete_state()
+        session.stage = 'awaiting_confirmation'
+        session.revision = 1
+        db.commit()
+
+    barrier = Barrier(2)
+
+    def confirm_in_separate_session():
+        with SessionLocal() as db:
+            session = db.get(ChatSession, session_id)
+            barrier.wait(timeout=5)
+            try:
+                return confirm_booking(db, session, identity, 1, True)
+            except HTTPException as exc:
+                return {'status': 'conflict', 'status_code': exc.status_code}
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(lambda _: confirm_in_separate_session(), range(2)))
+
+    assert [result['status'] for result in results].count('submitted') == 1
+    assert [result['status'] for result in results].count('already_submitted') == 1
+    assert results[0]['request_id'] == results[1]['request_id']
+    with SessionLocal() as db:
+        assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 1
 
 
 def test_refusal_invalidates_pending_confirmation(client, monkeypatch):
@@ -433,16 +469,16 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
 @pytest.mark.parametrize(
     ('language', 'summary', 'refusal', 'approval', 'submitted_text'),
     [
-        ('en', 'Please review your request', 'No', 'I confirm', 'sent to a KYRGYZGO manager'),
+        ('en', 'Please review your request', 'No', 'I confirm', 'sent to a Kerben Travel manager'),
         ('ky', 'Өтүнмөнүн маалыматтарын текшериңиз', 'Жок', 'Ырастайм', 'менеджерине жөнөтүлдү'),
         (
             'de',
             'Bitte prüfen Sie Ihre Anfrage',
             'Nicht absenden',
             'Ich bestätige',
-            'an das KYRGYZGO-Team gesendet',
+            'an das Kerben-Travel-Team gesendet',
         ),
-        ('zh', '请核对申请信息', '不发送', '确认提交', '已发送给 KYRGYZGO 客服'),
+        ('zh', '请核对申请信息', '不发送', '确认提交', '已发送给 Kerben Travel 客服'),
     ],
 )
 def test_booking_summary_and_submission_follow_client_language(

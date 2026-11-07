@@ -1,5 +1,3 @@
-"""ML contracts runnable with --confcutdir=tests/ml, without DB or Gemini access."""
-
 import asyncio
 import importlib
 import json

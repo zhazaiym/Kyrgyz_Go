@@ -41,22 +41,13 @@ def list_trekking_programs(
     db: Session = Depends(get_db),
     pagination: Pagination = Depends(),
 ):
-    query = (
-        db.query(TrekkingProgram)
-        .join(Trekking)
-        .filter(Trekking.is_active.is_(True))
-    )
+    query = db.query(TrekkingProgram).join(Trekking).filter(Trekking.is_active.is_(True))
 
     if trekking_id is not None:
         query = query.filter(TrekkingProgram.trekking_id == trekking_id)
 
     records = (
-        query
-        .order_by(
-            TrekkingProgram.trekking_id,
-            TrekkingProgram.day_number,
-            TrekkingProgram.id,
-        )
+        query.order_by(TrekkingProgram.trekking_id, TrekkingProgram.day_number, TrekkingProgram.id)
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()

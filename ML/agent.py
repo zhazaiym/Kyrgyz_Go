@@ -3,7 +3,8 @@
 import asyncio
 import json
 import logging
-from datetime import date
+import time
+from contextvars import ContextVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -15,9 +16,8 @@ from ML.provider import LazyClient
 from ML.schemas import Changes
 from ML.tools import READ_TOOLS, _not_demo
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
-from mysite.local_time import local_today
-
-
+from mysite.api.observability import record_ai_call
+from mysite.dates import bishkek_today
 
 __all__ = ['respond', 'output_budget', 'confirmation_allowed', 'rejection_allowed']
 
@@ -41,6 +41,34 @@ extract_llm = LazyClient('extract_llm')
 extractor = LazyClient('extractor')
 agent_llm = LazyClient('agent_llm')
 tool_map = {t.name: t for t in READ_TOOLS}
+_timings = ContextVar('ai_response_timings', default=None)
+
+
+def _record_timing(operation, outcome, duration):
+    record_ai_call(operation, outcome, duration)
+    timings = _timings.get()
+    if timings is not None:
+        timings.append((operation, outcome, round(duration, 3)))
+    else:
+        log.info('AI operation=%s outcome=%s duration_seconds=%.3f', operation, outcome, duration)
+
+
+async def _measured_call(operation, invoke, *, timeout):
+    started = time.perf_counter()
+    outcome = 'success'
+    try:
+        return await asyncio.wait_for(invoke(), timeout=timeout)
+    except BaseException as exc:
+        if isinstance(exc, TimeoutError):
+            outcome = 'timeout'
+        elif isinstance(exc, AIError) and exc.code == 'ai_blocked':
+            outcome = 'blocked'
+        else:
+            outcome = 'failure'
+        raise
+    finally:
+        duration = time.perf_counter() - started
+        _record_timing(operation, outcome, duration)
 
 
 def SessionLocal():
@@ -89,9 +117,9 @@ def active_tour_ids():
 
 
 async def _respond(message: str, state: dict, history: list, on_chunk=None):
-    """Return answer, updated state, explicit booking intent. Tools read DB on demand."""
-    today = local_today().isoformat()
+    """Extract preferences and consult with bounded read-only tool calls."""
     current = dict(state or {})
+    today = bishkek_today().isoformat()
     intent = False
     try:
         ids = await asyncio.to_thread(active_tour_ids)
@@ -99,8 +127,9 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
         if type(selected_id) is int and selected_id > 0 and selected_id not in ids:
             if await asyncio.to_thread(valid_selected_tour, selected_id):
                 ids.append(selected_id)
-        changes = await asyncio.wait_for(
-            extractor.ainvoke(
+        changes = await _measured_call(
+            'extractor',
+            lambda: extractor.ainvoke(
                 EXTRACT_PROMPT.format(
                     state=json.dumps(current, ensure_ascii=False),
                     tour_ids=json.dumps(ids),
@@ -129,7 +158,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             else:
                 dumped.pop('tour_id')
         if 'destination' in dumped and 'tour_id' not in dumped:
-            current.pop('tour_id', None)
+            if current.get('tour_id') is not None:
+                dumped.pop('destination', None)
         if 'tour_id' in dumped:
             current.pop('destination', None)
         for k, v in dumped.items():
@@ -155,10 +185,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
 
     msgs = [
         SystemMessage(
-            content=SYSTEM_PROMPT.format(
-                state=json.dumps(current, ensure_ascii=False),
-                today=today,
-            )
+            content=SYSTEM_PROMPT.format(state=json.dumps(current, ensure_ascii=False), today=today)
         )
     ]
     for item in recent_messages(history):
@@ -196,10 +223,10 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                     if visible_characters > 65_536:
                         raise AIError('ai_invalid_response')
             if complete is None:
-                raise ValueError('Gemini returned empty stream')
+                raise AIError('ai_invalid_response', 'Gemini returned empty stream')
             return complete
 
-        reply = await asyncio.wait_for(stream_reply(), timeout=60)
+        reply = await _measured_call('generation', stream_reply, timeout=60)
         finish_reason = (
             str(reply.response_metadata.get('finish_reason', '')).upper().rsplit('.', 1)[-1]
         )
@@ -236,7 +263,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
         if not calls:
             answer = ''.join(visible_parts).strip()
             if not answer:
-                raise ValueError('Gemini returned empty final response')
+                raise AIError('ai_invalid_response', 'Gemini returned empty final response')
             if on_chunk is not None:
                 for text in visible_parts:
                     await on_chunk(text)
@@ -254,6 +281,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                 raise AIError('ai_invalid_response')
             name = call.get('name', '')
             tool = tool_map.get(name)
+            tool_start = time.perf_counter()
+            tool_outcome = 'success' if tool else 'failure'
             try:
                 result = (
                     await asyncio.wait_for(
@@ -263,8 +292,12 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                     else {'error': 'Unknown tool'}
                 )
             except (ValueError, KeyError, TypeError, RuntimeError, OSError, TimeoutError) as exc:
+                tool_outcome = 'timeout' if isinstance(exc, TimeoutError) else 'failure'
                 log.warning('Read-only tool failed: %s', type(exc).__name__)
                 result = {'error': 'Данные компании сейчас не удалось проверить'}
+            finally:
+                tool_seconds = time.perf_counter() - tool_start
+                _record_timing('tool', tool_outcome, tool_seconds)
             encoded = json.dumps(result, ensure_ascii=False, default=str)
             if len(encoded) > 16_000:
                 encoded = json.dumps(
@@ -288,12 +321,28 @@ def valid_selected_tour(identity):
 
 
 async def respond(message: str, state: dict, history: list, on_chunk=None):
+    started = time.perf_counter()
+    timings = []
+    timing_token = _timings.set(timings)
+    outcome = 'failure'
     try:
         async with asyncio.timeout(integer_setting('CHAT_RESPONSE_TIMEOUT', 150, 10, 170)):
-            return await _respond(message, state, history, on_chunk)
-    except AIError:
+            result = await _respond(message, state, history, on_chunk)
+            outcome = 'success'
+            return result
+    except AIError as exc:
+        outcome = 'timeout' if exc.code == 'ai_timeout' else 'failure'
         raise
     except (*PROVIDER_ERRORS, TimeoutError) as exc:
         failure = classify_error(exc)
+        outcome = 'timeout' if failure.code == 'ai_timeout' else 'failure'
         log.warning('Gemini consultation failed: %s', failure.code)
         raise failure from None
+    finally:
+        _timings.reset(timing_token)
+        log.info(
+            'AI response outcome=%s duration_seconds=%.3f phases=%s',
+            outcome,
+            time.perf_counter() - started,
+            timings,
+        )

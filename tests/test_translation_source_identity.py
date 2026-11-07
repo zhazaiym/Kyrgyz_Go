@@ -1,18 +1,4 @@
 import asyncio
-<<<<<<< HEAD
-from types import SimpleNamespace
-
-from mysite.database.db import SessionLocal
-from mysite.database.models import About
-from mysite.translations.content import (
-    localized,
-    mark_manual_translations,
-    manual_translation_changed,
-    release_stale_manual_translations,
-)
-from mysite.translations.jobs import _translation_is_complete, translate_record
-from mysite.translations.source import source_field_hash, source_value_changed
-=======
 import os
 import subprocess
 import sys
@@ -26,9 +12,10 @@ from mysite.api.tour import get_localized_tour
 from mysite.database.db import SessionLocal
 from mysite.database.models import About, Tour
 from mysite.translations.content import (localized, manual_translation_changed,
-                                         manual_translation_needs_refresh, mark_manual_translations)
+                                         manual_translation_needs_refresh, mark_manual_translations,
+                                         release_stale_manual_translations)
 from mysite.translations.jobs import _translation_is_complete, translate_record
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, source_value_changed, translation_ready
 
 
 def test_translation_migration_downgrade_removes_stale_values(monkeypatch):
@@ -40,7 +27,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 import hashlib
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, translation_ready, source_value_changed
 
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0013')
@@ -121,7 +108,6 @@ finally:
             [sys.executable, '-B', '-c', script], env=env, capture_output=True, text=True
         )
         assert result.returncode == 0, result.stdout + result.stderr
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 
 
 def test_translation_recovery_treats_none_as_missing():
@@ -252,21 +238,6 @@ def test_stale_translation_job_does_not_overwrite_manual_translation():
         assert record.translations['en']['_manual_fields'] == ['title']
 
 
-<<<<<<< HEAD
-def test_localized_content_falls_back_when_source_hash_is_stale():
-    source = {'title': 'Current title'}
-    record = About(
-        title=source['title'],
-        translations={
-            'en': {
-                'title': 'Old translation',
-                '_source_hashes': {'title': source_field_hash('Old title')},
-            }
-        },
-    )
-
-    assert localized(record, 'en')['title'] == source['title']
-=======
 def test_sqladmin_marks_only_changed_translation_field_as_manual():
     old_source = {'title': 'Old title', 'description': 'Old description'}
     source = old_source
@@ -475,7 +446,7 @@ import os
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from mysite.translations.source import source_field_hash, translation_ready
+from mysite.translations.source import source_field_hash, translation_ready, source_value_changed
 config = Config('alembic.ini')
 command.upgrade(config, '20261028_0015')
 engine = create_engine(os.environ['DATABASE_URL'])
@@ -540,4 +511,3 @@ finally:
             [sys.executable, '-B', '-c', script], env=env, capture_output=True, text=True
         )
         assert result.returncode == 0, result.stdout + result.stderr
->>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1

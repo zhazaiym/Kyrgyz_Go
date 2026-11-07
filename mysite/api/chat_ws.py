@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Literal
 
@@ -14,6 +15,7 @@ from ML.errors import PROVIDER_ERRORS, AIError, classify_error
 from mysite.api.chat_service import owned, process_message
 from mysite.api.client_auth import client_by_token
 from mysite.api.network_identity import client_network
+from mysite.api.observability import record_chat_message
 from mysite.api.origin_config import configured_origins
 from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limit
 from mysite.database.db import SessionLocal
@@ -226,6 +228,8 @@ async def socket_session(websocket: WebSocket, session_id: str):
         await websocket.send_json({'type': 'typing', 'status': True})
         message_id = str(uuid.uuid4())
         await websocket.send_json({'type': 'message_start', 'message_id': message_id})
+        message_started = time.perf_counter()
+        message_outcome = 'internal_error'
 
         async def send_chunk(chunk: str, current_message_id=message_id):
             if chunk:
@@ -244,6 +248,7 @@ async def socket_session(websocket: WebSocket, session_id: str):
                 ),
                 timeout=180,
             )
+            message_outcome = 'success'
             if result.get('booking_preview'):
                 await websocket.send_json({'type': 'booking_preview', **result['booking_preview']})
             await websocket.send_json(
@@ -260,17 +265,21 @@ async def socket_session(websocket: WebSocket, session_id: str):
                     {'type': 'booking_submitted', **result['booking_submitted']}
                 )
         except WebSocketDisconnect:
+            message_outcome = 'disconnected'
             return
         except AIError as exc:
+            message_outcome = 'ai_error'
             log.warning('Chat provider error: %s', exc.code)
             await websocket.send_json({'type': 'error', 'code': exc.code, 'message': exc.message})
         except HTTPException as exc:
+            message_outcome = 'conflict' if exc.status_code == 409 else 'internal_error'
             code, error_message, close = public_http_error(exc)
             await websocket.send_json({'type': 'error', 'code': code, 'message': error_message})
             if close:
                 await websocket.close(code=1008)
                 return
         except asyncio.TimeoutError:
+            message_outcome = 'timeout'
             log.warning('AI timed out for session %s', session_id)
             await websocket.send_json(
                 {
@@ -288,12 +297,14 @@ async def socket_session(websocket: WebSocket, session_id: str):
             RuntimeError,
             OSError,
         ) as exc:
+            message_outcome = 'internal_error'
             failure = classify_error(exc)
             log.error('Chat processing failed: %s (%s)', failure.code, type(exc).__name__)
             await websocket.send_json(
                 {'type': 'error', 'code': failure.code, 'message': failure.message}
             )
         finally:
+            record_chat_message(message_outcome, time.perf_counter() - message_started)
             try:
                 await websocket.send_json({'type': 'typing', 'status': False})
             except (RuntimeError, WebSocketDisconnect):
