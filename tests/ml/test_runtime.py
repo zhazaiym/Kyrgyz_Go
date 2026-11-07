@@ -82,7 +82,7 @@ def test_invalid_tool_call_is_not_treated_as_a_successful_answer(monkeypatch):
                     content='all done',
                     invalid_tool_calls=[
                         {
-                            'name': 'get_tour_details',
+                            'name': 'get_catalogue_item',
                             'args': '{broken',
                             'id': 'bad',
                             'error': 'invalid JSON',
@@ -118,7 +118,12 @@ def test_sdk_errors_use_status_and_do_not_expose_provider_text(status, code):
 
 def test_tool_call_budget_rejects_batch_before_executing_tools(monkeypatch):
     calls = [
-        {'name': 'get_tour_details', 'args': {'tour_id': 7}, 'id': f'tool-{i}', 'type': 'tool_call'}
+        {
+            'name': 'get_catalogue_item',
+            'args': {'kind': 'tour', 'id': 7},
+            'id': f'tool-{i}',
+            'type': 'tool_call',
+        }
         for i in range(20)
     ]
     agent = runtime(monkeypatch, iter([AIMessageChunk(content='', tool_calls=calls)]))
@@ -127,7 +132,9 @@ def test_tool_call_budget_rejects_batch_before_executing_tools(monkeypatch):
     def unexpected(args):
         raise AssertionError('Over-budget tools must not execute')
 
-    monkeypatch.setattr(agent, 'tool_map', {'get_tour_details': SimpleNamespace(invoke=unexpected)})
+    monkeypatch.setattr(
+        agent, 'tool_map', {'get_catalogue_item': SimpleNamespace(invoke=unexpected)}
+    )
     with pytest.raises(AIError):
         asyncio.run(agent.respond('Тур 7', {}, []))
 

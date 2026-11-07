@@ -50,12 +50,30 @@ def test_rendered_compose_reserves_separate_api_and_caddy_addresses(tmp_path):
     assert services['https']['networks']['proxy']['ipv4_address'] == '172.30.240.2'
 
 
-def test_production_credentials_are_isolated_from_test_job():
-    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
-    test_job = workflow['jobs']['test']
-    assert 'secrets.' not in json.dumps(test_job)
-    assert 'environment' not in test_job
-    assert set(workflow['jobs']) == {'test'}
+def test_no_github_actions_job_can_deploy_to_production():
+    """The server deploys itself from green main; GitHub must hold no deploy path or secret."""
+    workflows = sorted(Path('.github/workflows').glob('*.y*ml'))
+    assert workflows
+    for path in workflows:
+        workflow = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+        for name, job in workflow['jobs'].items():
+            text = json.dumps(job)
+            assert 'secrets.' not in text, (path, name)
+            assert 'environment' not in job, (path, name)
+            for forbidden in ('ssh', 'scp', 'rsync', 'manual_deploy', 'ci_deploy', 'deploy.ps1'):
+                assert forbidden not in text.lower(), (path, name, forbidden)
+            assert 'deploy' not in name.lower(), (path, name)
+
+
+def test_old_server_deploy_tooling_is_removed():
+    for path in (
+        'scripts/manual_deploy.py',
+        'scripts/ci_deploy.py',
+        'scripts/deploy.ps1',
+        'docs/manual-deployment.md',
+        'docs/automatic-deployment.md',
+    ):
+        assert not Path(path).exists(), path
 
 
 def test_ipv6_rotation_shares_a_prefix_quota_without_exhausting_global_capacity(monkeypatch):
