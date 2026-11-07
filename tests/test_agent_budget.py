@@ -122,7 +122,7 @@ def test_extraction_does_not_load_full_tour_programs(monkeypatch):
 
     monkeypatch.setattr(
         agent,
-        'list_active_tours',
+        'search_catalogue',
         SimpleNamespace(invoke=full_catalogue_is_not_needed),
         raising=False,
     )
@@ -268,23 +268,24 @@ def _catalogue_grounding_cases():
         (
             'empty',
             'Какие реальные туры компании подходят для семейной поездки?',
-            'search_tours',
+            'search_catalogue',
             {},
-            [],
+            {'items': [], 'total': 0, 'has_more': False},
         ),
         (
             'error',
             'Есть ли у компании туры на озёра?',
-            'search_tours',
+            'search_catalogue',
             {},
             {'error': 'Данные компании сейчас не удалось проверить'},
         ),
         (
             'injection',
             'Расскажи о выбранном туре и цене.',
-            'get_tour_details',
-            {'tour_id': 7},
+            'get_catalogue_item',
+            {'kind': 'tour', 'id': 7},
             {
+                'kind': 'tour',
                 'id': 7,
                 'title': 'Озёрный маршрут',
                 'duration_days': 2,
@@ -523,3 +524,29 @@ def test_catalogue_evaluation_rejects_unconfirmed_claims(claim):
     )
     with pytest.raises(AssertionError):
         _assert_catalogue_grounding('partial', reply)
+
+
+@pytest.mark.skipif(os.getenv('RUN_LIVE_GEMINI_EVAL') != '1', reason='Opt-in Gemini catalogue')
+def test_live_helicopter_question_names_catalogue_records(live_gemini_runner):
+    from mysite.database.db import SessionLocal
+    from mysite.database.models import HelicopterTour
+
+    titles = ['Полёт к леднику Иныльчек', 'Облёт озера Мерцбахера']
+    with SessionLocal() as db:
+        rows = [
+            HelicopterTour(title=title, price=900, duration_minutes=60, max_passengers=5)
+            for title in titles
+        ]
+        db.add_all(rows + [HelicopterTour(title='ТЕСТ: демо полёт', price=1)])
+        db.commit()
+    try:
+        answer, _, _ = live_gemini_runner.run(
+            agent.respond('Какие у вас вертолётные туры?', {}, [])
+        )
+    finally:
+        with SessionLocal() as db:
+            db.query(HelicopterTour).delete()
+            db.commit()
+    lowered = answer.casefold()
+    assert all(title.casefold().split()[-1] in lowered for title in titles), answer
+    assert 'демо' not in lowered, answer
