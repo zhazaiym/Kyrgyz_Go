@@ -103,7 +103,7 @@ def search_tours(
     min_duration_days: int | None = None,
     max_duration_days: int | None = None,
 ) -> list[dict]:
-    """Search active tours by destination aliases, group size and duration. duration_days is exact; use min/max_duration_days for flexible ranges (e.g. up to a week: max_duration_days=7). Prefer this over list_active_tours when filters are known; do not call both for the same query."""
+    """Read the brief active catalogue; omit filters for initial recommendations. Search by destination aliases, group size and duration. duration_days is exact; use min/max_duration_days for flexible ranges (up to a week: max_duration_days=7). Not live availability."""
     if people_count is not None and people_count <= 0:
         return []
 
@@ -338,7 +338,6 @@ def search_company_faq(question: str) -> list[dict]:
 
 READ_TOOLS = [
     search_tours,
-    list_active_tours,
     get_tour_details,
     get_company_info,
     list_active_hotels,

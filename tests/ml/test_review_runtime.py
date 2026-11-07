@@ -55,3 +55,35 @@ def test_both_prompts_receive_the_same_bishkek_calendar_date(monkeypatch):
     assert '2026-11-07' in seen['extract']
     assert '2026-11-07' in seen['system']
     assert state['travel_date'] == '2026-11-08'
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_response_writes_one_timing_summary_including_failed_phases(monkeypatch, caplog, fail):
+    async def invoke():
+        if fail:
+            raise RuntimeError('private details')
+        return ('Answer', {}, False)
+
+    async def respond(*args):
+        return await agent._measured_call('extractor', invoke, timeout=1)
+
+    monkeypatch.setattr(agent, '_respond', respond)
+    with caplog.at_level(logging.INFO, logger='ML.agent'):
+        if fail:
+            with pytest.raises(RuntimeError):
+                asyncio.run(agent.respond('Private question', {}, []))
+        else:
+            asyncio.run(agent.respond('Private question', {}, []))
+    entries = [item for item in caplog.records if item.levelno == logging.INFO]
+    assert len(entries) == 1
+    assert 'AI response outcome=' in entries[0].message
+    assert 'extractor' in entries[0].message
+    assert ('failure' if fail else 'success') in entries[0].message
+    assert 'Private question' not in caplog.text
+    assert 'private details' not in caplog.text
+
+
+def test_model_receives_one_catalogue_tool_schema():
+    names = {tool.name for tool in agent.READ_TOOLS}
+    assert 'search_tours' in names
+    assert 'list_active_tours' not in names

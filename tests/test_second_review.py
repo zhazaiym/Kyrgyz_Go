@@ -326,6 +326,8 @@ def test_binary_websocket_frame_is_a_controlled_validation_error(client):
 def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, monkeypatch):
     account, email = register(client)
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    # Keep all attempts in one fixed window; real minute rollover legitimately resets it.
+    monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_200)
     identity = {'email': email}
     route = '/auth/login'
     attempts = 8

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import time
+from contextvars import ContextVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -40,6 +41,16 @@ extract_llm = LazyClient('extract_llm')
 extractor = LazyClient('extractor')
 agent_llm = LazyClient('agent_llm')
 tool_map = {t.name: t for t in READ_TOOLS}
+_timings = ContextVar('ai_response_timings', default=None)
+
+
+def _record_timing(operation, outcome, duration):
+    record_ai_call(operation, outcome, duration)
+    timings = _timings.get()
+    if timings is not None:
+        timings.append((operation, outcome, round(duration, 3)))
+    else:
+        log.info('AI operation=%s outcome=%s duration_seconds=%.3f', operation, outcome, duration)
 
 
 async def _measured_call(operation, invoke, *, timeout):
@@ -57,8 +68,7 @@ async def _measured_call(operation, invoke, *, timeout):
         raise
     finally:
         duration = time.perf_counter() - started
-        record_ai_call(operation, outcome, duration)
-        log.info('AI operation=%s outcome=%s duration_seconds=%.3f', operation, outcome, duration)
+        _record_timing(operation, outcome, duration)
 
 
 def SessionLocal():
@@ -287,10 +297,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                 result = {'error': 'Данные компании сейчас не удалось проверить'}
             finally:
                 tool_seconds = time.perf_counter() - tool_start
-                record_ai_call('tool', tool_outcome, tool_seconds)
-                log.info(
-                    'AI operation=tool outcome=%s duration_seconds=%.3f', tool_outcome, tool_seconds
-                )
+                _record_timing('tool', tool_outcome, tool_seconds)
             encoded = json.dumps(result, ensure_ascii=False, default=str)
             if len(encoded) > 16_000:
                 encoded = json.dumps(
@@ -314,12 +321,28 @@ def valid_selected_tour(identity):
 
 
 async def respond(message: str, state: dict, history: list, on_chunk=None):
+    started = time.perf_counter()
+    timings = []
+    timing_token = _timings.set(timings)
+    outcome = 'failure'
     try:
         async with asyncio.timeout(integer_setting('CHAT_RESPONSE_TIMEOUT', 150, 10, 170)):
-            return await _respond(message, state, history, on_chunk)
-    except AIError:
+            result = await _respond(message, state, history, on_chunk)
+            outcome = 'success'
+            return result
+    except AIError as exc:
+        outcome = 'timeout' if exc.code == 'ai_timeout' else 'failure'
         raise
     except (*PROVIDER_ERRORS, TimeoutError) as exc:
         failure = classify_error(exc)
+        outcome = 'timeout' if failure.code == 'ai_timeout' else 'failure'
         log.warning('Gemini consultation failed: %s', failure.code)
         raise failure from None
+    finally:
+        _timings.reset(timing_token)
+        log.info(
+            'AI response outcome=%s duration_seconds=%.3f phases=%s',
+            outcome,
+            time.perf_counter() - started,
+            timings,
+        )

@@ -268,14 +268,14 @@ def _catalogue_grounding_cases():
         (
             'empty',
             'Какие реальные туры компании подходят для семейной поездки?',
-            'list_active_tours',
+            'search_tours',
             {},
             [],
         ),
         (
             'error',
             'Есть ли у компании туры на озёра?',
-            'list_active_tours',
+            'search_tours',
             {},
             {'error': 'Данные компании сейчас не удалось проверить'},
         ),
@@ -328,7 +328,16 @@ def live_gemini_runner():
 
     client.cache_clear()
     with asyncio.Runner() as runner:
-        yield runner
+        last_call = None
+
+        async def paced_call(awaitable):
+            nonlocal last_call
+            if last_call is not None:
+                await asyncio.sleep(max(0, 5 - (time.monotonic() - last_call)))
+            last_call = time.monotonic()
+            return await awaitable
+
+        yield SimpleNamespace(run=lambda awaitable: runner.run(paced_call(awaitable)))
         runner.run(agent.llm.async_client.aclose())
         runner.run(agent.extract_llm.async_client.aclose())
     client.cache_clear()
@@ -413,6 +422,7 @@ def test_live_catalogue_grounding(
         ('Нет, давайте лучше в Каракол', 'switch'),
         ('А чем отличается от Каракола?', 'comparison'),
         ('Поедем завтра', 'tomorrow'),
+        ('Выбираю тур 8', 'known_tour'),
     ],
 )
 def test_live_review_extraction(message, expected, live_gemini_runner):
@@ -421,7 +431,7 @@ def test_live_review_extraction(message, expected, live_gemini_runner):
     prompt = EXTRACT_PROMPT.format(
         state=json.dumps({'tour_id': 7, 'people_count': 4}),
         tour_ids='[7, 8]',
-        context='Тур 7: Иссык-Куль; тур 8: Каракол.',
+        context='Выбран тур 7: Иссык-Куль. Направление Каракол ещё не подобрано.',
         message=message,
         today='2026-11-07',
     )
@@ -432,6 +442,9 @@ def test_live_review_extraction(message, expected, live_gemini_runner):
         assert changes.tour_id is None
     elif expected == 'comparison':
         assert 'tour_id' not in changes.clear_fields
+        assert changes.destination is None
+    elif expected == 'known_tour':
+        assert changes.tour_id == 8
         assert changes.destination is None
     else:
         assert changes.travel_date == '2026-11-08'
