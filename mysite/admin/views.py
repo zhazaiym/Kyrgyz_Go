@@ -4,6 +4,7 @@ from sqladmin import ModelView
 from sqlalchemy import select
 from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
 
 from mysite.database.chat_models import ChatBookingLink
 from mysite.database.db import SessionLocal
@@ -62,9 +63,9 @@ class LocalizedAdminMixin:
 
 
 class AdminAdmin(ModelView, model=Admin):
-    column_list = [Admin.username, Admin.is_active]
+    column_list = [Admin.username, Admin.role, Admin.is_active]
     can_create = False
-    form_columns = [Admin.username, Admin.is_active]
+    form_columns = [Admin.username, Admin.role, Admin.is_active]
     column_details_exclude_list = [Admin.hashed_password]
 
 
@@ -264,3 +265,49 @@ class ChatRequestAdmin(TravelRequestAdmin):
             .form_edit_query(request)
             .where(TravelRequest.id.in_(select(ChatBookingLink.request_id)))
         )
+
+
+def _view_roles(view):
+    if view is AdminAdmin:
+        allowed = {'owner'}
+    elif view is ChatRequestAdmin:
+        allowed = {'owner', 'manager'}
+    else:
+        allowed = {'owner', 'catalog_editor'}
+
+    def can_access(self, request: Request):
+        admin_id = request.session.get('admin_id')
+        if not request.session.get('admin_mfa') or admin_id is None:
+            return False
+        with SessionLocal() as db:
+            admin = db.get(Admin, admin_id)
+            return bool(admin and admin.is_active and admin.role in allowed)
+
+    view.is_accessible = can_access
+    view.is_visible = can_access
+
+
+for _admin_view in (
+    AdminAdmin,
+    AboutAdmin,
+    AboutSectionAdmin,
+    TourCategoryAdmin,
+    TourImageAdmin,
+    TourAdmin,
+    TourProgramAdmin,
+    RegionAdmin,
+    DistrictAdmin,
+    HotelAdmin,
+    HotelImageAdmin,
+    TransportAdmin,
+    TransportImageAdmin,
+    HelicopterTourAdmin,
+    HelicopterImageAdmin,
+    TrekkingAdmin,
+    TrekkingImageAdmin,
+    TrekkingProgramAdmin,
+    ContactAdmin,
+    FAQAdmin,
+    ChatRequestAdmin,
+):
+    _view_roles(_admin_view)

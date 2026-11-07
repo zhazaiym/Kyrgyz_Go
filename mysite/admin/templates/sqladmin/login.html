@@ -1,0 +1,18 @@
+{% extends "sqladmin/base.html" %}
+{% block body %}
+<div class="d-flex align-items-center justify-content-center vh-100">
+  <form class="col-lg-6 col-md-6 card card-md" action="{{ url_for('admin:login') }}" method="POST" autocomplete="off">
+    <div class="card-body">
+      <h2 class="card-title text-center mb-4">Kerben Travel administrator login</h2>
+      {% for field, label, kind in [('username', 'Username', 'text'), ('password', 'Password', 'password'), ('totp_code', 'Authenticator or recovery code', 'text')] %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ field }}">{{ label }}</label>
+        <input id="{{ field }}" name="{{ field }}" type="{{ kind }}" class="form-control{% if error %} is-invalid{% endif %}" autocomplete="off" required>
+        {% if error and loop.first %}<div class="invalid-feedback">{{ error }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      <div class="form-footer"><button type="submit" class="btn btn-primary w-100">Sign in</button></div>
+    </div>
+  </form>
+</div>
+{% endblock %}

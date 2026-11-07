@@ -32,6 +32,8 @@ from mysite.api.hotel import hotel_router
 from mysite.api.hotel_image import hotel_image_router
 from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
+from mysite.api.observability import router as observability_router
+from mysite.api.observability import validate_metrics_config
 from mysite.api.origin_config import configured_origins
 from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
@@ -62,7 +64,8 @@ async def lifespan(app):
 
     async def recover_translations():
         try:
-            await asyncio.to_thread(recover_missing_translations)
+            queued = await asyncio.to_thread(recover_missing_translations)
+            logger.info('Recovered %d incomplete translation jobs', queued)
         except Exception:
             logger.exception('Could not queue missing catalogue translations')
 
@@ -79,6 +82,7 @@ async def lifespan(app):
 
 
 validate_resource_settings()
+validate_metrics_config()
 app = FastAPI(
     title='KYRGYZGO',
     description='KYRGYZGO Tourism API + AI Travel Assistant',
@@ -158,6 +162,7 @@ app.include_router(selection_router)
 app.include_router(manager_selection_router)
 app.include_router(registration_router)
 app.include_router(password_reset_router)
+app.include_router(observability_router)
 
 
 # MEDIA FILES

@@ -15,6 +15,7 @@ from ML.agent import respond
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
 from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
+from mysite.api.observability import record_booking_conflict
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import linked_request, processing_status
@@ -455,6 +456,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         raise HTTPException(409, 'Сначала получите полную сводку заявки в чате')
     preview = build_preview(db, s)
     if revision != s.revision:
+        record_booking_conflict()
         raise HTTPException(409, 'Данные изменились, запросите новый preview')
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
@@ -470,6 +472,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         'cancelled',
         'completed',
     ):
+        record_booking_conflict()
         raise HTTPException(409, 'Подборка уже отменена или завершена')
     try:
         advance_message_version(db, s)
@@ -483,6 +486,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         )
         if existing:
             return already_submitted(existing.request_id, client_id)
+        record_booking_conflict()
         raise
     tour_note = ''
     destination = st.get('destination')
@@ -536,6 +540,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         )
         if existing:
             return already_submitted(existing.request_id, client_id)
+        record_booking_conflict()
         raise HTTPException(409, 'Конфликт подтверждения заявки')
     return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 

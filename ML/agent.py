@@ -1,8 +1,13 @@
+"""Bounded read-only consultation; booking writes belong to the backend."""
+
 import asyncio
 import json
 import logging
+import time
 from datetime import date
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
 from ML.config import integer_setting, output_budget
 from ML.context import extraction_context, recent_messages
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
@@ -11,7 +16,7 @@ from ML.provider import LazyClient
 from ML.schemas import Changes
 from ML.tools import READ_TOOLS, _not_demo
 from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
-import time
+from mysite.api.observability import record_ai_call
 
 __all__ = ['respond', 'output_budget', 'confirmation_allowed', 'rejection_allowed']
 
@@ -35,6 +40,25 @@ extract_llm = LazyClient('extract_llm')
 extractor = LazyClient('extractor')
 agent_llm = LazyClient('agent_llm')
 tool_map = {t.name: t for t in READ_TOOLS}
+
+
+async def _measured_call(operation, invoke, *, timeout):
+    started = time.perf_counter()
+    outcome = 'success'
+    try:
+        return await asyncio.wait_for(invoke(), timeout=timeout)
+    except BaseException as exc:
+        if isinstance(exc, TimeoutError):
+            outcome = 'timeout'
+        elif isinstance(exc, AIError) and exc.code == 'ai_blocked':
+            outcome = 'blocked'
+        else:
+            outcome = 'failure'
+        raise
+    finally:
+        duration = time.perf_counter() - started
+        record_ai_call(operation, outcome, duration)
+        log.info('AI operation=%s outcome=%s duration_seconds=%.3f', operation, outcome, duration)
 
 
 def SessionLocal():
@@ -83,6 +107,7 @@ def active_tour_ids():
 
 
 async def _respond(message: str, state: dict, history: list, on_chunk=None):
+    """Extract preferences and consult with bounded read-only tool calls."""
     current = dict(state or {})
     intent = False
     try:
@@ -91,9 +116,9 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
         if type(selected_id) is int and selected_id > 0 and selected_id not in ids:
             if await asyncio.to_thread(valid_selected_tour, selected_id):
                 ids.append(selected_id)
-        extractor_start = time.perf_counter()
-        changes = await asyncio.wait_for(
-            extractor.ainvoke(
+        changes = await _measured_call(
+            'extractor',
+            lambda: extractor.ainvoke(
                 EXTRACT_PROMPT.format(
                     state=json.dumps(current, ensure_ascii=False),
                     tour_ids=json.dumps(ids),
@@ -103,8 +128,6 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             ),
             timeout=45,
         )
-        extractor_seconds = time.perf_counter() - extractor_start
-        log.info('AI extractor completed in %.2f seconds', extractor_seconds)
         if isinstance(changes, dict):
             changes = Changes.model_validate(changes)
         if not isinstance(changes, Changes):
@@ -123,9 +146,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             else:
                 dumped.pop('tour_id')
         if 'destination' in dumped and 'tour_id' not in dumped:
-            if 'tour_id' in changes.clear_fields:
-                current.pop('tour_id', None)
-            elif current.get('tour_id') is not None:
+            if current.get('tour_id') is not None:
                 dumped.pop('destination', None)
         if 'tour_id' in dumped:
             current.pop('destination', None)
@@ -195,11 +216,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                 raise ValueError('Gemini returned empty stream')
             return complete
 
-        generation_start = time.perf_counter()
-        reply = await asyncio.wait_for(stream_reply(), timeout=60)
-        generation_seconds = time.perf_counter() - generation_start
-
-        log.info('AI generation completed in %.2f seconds', generation_seconds)
+        reply = await _measured_call('generation', stream_reply, timeout=60)
         finish_reason = (
             str(reply.response_metadata.get('finish_reason', '')).upper().rsplit('.', 1)[-1]
         )
@@ -255,6 +272,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             name = call.get('name', '')
             tool = tool_map.get(name)
             tool_start = time.perf_counter()
+            tool_outcome = 'success' if tool else 'failure'
             try:
                 result = (
                     await asyncio.wait_for(
@@ -264,10 +282,15 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                     else {'error': 'Unknown tool'}
                 )
             except (ValueError, KeyError, TypeError, RuntimeError, OSError, TimeoutError) as exc:
+                tool_outcome = 'timeout' if isinstance(exc, TimeoutError) else 'failure'
                 log.warning('Read-only tool failed: %s', type(exc).__name__)
                 result = {'error': 'Данные компании сейчас не удалось проверить'}
-            tool_seconds = time.perf_counter() - tool_start
-            log.info('AI tool %s completed in %.2f seconds', name, tool_seconds)
+            finally:
+                tool_seconds = time.perf_counter() - tool_start
+                record_ai_call('tool', tool_outcome, tool_seconds)
+                log.info(
+                    'AI operation=tool outcome=%s duration_seconds=%.3f', tool_outcome, tool_seconds
+                )
             encoded = json.dumps(result, ensure_ascii=False, default=str)
             if len(encoded) > 16_000:
                 encoded = json.dumps(

@@ -18,7 +18,9 @@ def test_runtime_archive_contains_ml_implementation(tmp_path):
 
 def test_server_archive_validator_rejects_ml_private_files(tmp_path):
     import io
+
     import pytest
+
     from scripts.ci_deploy import validate_members
 
     for name in ('ML/.env', 'ML/private.key', 'ML/../secret.py'):

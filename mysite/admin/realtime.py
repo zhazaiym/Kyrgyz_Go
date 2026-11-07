@@ -37,10 +37,10 @@ def _enqueue(queue: asyncio.Queue, event: dict) -> None:
     queue.put_nowait(event)
 
 
-def _active_admin(admin_id) -> bool:
+def _eligible_admin(admin_id) -> bool:
     with SessionLocal() as db:
         admin = db.get(Admin, admin_id)
-        return bool(admin and admin.is_active)
+        return bool(admin and admin.is_active and admin.role in {'owner', 'manager'})
 
 
 async def admin_requests_websocket(websocket: WebSocket) -> None:
@@ -51,8 +51,13 @@ async def admin_requests_websocket(websocket: WebSocket) -> None:
             await websocket.close(code=1008)
             return
 
-    admin_id = websocket.scope.get('session', {}).get('admin_id')
-    if admin_id is None or not await run_in_threadpool(_active_admin, admin_id):
+    session = websocket.scope.get('session', {})
+    admin_id = session.get('admin_id')
+    if (
+        admin_id is None
+        or not session.get('admin_mfa')
+        or not await run_in_threadpool(_eligible_admin, admin_id)
+    ):
         await websocket.close(code=1008)
         return
 

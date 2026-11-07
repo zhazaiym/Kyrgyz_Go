@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from langchain_core.tools import tool
 from sqlalchemy import or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from ML.prompts import COMPANY_PROFILE
 
@@ -31,6 +31,7 @@ def _tour(t, brief=False):
     result = {
         'id': t.id,
         'title': t.title,
+        'country': t.country.name if t.country else None,
         'description': _public_text(t.description, 350) if brief else t.description,
         'price': str(t.price) if t.price is not None else None,
         'price_unit': unit,
@@ -57,19 +58,23 @@ def _tour(t, brief=False):
     return result
 
 
-@tool
-def list_active_tours() -> list[dict]:
-    """Read brief active tours (up to 30): price, duration, group limits, short description. Use for initial recommendations, then get_tour_details for program/inclusions. Not live availability."""
+def _active_tours_query(db):
     from mysite.database.models import Tour
 
+    return (
+        db.query(Tour)
+        .options(joinedload(Tour.country))
+        .filter(Tour.is_active.is_(True), _not_demo(Tour.title))
+    )
+
+
+@tool
+def list_active_tours() -> list[dict]:
+    """Read brief active tours (up to 30). Use for initial recommendations; not live availability."""
     with SessionLocal() as db:
-        rows = (
-            db.query(Tour)
-            .filter(Tour.is_active.is_(True), _not_demo(Tour.title))
-            .order_by(Tour.id)
-            .limit(30)
-            .all()
-        )
+        from mysite.database.models import Tour
+
+        rows = _active_tours_query(db).order_by(Tour.id).limit(30).all()
         return [_tour(tour, brief=True) for tour in rows]
 
 
@@ -80,16 +85,16 @@ def search_tours(
     duration_days: int | None = None,
 ) -> list[dict]:
     """Search active tours by destination, group size and duration."""
-    from mysite.database.models import Tour
-
     if people_count is not None and people_count <= 0:
         return []
 
     if duration_days is not None and duration_days <= 0:
         return []
 
+    from mysite.database.models import Country, Tour
+
     with SessionLocal() as db:
-        query = db.query(Tour).filter(Tour.is_active.is_(True), _not_demo(Tour.title))
+        query = _active_tours_query(db)
 
         if destination and destination.strip():
             keyword = destination.strip()
@@ -100,6 +105,7 @@ def search_tours(
                 or_(
                     Tour.title.ilike(pattern, escape='\\'),
                     Tour.description.ilike(pattern, escape='\\'),
+                    Tour.country.has(Country.name.ilike(pattern, escape='\\')),
                 )
             )
 
@@ -125,7 +131,7 @@ def get_tour_details(tour_id: int) -> dict:
     with SessionLocal() as db:
         tour = (
             db.query(Tour)
-            .options(selectinload(Tour.programs))
+            .options(selectinload(Tour.programs), joinedload(Tour.country))
             .filter(Tour.id == tour_id, Tour.is_active.is_(True), _not_demo(Tour.title))
             .first()
         )
@@ -280,6 +286,8 @@ def search_company_faq(question: str) -> list[dict]:
     from mysite.database.models import FAQ
 
     words = [word.lower() for word in question.split() if len(word) >= 4][:8]
+    if not words:
+        return []
     with SessionLocal() as db:
         rows = (
             db.query(FAQ)
@@ -293,9 +301,7 @@ def search_company_faq(question: str) -> list[dict]:
             for faq in rows
             if any(word in (faq.question + ' ' + faq.answer).lower() for word in words)
         ]
-        return [
-            {'question': faq.question, 'answer': faq.answer} for faq in (matches or rows[:8])[:8]
-        ]
+        return [{'question': faq.question, 'answer': faq.answer} for faq in matches[:8]]
 
 
 READ_TOOLS = [

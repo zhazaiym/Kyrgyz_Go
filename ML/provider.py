@@ -1,5 +1,8 @@
+"""SDK owns bounded network retries; no retry stacking."""
+
 import os
 from functools import lru_cache
+
 from ML.config import integer_setting, output_budget
 
 

@@ -63,6 +63,43 @@ def test_deployment_accepts_source_files():
         assert len(module.validate_members(bundle)) == 1
 
 
+def test_database_backup_validation_requires_postgresql_custom_dump(tmp_path):
+    module = load_deployment()
+    valid = tmp_path / 'valid.dump'
+    valid.write_bytes(b'PGDMP' + b'local-dump-data')
+    module.validate_database_backup(valid)
+    invalid = tmp_path / 'invalid.dump'
+    invalid.write_bytes(b'not-a-dump')
+    with pytest.raises(RuntimeError, match='Invalid database backup'):
+        module.validate_database_backup(invalid)
+
+
+def test_failed_activation_restores_prior_override_without_changing_schema_state(
+    tmp_path, monkeypatch
+):
+    module = load_deployment()
+    backup = tmp_path / 'backup'
+    backup.mkdir()
+    prior_override = backup / 'previous-deploy.override.yml'
+    prior_override.write_text('prior-image', encoding='utf-8')
+    state_file = tmp_path / 'deployment-state.json'
+    state = {'status': 'activating', 'image': 'candidate', 'previous_image': 'prior'}
+    copied = []
+    compose_calls = []
+    monkeypatch.setattr(module, 'OVERRIDE', tmp_path / 'active.override.yml')
+    monkeypatch.setattr(module.shutil, 'copy2', lambda src, dst: copied.append((src, dst)))
+    monkeypatch.setattr(module, 'compose', lambda *args: compose_calls.append(args))
+
+    module.rollback_activation(backup, state_file, state)
+
+    assert copied == [(prior_override, module.OVERRIDE)]
+    assert len(compose_calls) == 1
+    assert state['status'] == 'rolled_back'
+    assert state['image'] == 'candidate'
+    assert state['previous_image'] == 'prior'
+    assert json.loads(state_file.read_text(encoding='utf-8'))['status'] == 'rolled_back'
+
+
 def test_candidate_schema_uses_alembic_configured_version_locations(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'custom' / 'versions'

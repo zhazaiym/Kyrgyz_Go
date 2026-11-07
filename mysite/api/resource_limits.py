@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
 from mysite.api.network_identity import client_network, rate_limits_enabled
+from mysite.api.observability import record_websocket_connection
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -234,6 +235,15 @@ class ResourceLimitsMiddleware:
         if not admitted:
             await send({'type': 'websocket.close', 'code': 1013})
             return
+        accepted = False
+
+        async def track_connection(message):
+            nonlocal accepted
+            if message['type'] == 'websocket.accept' and not accepted:
+                accepted = True
+                record_websocket_connection(True)
+            await send(message)
+
         try:
 
             async def bounded_receive():
@@ -245,8 +255,10 @@ class ResourceLimitsMiddleware:
                         raise WebSocketDisconnect(1009)
                 return message
 
-            await self.app(scope, bounded_receive, send)
+            await self.app(scope, bounded_receive, track_connection)
         finally:
+            if accepted:
+                record_websocket_connection(False)
             with self.lock:
                 self.ws_active -= 1
                 self.ws_clients[address] -= 1

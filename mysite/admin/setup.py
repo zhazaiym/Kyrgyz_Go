@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse
 
 from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
+from mysite.api.admin_mfa import consume_admin_mfa
 from mysite.api.media import save_upload
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.db import SessionLocal, engine
@@ -31,7 +32,7 @@ class AdminAuthBackend(AuthenticationBackend):
         )
 
     @staticmethod
-    def login_identity(request, username, password):
+    def login_identity(request, username, password, totp_code):
         with SessionLocal() as db:
             admin = db.query(AdminModel).filter(AdminModel.username == username).first()
             admin_id = admin.id if admin else None
@@ -44,18 +45,33 @@ class AdminAuthBackend(AuthenticationBackend):
             password_hash = admin.hashed_password if admin else dummy_admin_hash
         enforce_login_attempt('admin-login', request, account_key)
         valid = verify_password(password, password_hash)
-        if not admin_id or not valid:
+        if not admin_id or not valid or not is_active:
             return None
-        return admin_id if is_active else None
+        with SessionLocal() as db:
+            admin = db.get(AdminModel, admin_id, with_for_update=True, populate_existing=True)
+            if admin is None or not admin.is_active or admin.hashed_password != password_hash:
+                return None
+            if not consume_admin_mfa(admin, totp_code, SECRET_KEY):
+                return None
+            db.commit()
+            role = admin.role
+        return (admin_id, role)
 
     async def login(self, request: Request) -> bool:
         form = await request.form()
         username = str(form.get('username', '')).strip()
         password = str(form.get('password', ''))
-        if not 1 <= len(username) <= 100 or not 1 <= len(password) <= 128:
+        totp_code = str(form.get('totp_code', ''))
+        if (
+            not 1 <= len(username) <= 100
+            or not 1 <= len(password) <= 128
+            or not 6 <= len(totp_code) <= 32
+        ):
             return False
         try:
-            identity = await run_in_threadpool(self.login_identity, request, username, password)
+            identity = await run_in_threadpool(
+                self.login_identity, request, username, password, totp_code
+            )
         except HTTPException as exc:
             if exc.status_code == 429:
                 return False
@@ -64,7 +80,8 @@ class AdminAuthBackend(AuthenticationBackend):
         if identity is None:
             return False
         request.session.clear()
-        request.session['admin_id'] = identity
+        request.session['admin_id'], request.session['admin_role'] = identity
+        request.session['admin_mfa'] = True
         return True
 
     async def logout(self, request: Request) -> bool:
@@ -72,21 +89,34 @@ class AdminAuthBackend(AuthenticationBackend):
         return True
 
     @staticmethod
-    def active_admin(admin_id):
+    def active_admin_role(admin_id):
         with SessionLocal() as db:
             admin = db.get(AdminModel, admin_id)
-            return bool(admin and admin.is_active)
+            return admin.role if admin and admin.is_active else None
+
+    @staticmethod
+    def active_admin(admin_id):
+        return AdminAuthBackend.active_admin_role(admin_id) is not None
 
     async def authenticate(self, request: Request) -> bool:
         admin_id = request.session.get('admin_id')
-        if admin_id is None:
+        if admin_id is None or not request.session.get('admin_mfa'):
             return False
         return await run_in_threadpool(self.active_admin, admin_id)
 
 
 async def upload_image(request: Request):
     admin_id = request.session.get('admin_id')
-    if admin_id is None or not await run_in_threadpool(AdminAuthBackend.active_admin, admin_id):
+    role = (
+        await run_in_threadpool(AdminAuthBackend.active_admin_role, admin_id)
+        if admin_id is not None
+        else None
+    )
+    if (
+        admin_id is None
+        or not request.session.get('admin_mfa')
+        or role not in {'owner', 'catalog_editor'}
+    ):
         return JSONResponse({'detail': 'Админ катары кириңиз'}, status_code=401)
     form = await request.form(max_files=1, max_fields=1)
     upload = form.get('file')

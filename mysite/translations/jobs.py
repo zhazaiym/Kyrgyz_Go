@@ -1,14 +1,19 @@
 """Queue catalogue translations after commit, without holding a request DB session."""
 
 import logging
+import time
+from datetime import timedelta
 from queue import Queue
 from threading import BoundedSemaphore, Lock, Thread
 
 from sqlalchemy import event, inspect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
 
+from mysite.api.observability import record_translation_job, set_translation_queue_depth
 from mysite.database.db import Base, SessionLocal
-from mysite.database.models import Tour, TourTranslation
+from mysite.database.models import Tour, TourTranslation, TranslationJob
+from mysite.database.token_utils import utcnow
 from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, source_field_hash,
                                         source_value_changed, translation_ready)
 
@@ -18,6 +23,7 @@ translation_queue = Queue()
 _worker_lock = Lock()
 _workers_started = False
 _pending_jobs = {}
+MAX_TRANSLATION_ATTEMPTS = 5
 
 
 def schedule_translation(record, fields, translator):
@@ -55,8 +61,60 @@ def committed_jobs(session):
     ]
 
 
+def persist_translation_job(entity, identity, source):
+    entity_name = entity.__tablename__
+    with SessionLocal() as db:
+        job = (
+            db.query(TranslationJob)
+            .filter_by(entity=entity_name, record_id=identity)
+            .with_for_update()
+            .first()
+        )
+        if job is None:
+            job = TranslationJob(entity=entity_name, record_id=identity, source=source)
+            db.add(job)
+        else:
+            source_changed = job.source != source
+            if not source_changed and job.status in {'failed', 'completed', 'obsolete'}:
+                return False
+            if not source_changed and job.status in {'pending', 'running'}:
+                pass
+            else:
+                job.source = source
+                job.status = 'pending'
+                job.attempts = 0
+                job.last_error = None
+                job.lease_until = None
+                job.next_attempt_at = utcnow()
+        if job.id is None:
+            job.next_attempt_at = utcnow()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            with SessionLocal() as retry_db:
+                job = (
+                    retry_db.query(TranslationJob)
+                    .filter_by(entity=entity_name, record_id=identity)
+                    .with_for_update()
+                    .one()
+                )
+                if job.source == source and job.status in {'failed', 'completed', 'obsolete'}:
+                    return False
+                job.source = source
+                job.status = 'pending'
+                job.attempts = 0
+                job.last_error = None
+                job.lease_until = None
+                job.next_attempt_at = utcnow()
+                retry_db.commit()
+    return True
+
+
 def enqueue_translation(entity, identity, source, translator):
     global _workers_started
+    if not persist_translation_job(entity, identity, source):
+        return False
     with _worker_lock:
         if not _workers_started:
             for index in range(2):
@@ -73,6 +131,7 @@ def enqueue_translation(entity, identity, source, translator):
             return True
         _pending_jobs[key] = (source, translator)
         translation_queue.put_nowait(key)
+        set_translation_queue_depth(translation_queue.qsize())
     return True
 
 
@@ -84,9 +143,101 @@ def _translation_worker():
                 pending = _pending_jobs.pop(job, None)
             if pending is not None:
                 source, translator = pending
-                translate_record(job[0], job[1], source, translator, wait_for_capacity=True)
+                result, retry_delay = _run_persisted_translation(job, source, translator)
+                record_translation_job(result)
         finally:
             translation_queue.task_done()
+            set_translation_queue_depth(translation_queue.qsize())
+        if pending is not None and retry_delay:
+            time.sleep(retry_delay)
+            with _worker_lock:
+                _pending_jobs[job] = (source, translator)
+                translation_queue.put(job)
+                set_translation_queue_depth(translation_queue.qsize())
+
+
+def _run_persisted_translation(job, source, translator):
+    entity_name, identity = job[0].__tablename__, job[1]
+    claimed_lease = None
+    try:
+        with SessionLocal() as db:
+            row = (
+                db.query(TranslationJob)
+                .filter_by(entity=entity_name, record_id=identity)
+                .with_for_update()
+                .first()
+            )
+            if row is None or row.status in {'completed', 'obsolete', 'failed'}:
+                return 'missing', 0
+            now = utcnow()
+            if row.next_attempt_at > now:
+                return 'busy', max(1, (row.next_attempt_at - now).total_seconds())
+            if row.lease_until is not None and row.lease_until > now:
+                return 'busy', max(1, (row.lease_until - now).total_seconds())
+            source = dict(row.source)
+            row.status = 'running'
+            row.attempts += 1
+            attempts = row.attempts
+            row.lease_until = now + timedelta(minutes=2)
+            claimed_lease = row.lease_until
+            db.commit()
+        result = translate_record(job[0], identity, source, translator, wait_for_capacity=True)
+        if result == 'translated' and not _stored_translation_is_complete(job[0], identity, source):
+            result = 'invalid_translation'
+    except Exception as exc:
+        logger.error('Translation worker failed (%s)', type(exc).__name__)
+        result = 'failed'
+        attempts = MAX_TRANSLATION_ATTEMPTS
+
+    retry_delay = 0
+    with SessionLocal() as db:
+        row = (
+            db.query(TranslationJob)
+            .filter_by(entity=entity_name, record_id=identity)
+            .with_for_update()
+            .first()
+        )
+        if (
+            row is not None
+            and claimed_lease is not None
+            and row.source == source
+            and row.status == 'running'
+            and row.lease_until == claimed_lease
+        ):
+            row.lease_until = None
+            if result in {'translated', 'source_changed', 'missing'}:
+                row.status = 'completed' if result == 'translated' else 'obsolete'
+                row.last_error = None
+            elif attempts < MAX_TRANSLATION_ATTEMPTS:
+                row.status = 'pending'
+                row.last_error = result
+                retry_delay = min(60, 2**attempts)
+                row.next_attempt_at = utcnow() + timedelta(seconds=retry_delay)
+            else:
+                row.status = 'failed'
+                row.last_error = result
+        db.commit()
+    return result, retry_delay
+
+
+def _stored_translation_is_complete(entity, identity, source):
+    with SessionLocal() as db:
+        record = db.get(entity, identity)
+        if record is None:
+            return False
+        if entity is Tour:
+            rows = db.query(TourTranslation).filter_by(tour_id=identity).all()
+            translations = {
+                row.lang: {
+                    **{field: getattr(row, field) for field in TOUR_TRANSLATION_FIELDS},
+                    '_source_hashes': row.source_hashes or {},
+                    '_manual_fields': row.manual_fields or [],
+                }
+                for row in rows
+            }
+        else:
+            translations = record.translations
+        return _translation_is_complete(translations, source)
 
 
 def _translation_is_complete(translations, source):

@@ -1,4 +1,4 @@
-# KyrgyzGo API для фронтенда
+# Kerben Travel API для фронтенда
 
 Контракт API, сверенный с кодом репозитория. Используйте базовый URL, настроенный через `API_DOMAIN`; этот документ сам по себе не означает, что текущая версия уже выложена. Проверяйте активный контракт через `GET /openapi.json` и Swagger `/docs`.
 
@@ -3008,3 +3008,16 @@ ws.onmessage = ({ data }) => {
 - После logout закрывается WebSocket, клиентский токен удаляется.
 - Ошибка/таймаут AI завершает индикатор ожидания и не отображается как успешный ответ.
 - Менеджерский токен не попадает в публичный клиентский bundle.
+# Metrics
+
+`GET /metrics` exposes Prometheus text metrics when `METRICS_BEARER_TOKEN` is
+configured. Supply `Authorization: Bearer <token>`. Without a configured token
+the route is hidden with a 404 response.
+
+
+
+## Administrator authentication
+
+`POST /admin/login/` requires `username`, `password`, and `totp_code`. The code may be a six-digit TOTP or one unused recovery code. SQLAdmin uses the same second factor. For an existing deployment, apply the MFA migration during a maintenance window, enroll each active admin with `python -m scripts.enroll_admin_mfa <username>`, then reopen admin access.
+
+Roles are enforced by the API and SQLAdmin: `owner` can manage all data and administrator roles; `manager` can manage travel requests and selections; `catalog_editor` can manage catalogue and public content.

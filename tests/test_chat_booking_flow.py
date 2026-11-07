@@ -1,4 +1,6 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -250,6 +252,40 @@ def test_incomplete_request_cannot_be_confirmed(client, monkeypatch):
     assert response.status_code == 409
     with SessionLocal() as db:
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
+
+
+def test_concurrent_confirmation_from_separate_workers_is_idempotent(client):
+    from fastapi import HTTPException
+
+    from mysite.api.chat_service import confirm_booking
+
+    token, identity, session_id = start_chat(client, 'parallel_confirmation')
+    with SessionLocal() as db:
+        session = db.get(ChatSession, session_id)
+        session.state = complete_state()
+        session.stage = 'awaiting_confirmation'
+        session.revision = 1
+        db.commit()
+
+    barrier = Barrier(2)
+
+    def confirm_in_separate_session():
+        with SessionLocal() as db:
+            session = db.get(ChatSession, session_id)
+            barrier.wait(timeout=5)
+            try:
+                return confirm_booking(db, session, identity, 1, True)
+            except HTTPException as exc:
+                return {'status': 'conflict', 'status_code': exc.status_code}
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(lambda _: confirm_in_separate_session(), range(2)))
+
+    assert [result['status'] for result in results].count('submitted') == 1
+    assert [result['status'] for result in results].count('already_submitted') == 1
+    assert results[0]['request_id'] == results[1]['request_id']
+    with SessionLocal() as db:
+        assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 1
 
 
 def test_refusal_invalidates_pending_confirmation(client, monkeypatch):
