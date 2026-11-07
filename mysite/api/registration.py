@@ -13,6 +13,7 @@ from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
+from mysite.phone_validation import normalize_phone
 
 router = APIRouter(prefix='/account', tags=['Tourist Account'])
 
@@ -50,13 +51,13 @@ def register(data: RegisterInput, request: Request, db: Session = Depends(get_db
         'client-register', request, email, ip_limit=10, identity_limit=3, window_seconds=3600
     )
 
-    phone = re.sub(r'[\s()\-]', '', data.phone.strip())
+    try:
+        phone = normalize_phone(data.phone)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     if not name:
         raise HTTPException(422, 'Укажите имя')
-
-    if not re.fullmatch(r'\+?[0-9]{7,15}', phone):
-        raise HTTPException(422, 'Введите корректный номер телефона')
 
     existing = db.query(ChatClient).filter(ChatClient.email == email).first()
 

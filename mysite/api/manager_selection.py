@@ -8,8 +8,13 @@ from mysite.api.selection_status import linked_request, processing_status, requi
 from mysite.api.travel_selection import selection_context, selection_data
 from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
-from mysite.database.models import Admin, RequestStatusChoices
+from mysite.database.models import Admin
 from mysite.database.selection_models import TravelSelection
+from mysite.database.selection_statuses import (
+    SelectionStatus,
+    SELECTION_TO_REQUEST_STATUS,
+)
+
 
 manager_selection_router = APIRouter(
     prefix='/manager/travel-selections', tags=['Manager Travel Selections']
@@ -17,7 +22,7 @@ manager_selection_router = APIRouter(
 
 
 class SelectionStatusUpdate(BaseModel):
-    status: str
+    status: SelectionStatus
 
 
 @manager_selection_router.get('/')
@@ -70,7 +75,6 @@ def detail_manager_selection(
 
     return data
 
-
 @manager_selection_router.patch('/{selection_id}/status/')
 def update_selection_status(
     selection_id: int,
@@ -78,26 +82,41 @@ def update_selection_status(
     current_admin: Admin = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    selection = db.get(TravelSelection, selection_id, with_for_update=True, populate_existing=True)
+    selection = db.get(
+        TravelSelection,
+        selection_id,
+        with_for_update=True,
+        populate_existing=True,
+    )
 
-    if not selection:
+    if selection is None:
         raise HTTPException(404, 'Поездка не найдена')
 
-    allowed_statuses = {'draft', 'in_progress', 'completed', 'cancelled'}
+    # Сначала получаем связанную заявку.
+    travel_request = linked_request(
+        db,
+        selection,
+        for_update=True,
+    )
 
-    if data.status not in allowed_statuses:
-        raise HTTPException(422, 'Недопустимый статус')
+    # Проверяем ограничения до изменения объектов.
+    if data.status == SelectionStatus.draft and (
+        selection.session_id is not None
+        or travel_request is not None
+    ):
+        raise HTTPException(
+            409,
+            'Нельзя вернуть в черновик поездку с чатом или отправленной заявкой',
+        )
 
-    request = linked_request(db, selection, for_update=True)
-    current_status = processing_status(selection, request)
-    require_status_transition(current_status, data.status)
+    current_status = processing_status(selection, travel_request)
+    require_status_transition(current_status, data.status.value)
 
-    if data.status == 'draft' and selection.session_id:
-        raise HTTPException(409, 'Нельзя вернуть поездку с чатом в черновик')
+    # Только после проверок изменяем статусы.
+    selection.status = data.status.value
 
-    selection.status = data.status
-    if request is not None:
-        request.status = RequestStatusChoices(data.status)
+    if travel_request is not None:
+        travel_request.status = SELECTION_TO_REQUEST_STATUS[data.status]
 
     db.commit()
     db.refresh(selection)

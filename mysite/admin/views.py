@@ -1,8 +1,20 @@
+from copy import deepcopy
+
 from sqladmin import ModelView
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 
 from mysite.database.chat_models import ChatBookingLink
+from copy import deepcopy
+
+from sqladmin import ModelView
+from sqlalchemy import select
+from sqlalchemy.orm import object_session
+from starlette.concurrency import run_in_threadpool
+
+from mysite.database.chat_models import ChatBookingLink
+from mysite.database.db import SessionLocal
 from mysite.database.models import (
     FAQ,
     About,
@@ -30,6 +42,7 @@ from mysite.translations.content import (
     CONTENT_FIELDS,
     generate_translations,
     manual_translation_changed,
+    manual_translation_needs_refresh,
     mark_manual_translations,
     release_stale_manual_translations,
 )
@@ -40,44 +53,92 @@ from mysite.translations.source import (
     source_field_hash,
     source_value_changed,
 )
+from mysite.translations.translator import translate_tour
 
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
         fields = CONTENT_FIELDS[model.__tablename__]
+        request.state.catalogue_source = None
+
+        form_translation_snapshot = deepcopy(model.translations)
+        session = object_session(model)
+
+        if not is_created and session is not None:
+            # Получаем актуальные переводы перед объединением с формой.
+            await run_in_threadpool(
+                session.refresh,
+                model,
+                with_for_update=True,
+            )
+
         for field in fields:
-            if isinstance(data.get(field), str):
+            if field in data:
                 data[field] = normalize_text(data[field])
+
         changed_fields = {
             field
             for field in fields
-            if field in data and source_value_changed(getattr(model, field, None), data[field])
-        }
-        source_changed = is_created or bool(changed_fields)
-        source = {field: data.get(field, getattr(model, field, None)) for field in fields}
-        translations_changed = False
-        if 'translations' in data:
-            translations_changed = manual_translation_changed(
-                data['translations'], model.translations
+            if field in data
+            and source_value_changed(
+                getattr(model, field, None),
+                data[field],
             )
+        }
+
+        source_changed = is_created or bool(changed_fields)
+
+        source = {
+            field: data.get(field, getattr(model, field, None))
+            for field in fields
+        }
+
+        translations_changed = False
+        refresh_cleared_fields = False
+
+        if 'translations' in data:
+            submitted_translations = data['translations']
+
+            translations_changed = manual_translation_changed(
+                submitted_translations,
+                form_translation_snapshot,
+            )
+
+            refresh_cleared_fields = manual_translation_needs_refresh(
+                submitted_translations,
+                form_translation_snapshot,
+                model.translations,
+            )
+
             if translations_changed:
                 data['translations'] = mark_manual_translations(
-                    data['translations'], source, model.translations
+                    submitted_translations,
+                    source,
+                    model.translations,
+                    compared_to=form_translation_snapshot,
                 )
             else:
                 data['translations'] = model.translations or {}
+
         if source_changed:
             data['translations'] = release_stale_manual_translations(
-                data.get('translations', model.translations), source
+                data.get('translations', model.translations),
+                source,
             )
-        if source_changed or translations_changed:
+
+        if source_changed or translations_changed or refresh_cleared_fields:
             request.state.catalogue_source = source
 
     async def after_model_change(self, data, model, is_created, request):
         source = getattr(request.state, 'catalogue_source', None)
-        if source is not None:
-            enqueue_translation(type(model), model.id, source, generate_translations)
 
+        if source is not None:
+            enqueue_translation(
+                type(model),
+                model.id,
+                source,
+                generate_translations,
+            )
 
 class AdminAdmin(ModelView, model=Admin):
     column_list = [Admin.username, Admin.is_active]
@@ -111,12 +172,16 @@ class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model=TourCategory):
 
 
 class TourAdmin(ModelView, model=Tour):
+    can_delete = False
     column_list = [Tour.id, Tour.title]
 
     # Админге «Ночей» талаасын көрсөтпөйбүз
     form_excluded_columns = [Tour.duration_nights]
 
     async def on_model_change(self, data, model, is_created, request):
+        for field in TOUR_TRANSLATION_FIELDS:
+            if field in data:
+                data[field] = normalize_text(data[field])
         days = data.get('duration_days')
 
         if days is not None:
@@ -155,9 +220,6 @@ class TourAdmin(ModelView, model=Tour):
 
     @staticmethod
     def _refresh_translations(tour_id):
-        from mysite.api.tour import translate_tour
-        from mysite.database.db import SessionLocal
-
         with SessionLocal() as db:
             tour = db.get(Tour, tour_id)
             if tour is None:
@@ -183,6 +245,7 @@ class DistrictAdmin(LocalizedAdminMixin, ModelView, model=District):
 
 
 class HotelAdmin(LocalizedAdminMixin, ModelView, model=Hotel):
+    can_delete = False
     column_list = [Hotel.id, Hotel.name]
 
 
@@ -191,6 +254,7 @@ class HotelImageAdmin(ModelView, model=HotelImage):
 
 
 class TransportAdmin(LocalizedAdminMixin, ModelView, model=Transport):
+    can_delete = False
     column_list = [Transport.id, Transport.name]
 
     form_args = {'seats': {'render_kw': {'type': 'number', 'min': 1, 'step': 1}}}
@@ -261,6 +325,10 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     ]
     column_default_sort = (TravelRequest.created_at, True)
     can_view_details = True
+
+    can_create = False
+    can_delete = False
+    form_columns = [TravelRequest.status]
 
 
 class ChatRequestAdmin(TravelRequestAdmin):

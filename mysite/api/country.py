@@ -5,7 +5,8 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Country, Tour
-from mysite.database.schema import CountryInputSchema, CountryOutSchema, CountryUpdateSchema
+from mysite.database.schemas.catalogue import (CountryInputSchema, CountryOutSchema,
+                                               CountryUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 country_router = APIRouter(prefix='/countries', tags=['Countries'])

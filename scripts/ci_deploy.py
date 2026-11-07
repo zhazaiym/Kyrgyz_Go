@@ -2,10 +2,10 @@ import ast
 import configparser
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -19,8 +19,14 @@ OVERRIDE = Path('/home/ubuntu/kyrgyzgo-deploy.override.yml')
 RELEASES = Path('/home/ubuntu/releases')
 BACKUPS = Path('/home/ubuntu/kyrgyzgo-backups')
 DEPLOY_LOCK = Path('/home/ubuntu/.kyrgyzgo-deploy.lock')
-PRODUCTION_NETWORK = 'kyrgyz_go_kyrgyzgo_network'
-PRODUCTION_NETWORK_KEY = 'kyrgyzgo_network'
+PRODUCTION_NETWORK = 'kyrgyz_go_proxy'
+PRODUCTION_NETWORK_KEY = 'proxy'
+PRODUCTION_API_IP = '172.30.240.3'
+PRODUCTION_ENV_DIR = PurePosixPath('/home/ubuntu/releases/main-edefb05')
+UNSAFE_IPV6_ADMIN_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in ('2001::/32', '64:ff9b::/96', '64:ff9b:1::/48', '2002::/16', '::ffff:0:0/96')
+)
 ALLOWED_FILES = {
     '.dockerignore',
     'Dockerfile',
@@ -46,7 +52,9 @@ def validate_members(bundle):
     for member in members:
         path = PurePosixPath(member.name)
         allowed = path.as_posix() in ALLOWED_FILES
-        allowed = allowed or bool(path.parts and path.parts[0] in {'mysite', 'alembic', 'scripts'})
+        allowed = allowed or bool(
+            path.parts and path.parts[0] in {'ML', 'mysite', 'alembic', 'scripts'}
+        )
         sensitive = any(
             (part.startswith('.') and path.as_posix() not in ALLOWED_FILES) or part == '__pycache__'
             for part in path.parts
@@ -69,8 +77,8 @@ def run(arguments, **options):
     return subprocess.run(arguments, check=True, **options)
 
 
-def output(arguments):
-    return subprocess.check_output(arguments, text=True).strip()
+def output(arguments, **options):
+    return subprocess.check_output(arguments, text=True, **options).strip()
 
 
 def runtime_digest(contents):
@@ -146,13 +154,20 @@ def deployed_runtime_digest(container, name):
     return output(['sudo', '-n', 'docker', 'exec', container, 'python', '-c', probe])
 
 
-def compose_override(image):
+def compose_override(image, admin_allowlist):
     return (
         'services:\n'
         '  api:\n'
         f'    image: {image}\n'
+        '    env_file:\n'
+        f'      - {PRODUCTION_ENV_DIR / ".env"}\n'
+        f'      - {PRODUCTION_ENV_DIR / "runtime-secrets.env"}\n'
+        '    environment:\n'
+        f'      ADMIN_ALLOWED_IPS: {json.dumps(admin_allowlist)}\n'
         f'    networks:\n'
-        f'      - {PRODUCTION_NETWORK_KEY}\n'
+        f'      {PRODUCTION_NETWORK_KEY}:\n'
+        f'        ipv4_address: {PRODUCTION_API_IP}\n'
+        '      default: {}\n'
         'networks:\n'
         f'  {PRODUCTION_NETWORK_KEY}:\n'
         '    external: true\n'
@@ -193,8 +208,41 @@ def compose_output(*arguments):
             '-f',
             str(OVERRIDE),
             *arguments,
-        ]
+        ],
+        cwd=ROOT,
     )
+
+
+def production_service_container(service):
+    containers = output(
+        [
+            'sudo',
+            '-n',
+            'docker',
+            'ps',
+            '-q',
+            '--filter',
+            'label=com.docker.compose.project=kyrgyz_go',
+            '--filter',
+            f'label=com.docker.compose.service={service}',
+        ]
+    ).splitlines()
+    if len(containers) != 1:
+        raise RuntimeError(f'Expected one production {service} container; found {len(containers)}')
+    return containers[0]
+
+
+def install_override(image, admin_networks):
+    """Write the image override, then validate the resolved Compose policy."""
+    admin_allowlist = ','.join(map(str, admin_networks))
+    temporary = OVERRIDE.with_suffix('.pending')
+    temporary.write_text(compose_override(image, admin_allowlist), encoding='utf-8')
+    temporary.replace(OVERRIDE)
+
+    resolved_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
+    if resolved_networks != admin_networks:
+        raise RuntimeError('ADMIN_ALLOWED_IPS changed while preparing the new image')
+    compose('config', '--quiet')
 
 
 def require_same_schema(current, candidate):
@@ -250,7 +298,7 @@ def candidate_schema(source):
         if separator == 'os':
             locations = configured.split(os.pathsep)
         elif separator == 'space':
-            locations = shlex.split(configured)
+            locations = configured.split(' ')
         elif separator == 'newline':
             locations = configured.splitlines()
         elif separator:
@@ -258,7 +306,7 @@ def candidate_schema(source):
         elif values.get('version_path_separator') == 'os':
             locations = configured.split(os.pathsep)
         elif values.get('version_path_separator') == 'space':
-            locations = shlex.split(configured)
+            locations = configured.split(' ')
         elif values.get('version_path_separator') == 'newline':
             locations = configured.splitlines()
         elif values.get('version_path_separator'):
@@ -306,6 +354,46 @@ def candidate_schema(source):
     return sorted(heads)
 
 
+def validate_admin_allowlist(rendered_config):
+    """Validate the effective API policy resolved by Docker Compose."""
+    try:
+        config = json.loads(rendered_config)
+        configured = config['services']['api'].get('environment', {}).get('ADMIN_ALLOWED_IPS')
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RuntimeError('Cannot read ADMIN_ALLOWED_IPS from rendered Compose config') from exc
+    if not isinstance(configured, str) or not configured.strip():
+        raise RuntimeError('Production API must set ADMIN_ALLOWED_IPS before deployment')
+    try:
+        networks = [
+            ipaddress.ip_network(item.strip(), strict=False) for item in configured.split(',')
+        ]
+    except ValueError as exc:
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS contains an invalid IP or network'
+        ) from exc
+    if not networks:
+        raise RuntimeError('Production ADMIN_ALLOWED_IPS must contain at least one network')
+    unrestricted = len(networks) == 2 and {str(network) for network in networks} == {
+        '0.0.0.0/0',
+        '::/0',
+    }
+    if not unrestricted and any(
+        network.prefixlen < (16 if network.version == 4 else 32) for network in networks
+    ):
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS is too broad; require IPv4 /16 or IPv6 /32 or narrower'
+        )
+    if not unrestricted and any(
+        network.version == unsafe.version and network.overlaps(unsafe)
+        for network in networks
+        for unsafe in UNSAFE_IPV6_ADMIN_NETWORKS
+    ):
+        raise RuntimeError(
+            'Production ADMIN_ALLOWED_IPS cannot use IPv6 transition or translation networks'
+        )
+    return networks
+
+
 def deploy(revision, source):
     import fcntl
 
@@ -335,7 +423,7 @@ def deploy(revision, source):
             bundle.extractall(release, members=members, filter='data')
         if not all((release / name).is_file() for name in ALLOWED_FILES):
             raise ValueError('Archive is missing required deployment files')
-        compose_output('config', '--quiet')
+        admin_networks = validate_admin_allowlist(compose_output('config', '--format', 'json'))
         run(
             ['sudo', '-n', 'docker', 'network', 'inspect', PRODUCTION_NETWORK],
             stdout=subprocess.DEVNULL,
@@ -346,7 +434,6 @@ def deploy(revision, source):
         previous = json.loads(output(['sudo', '-n', 'docker', 'inspect', previous_container]))[0]
         if previous['State']['Health']['Status'] != 'healthy':
             raise RuntimeError('Current api is unhealthy; manual intervention required')
-        old_image_id = previous['Image']
         old_image = previous['Config']['Image']
         image = 'kyrgyzgo-api:' + stamp
         state = {
@@ -386,6 +473,7 @@ def deploy(revision, source):
         for name in ('docker-compose.yml', 'Caddyfile', '.env'):
             shutil.copy2(ROOT / name, backup / name)
         shutil.copy2(OVERRIDE, backup / 'previous-deploy.override.yml')
+        postgres_container = production_service_container('postgres')
         with (backup / 'database.dump').open('wb') as destination:
             run(
                 [
@@ -393,7 +481,7 @@ def deploy(revision, source):
                     '-n',
                     'docker',
                     'exec',
-                    'kyrgyzgo_postgres',
+                    postgres_container,
                     'sh',
                     '-c',
                     'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc',
@@ -408,7 +496,7 @@ def deploy(revision, source):
             dockerfile = 'Dockerfile.runtime'
             (release / dockerfile).write_text(
                 runtime_dockerfile(
-                    old_image_id, dockerfile_cmd, install_requirements=requirements_changed
+                    old_image, dockerfile_cmd, install_requirements=requirements_changed
                 )
             )
         state['status'] = 'building'
@@ -428,10 +516,7 @@ def deploy(revision, source):
         )
         state['status'] = 'activating'
         try:
-            temporary = OVERRIDE.with_suffix('.pending')
-            temporary.write_text(compose_override(image))
-            temporary.replace(OVERRIDE)
-            compose('config', '--quiet')
+            install_override(image, admin_networks)
             compose('up', '-d', '--no-deps', '--no-build', '--wait', '--wait-timeout', '180', 'api')
             with urllib.request.urlopen('https://13.53.40.37/', timeout=30) as response:
                 if response.status != 200:

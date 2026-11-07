@@ -6,7 +6,8 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.db import get_db
 from mysite.database.models import District, Region
-from mysite.database.schema import DistrictInputSchema, DistrictOutSchema, DistrictUpdateSchema
+from mysite.database.schemas.catalogue import (DistrictInputSchema, DistrictOutSchema,
+                                               DistrictUpdateSchema)
 from mysite.filters.filter import DistrictFilter
 from mysite.translations.content import Language, localized, update_translations
 

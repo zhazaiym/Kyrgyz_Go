@@ -40,7 +40,7 @@
 ```powershell
 .venv/Scripts/python.exe -m ruff check .
 .venv/Scripts/python.exe -m scripts.format_code --check
-.venv/Scripts/python.exe -m pytest -q
+.venv/Scripts/python.exe -m scripts.run_tests -q
 ```
 
 CI проверяет и импорты, и форматирование. Миграции Alembic, тесты и код ИИ

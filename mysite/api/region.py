@@ -6,7 +6,7 @@ from mysite.api.admin import get_current_admin
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.db import get_db
 from mysite.database.models import Country, Region
-from mysite.database.schema import RegionInputSchema, RegionOutSchema, RegionUpdateSchema
+from mysite.database.schemas.catalogue import RegionInputSchema, RegionOutSchema, RegionUpdateSchema
 from mysite.filters.filter import RegionFilter
 from mysite.translations.content import Language, localized, update_translations
 

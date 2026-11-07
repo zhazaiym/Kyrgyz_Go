@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Trekking, TrekkingProgram
-from mysite.database.schema import (TrekkingProgramInputSchema, TrekkingProgramOutSchema,
-                                    TrekkingProgramUpdateSchema)
+from mysite.database.schemas.catalogue import (TrekkingProgramInputSchema, TrekkingProgramOutSchema,
+                                               TrekkingProgramUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 trekking_program_router = APIRouter(prefix='/trekking-programs', tags=['Trekking Programs'])
@@ -36,18 +36,33 @@ def create_trekking_program(program: TrekkingProgramInputSchema, db: Session = D
     '/', response_model=list[TrekkingProgramOutSchema], dependencies=[Depends(current_client)]
 )
 def list_trekking_programs(
-    lang: Language = 'ru', db: Session = Depends(get_db), pagination: Pagination = Depends()
+    lang: Language = 'ru',
+    trekking_id: int | None = None,
+    db: Session = Depends(get_db),
+    pagination: Pagination = Depends(),
 ):
-    return [
-        localized(record, lang)
-        for record in db.query(TrekkingProgram)
+    query = (
+        db.query(TrekkingProgram)
         .join(Trekking)
         .filter(Trekking.is_active.is_(True))
-        .order_by(TrekkingProgram.trekking_id, TrekkingProgram.day_number)
+    )
+
+    if trekking_id is not None:
+        query = query.filter(TrekkingProgram.trekking_id == trekking_id)
+
+    records = (
+        query
+        .order_by(
+            TrekkingProgram.trekking_id,
+            TrekkingProgram.day_number,
+            TrekkingProgram.id,
+        )
         .offset(pagination.offset)
         .limit(pagination.limit)
         .all()
-    ]
+    )
+
+    return [localized(record, lang) for record in records]
 
 
 @trekking_program_router.get(

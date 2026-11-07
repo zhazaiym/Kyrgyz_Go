@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pytest
 
 PUBLIC_LIST_ROUTES = [
@@ -114,21 +116,31 @@ def test_catalogue_writes_reject_anonymous_requests(client, method, path):
 
 
 def test_private_customer_routes_reject_anonymous_requests(client):
+    request = client.post(
+        '/travel-requests/',
+        json={
+            'selection_id': 1,
+            'travel_date': (date.today() + timedelta(days=1)).isoformat(),
+            'travelers_count': 1,
+            'phone': '+996700123456',
+        },
+    )
+    assert request.status_code == 401
     assert client.get('/travel-requests/').status_code == 401
     assert client.get('/travel-requests/1/').status_code == 401
     assert client.put('/travel-requests/1/', json={}).status_code == 401
     assert client.delete('/travel-requests/1/').status_code == 401
 
 
-def test_openapi_only_advertises_chat_booking_submission(client):
+def test_openapi_advertises_client_requests_and_chat_booking(client):
     paths = client.get('/openapi.json').json()['paths']
     assert '/bookings/' not in paths
-    assert 'post' not in paths['/travel-requests/']
+    assert 'post' in paths['/travel-requests/']
+    assert paths['/travel-requests/']['post']['security'] == [{'ClientBearer': []}]
     assert '/booking/confirm' in paths
 
 
-def test_legacy_booking_submission_requires_chat(client, admin_headers, monkeypatch):
-    monkeypatch.setattr('mysite.api.tour.try_save_translations', lambda *args: None)
+def test_legacy_booking_submission_requires_chat(client, admin_headers):
     category = client.post(
         '/tour-categories/', json={'name': 'Booking category'}, headers=admin_headers
     ).json()

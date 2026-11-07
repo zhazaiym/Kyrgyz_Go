@@ -1,7 +1,11 @@
 import importlib.util
 import io
+import ipaddress
+import json
+import shutil
+import subprocess
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -93,8 +97,18 @@ def test_candidate_schema_supports_legacy_comma_separator(tmp_path):
     assert module.candidate_schema(tmp_path) == ['second']
 
 
+<<<<<<< HEAD
 @pytest.mark.parametrize('separator', ['space', 'newline'])
 def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
+=======
+@pytest.mark.parametrize(
+    ('separator', 'configured'),
+    [('space', '%(here)s/first %(here)s/second'), ('newline', '%(here)s/first\n %(here)s/second')],
+)
+def test_candidate_schema_supports_legacy_named_version_path_separator(
+    tmp_path, separator, configured
+):
+>>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
     module = load_deployment()
     first = tmp_path / 'first'
     second = tmp_path / 'second'
@@ -104,6 +118,7 @@ def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
     (second / '002.py').write_text(
         "revision = 'second'\ndown_revision = 'first'\n", encoding='utf-8'
     )
+<<<<<<< HEAD
     locations = (
         '%(here)s/first %(here)s/second'
         if separator == 'space'
@@ -112,12 +127,151 @@ def test_candidate_schema_supports_legacy_named_separators(tmp_path, separator):
     (tmp_path / 'alembic.ini').write_text(
         '[alembic]\nscript_location = %(here)s\n'
         f'version_locations = {locations}\nversion_path_separator = {separator}\n',
+=======
+    (tmp_path / 'alembic.ini').write_text(
+        '[alembic]\nscript_location = %(here)s\n'
+        f'version_locations = {configured}\n'
+        f'version_path_separator = {separator}\n',
+>>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
         encoding='utf-8',
     )
 
     assert module.candidate_schema(tmp_path) == ['second']
 
 
+<<<<<<< HEAD
+=======
+@pytest.mark.parametrize(
+    ('value', 'expected', 'error'),
+    [
+        ('192.0.2.4,2001:db8::/32', ['192.0.2.4/32', '2001:db8::/32'], None),
+        (None, None, 'must set'),
+        ('', None, 'must set'),
+        ('bad-network', None, 'invalid IP or network'),
+        *[
+            (network, None, 'too broad')
+            for network in (
+                '0.0.0.0/0',
+                '::/0',
+                '0.0.0.0/1',
+                '128.0.0.0/1',
+                '::/1',
+                '8000::/1',
+                '2000::/3',
+                '10.0.0.0/8',
+                '2001:db8::/31',
+            )
+        ],
+        ('192.0.0.0/16,2001:db8::/32', ['192.0.0.0/16', '2001:db8::/32'], None),
+        ('0.0.0.0/0,::/0', ['0.0.0.0/0', '::/0'], None),
+    ],
+)
+def test_deploy_requires_explicit_valid_admin_allowlist(value, expected, error):
+    rendered = json.dumps({'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': value}}}})
+    module = load_deployment()
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            module.validate_admin_allowlist(rendered)
+    else:
+        assert [str(network) for network in module.validate_admin_allowlist(rendered)] == expected
+
+
+@pytest.mark.parametrize(
+    'network',
+    (
+        '2001::/32',
+        '2001:0:1::/48',
+        '64:ff9b::/96',
+        '64:ff9b:1::/48',
+        '2002:1::/32',
+        '2002:c000:0204::/48',
+        '::ffff:0:0/96',
+        '::ffff:c000:204/128',
+    ),
+)
+def test_deploy_rejects_ipv6_transition_and_translation_allowlists(network):
+    rendered = json.dumps({'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': network}}}})
+    with pytest.raises(RuntimeError, match='IPv6 transition or translation'):
+        load_deployment().validate_admin_allowlist(rendered)
+
+
+@pytest.mark.skipif(shutil.which('docker') is None, reason='Docker Compose CLI unavailable')
+@pytest.mark.parametrize(
+    ('content', 'override', 'expected', 'error'),
+    [
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32 # first\nADMIN_ALLOWED_IPS=198.51.100.1/32\n',
+            None,
+            ['198.51.100.1/32'],
+            None,
+        ),
+        ('ADMIN_ALLOWED_IPS="192.0.2.1/32" # comment\n', None, ['192.0.2.1/32'], None),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS= # cleared\n',
+            None,
+            None,
+            'invalid IP or network',
+        ),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\nADMIN_ALLOWED_IPS=\n', None, None, 'must set'),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nexport ADMIN_ALLOWED_IPS=0.0.0.0/0\n',
+            None,
+            None,
+            'too broad',
+        ),
+        ('ADMIN_ALLOWED_IPS=0.0.0.0/0,::/0\n', None, ['0.0.0.0/0', '::/0'], None),
+        (
+            'ADMIN_ALLOWED_IPS=192.0.2.1/32\nexport ADMIN_ALLOWED_IPS=198.51.100.2/32\n',
+            None,
+            ['198.51.100.2/32'],
+            None,
+        ),
+        ('ADMIN_ALLOWED_IPS=192.0.2.1/32\n', '203.0.113.7/32', ['203.0.113.7/32'], None),
+    ],
+)
+def test_deploy_validates_effective_compose_admin_policy(
+    tmp_path, content, override, expected, error
+):
+    (tmp_path / '.env').write_text(content)
+    compose = 'services:\n  api:\n    image: busybox\n    env_file: [.env]\n'
+    if override is not None:
+        compose += f'    environment:\n      ADMIN_ALLOWED_IPS: {override}\n'
+    path = tmp_path / 'compose.yml'
+    path.write_text(compose)
+    rendered = subprocess.check_output(
+        [
+            'docker',
+            'compose',
+            '--env-file',
+            str(tmp_path / '.env'),
+            '-f',
+            str(path),
+            'config',
+            '--format',
+            'json',
+        ],
+        text=True,
+    )
+    module = load_deployment()
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            module.validate_admin_allowlist(rendered)
+    else:
+        assert [str(network) for network in module.validate_admin_allowlist(rendered)] == expected
+
+
+@pytest.mark.parametrize('separator_key', ['path_separator', 'version_path_separator'])
+def test_candidate_schema_space_separator_keeps_apostrophes_literal(tmp_path, separator_key):
+    versions = tmp_path / "author's_versions"
+    versions.mkdir()
+    (versions / '001.py').write_text("revision = 'head'\ndown_revision = None\n")
+    (tmp_path / 'alembic.ini').write_text(
+        f"[alembic]\nscript_location = %(here)s\nversion_locations = %(here)s/author's_versions\n{separator_key} = space\n"
+    )
+    assert load_deployment().candidate_schema(tmp_path) == ['head']
+
+
+>>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 def test_candidate_schema_supports_package_relative_script_location(tmp_path):
     module = load_deployment()
     versions = tmp_path / 'migration_package' / 'versions'
@@ -202,19 +356,109 @@ def test_runtime_dockerfile_installs_changed_requirements_on_existing_image():
 
 def test_compose_override_preserves_api_service_and_production_network():
     module = load_deployment()
-    override = module.compose_override('kyrgyzgo-api:ci-123')
+    override = module.compose_override('kyrgyzgo-api:manual-123', '192.0.2.10/32')
 
     assert '  api:\n' in override
-    assert '    image: kyrgyzgo-api:ci-123\n' in override
-    assert '      - kyrgyzgo_network\n' in override
+    assert '    image: kyrgyzgo-api:manual-123\n' in override
+    assert '      - /home/ubuntu/releases/main-edefb05/.env\n' in override
+    assert '      - /home/ubuntu/releases/main-edefb05/runtime-secrets.env\n' in override
+    assert '      ADMIN_ALLOWED_IPS: "192.0.2.10/32"\n' in override
+    assert '      proxy:\n' in override
+    assert '        ipv4_address: 172.30.240.3\n' in override
+    assert '      default: {}\n' in override
     assert '    external: true\n' in override
-    assert '    name: kyrgyz_go_kyrgyzgo_network\n' in override
+    assert '    name: kyrgyz_go_proxy\n' in override
     assert '  backend:\n' not in override
 
 
-def test_workflow_separates_tests_and_main_deployment():
-    workflow = Path('.github/workflows/deploy.yml').read_text()
+def test_activation_override_preserves_allowlist_and_validates_after_write(monkeypatch, tmp_path):
+    module = load_deployment()
+    override_path = tmp_path / 'deploy.override.yml'
+    monkeypatch.setattr(module, 'OVERRIDE', override_path)
+    expected_networks = [ipaddress.ip_network('192.0.2.10/32')]
+    calls = []
+
+    def compose_output(*arguments):
+        assert arguments == ('config', '--format', 'json')
+        assert override_path.exists()
+        assert 'ADMIN_ALLOWED_IPS: "192.0.2.10/32"' in override_path.read_text()
+        calls.append('resolved-config')
+        return json.dumps(
+            {'services': {'api': {'environment': {'ADMIN_ALLOWED_IPS': '192.0.2.10/32'}}}}
+        )
+
+    def compose(*arguments):
+        calls.append(arguments)
+
+    monkeypatch.setattr(module, 'compose_output', compose_output)
+    monkeypatch.setattr(module, 'compose', compose)
+
+    module.install_override('kyrgyzgo-api:manual-123', expected_networks)
+
+    assert calls == ['resolved-config', ('config', '--quiet')]
+
+
+@pytest.mark.skipif(shutil.which('docker') is None, reason='Docker Compose CLI unavailable')
+def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypatch, tmp_path):
+    module = load_deployment()
+    root = tmp_path / 'server'
+    root.mkdir()
+    override = tmp_path / 'deploy.override.yml'
+    (root / '.env').write_text('ADMIN_ALLOWED_IPS=198.51.100.44/32\n', encoding='utf-8')
+    (root / 'runtime-secrets.env').write_text('', encoding='utf-8')
+    (root / 'docker-compose.yml').write_text(
+        'services:\n'
+        '  api:\n'
+        '    image: kyrgyzgo-api:old\n'
+        '    env_file: [.env]\n'
+        '    networks: [kyrgyzgo_network]\n'
+        'networks:\n'
+        '  kyrgyzgo_network:\n'
+        '    external: true\n'
+        '    name: kyrgyz_go_kyrgyzgo_network\n',
+        encoding='utf-8',
+    )
+    override.write_text(
+        'services:\n  api:\n    environment:\n      ADMIN_ALLOWED_IPS: 192.0.2.10/32\n',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(module, 'ROOT', root)
+    monkeypatch.setattr(module, 'OVERRIDE', override)
+    monkeypatch.setattr(module, 'PRODUCTION_ENV_DIR', PurePosixPath('.'))
+    calls = []
+
+    def docker_command(arguments):
+        assert arguments[:3] == ['sudo', '-n', 'docker']
+        return ['docker', *arguments[3:]]
+
+    def real_output(arguments, **options):
+        calls.append(('config', arguments[-3:]))
+        assert '192.0.2.10/32' in override.read_text(encoding='utf-8') if len(calls) > 1 else True
+        return subprocess.check_output(docker_command(arguments), **options)
+
+    def real_run(arguments, **options):
+        calls.append(('run', arguments[-2:]))
+        return subprocess.run(docker_command(arguments), **options)
+
+    monkeypatch.setattr(module, 'output', real_output)
+    monkeypatch.setattr(module, 'run', real_run)
+
+    current = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+    assert [str(network) for network in current] == ['192.0.2.10/32']
+    module.install_override('kyrgyzgo-api:manual-test', current)
+    resolved = module.validate_admin_allowlist(module.compose_output('config', '--format', 'json'))
+
+    assert resolved == current
+    assert calls[0][0] == 'config'
+    assert calls[1][0] == 'config'
+    assert calls[2][0] == 'run'
+    assert calls[3][0] == 'config'
+
+
+def test_github_actions_runs_ci_without_deployment():
+    workflow = Path('.github/workflows/ci.yml').read_text()
     assert 'pull_request:' in workflow
+<<<<<<< HEAD
     assert 'needs: test' in workflow
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "github.event_name != 'pull_request'" in workflow
@@ -233,3 +477,14 @@ def test_caddy_restricts_admin_routes_to_the_configured_vpn_ip_range():
     assert 'respond @admin_outside_vpn 403' in caddy
     assert 'ADMIN_ALLOWED_CIDR: ${ADMIN_ALLOWED_CIDR:-127.0.0.1/32}' in compose
     assert 'ADMIN_ALLOWED_CIDR=127.0.0.1/32' in example_env
+=======
+    assert 'branches:' in workflow and '- main' in workflow
+    assert '  test:' in workflow
+    assert '  deploy:' not in workflow
+    assert 'DEPLOY_SSH_KEY' not in workflow
+    assert 'DEPLOY_HOST' not in workflow
+    assert 'docker compose up' not in workflow
+
+    assert not Path('.github/workflows/deploy.yml').exists()
+    assert not Path('.github/workflows/check-ssh.yml').exists()
+>>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1

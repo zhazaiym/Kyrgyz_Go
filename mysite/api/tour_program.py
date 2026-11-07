@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Tour, TourProgram
-from mysite.database.schema import (TourProgramInputSchema, TourProgramOutSchema,
-                                    TourProgramUpdateSchema)
+from mysite.database.schemas.catalogue import (TourProgramInputSchema, TourProgramOutSchema,
+                                               TourProgramUpdateSchema)
 from mysite.translations.content import Language, localized, update_translations
 
 tour_program_router = APIRouter(prefix='/tour-programs', tags=['Tour Programs'])

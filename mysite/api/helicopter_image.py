@@ -6,8 +6,8 @@ from mysite.api.client_auth import current_client
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import HelicopterImage, HelicopterTour
-from mysite.database.schema import (HelicopterImageInputSchema, HelicopterImageOutSchema,
-                                    HelicopterImageUpdateSchema)
+from mysite.database.schemas.catalogue import (HelicopterImageInputSchema, HelicopterImageOutSchema,
+                                               HelicopterImageUpdateSchema)
 
 helicopter_image_router = APIRouter(prefix='/helicopter-images', tags=['Helicopter Images'])
 

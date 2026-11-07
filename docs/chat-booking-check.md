@@ -28,6 +28,7 @@
 - При готовой заявке приходит `booking_preview` с `revision`, `data`, `missing_fields` и `can_confirm`.
 - `POST /booking/confirm`: тело `{"session_id":"...","revision":1,"confirmed":true}`; Bearer-токен того же клиента.
 - `confirmed=false` не отправляет заявку и возвращает HTTP 400. Отказ в переписке переводит диалог в `collecting` и увеличивает `revision`.
+- Если выбранный отель или транспорт стал недоступен, его можно удалить из заявки. Если после удаления обязательные данные собраны, API сразу показывает обновлённую сводку и переводит сессию в `awaiting_confirmation`; иначе остаётся в `collecting`.
 - При устаревшей `revision` или отсутствии ожидаемого подтверждения возвращается HTTP 409.
 - Неполные или некорректные данные нельзя подтвердить; проверка выполняется на сервере повторно перед записью.
 - Короткое «да» не отправляет заявку. Явная фраза «Я готова бронировать тур» принимается после сформированной сводки в `awaiting_confirmation`.
@@ -40,7 +41,7 @@
 
 ## Автоматические проверки
 
-`python -B -m pytest tests/test_chat_booking_flow.py tests/test_chat_only_requests.py tests/test_shared_client_access.py -q`
+`python -m scripts.run_tests tests/test_chat_booking_flow.py tests/test_chat_only_requests.py tests/test_shared_client_access.py -q`
 
 Тесты используют отдельную временную PostgreSQL-базу и подменяют ответы AI. Они проверяют обработку подтверждений и админку, но не оценивают качество реальных ответов Gemini.
 

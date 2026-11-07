@@ -49,6 +49,9 @@ class ChatMessage(Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    reply_to_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey('chat_messages.id', ondelete='SET NULL'), nullable=True, unique=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

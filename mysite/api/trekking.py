@@ -8,7 +8,8 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TrekkingCardSchema, TrekkingCatalogueDetailSchema
 from mysite.database.db import get_db
 from mysite.database.models import Trekking
-from mysite.database.schema import TrekkingInputSchema, TrekkingOutSchema, TrekkingUpdateSchema
+from mysite.database.schemas.catalogue import (TrekkingInputSchema, TrekkingOutSchema,
+                                               TrekkingUpdateSchema)
 from mysite.filters.filter import TrekkingFilter
 from mysite.translations.content import Language, localized, update_translations
 
@@ -40,7 +41,12 @@ def detail_trekking(trekking_id: int, lang: Language = 'ru', db: Session = Depen
     if trekking_db is None or not trekking_db.is_active:
         raise HTTPException(status_code=404, detail='Треккинг табылган жок')
 
-    return localized(trekking_db, lang)
+    result = localized(trekking_db, lang)
+    result['programs'] = [
+        localized(program, lang)
+        for program in trekking_db.programs
+    ]
+    return result
 
 
 @trekking_router.put(

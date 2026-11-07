@@ -20,6 +20,7 @@ environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
+<<<<<<< HEAD
 The included Caddy proxy also restricts every `/admin*` route to
 `ADMIN_ALLOWED_CIDR`. Keep the default localhost-only range until you configure
 the fixed egress address of the administrator VPN. A request from any of 100
@@ -27,6 +28,46 @@ other public IPs is denied at the proxy (0 password attempts reach the app);
 the admitted VPN egress is then subject to the existing five-attempts-per-minute
 account/IP limit (up to 10 attempts across a fixed-window boundary). Do not make
 this range public or set it to `0.0.0.0/0`.
+=======
+Admin sessions do not expire on a timer; the login is cleared by the admin
+logout action. Browsers may discard a session cookie when the browser closes.
+
+The admin panel and admin API are reachable from any source IP. Access to admin
+data and changes still requires a valid admin login. The login limiter permits
+at most **20 attempts/minute per source IP** and **5 attempts/minute for each
+account/IP pair**. Use a strong admin password and HTTPS in production.
+The trusted deployment helper also requires a valid `ADMIN_ALLOWED_IPS` value
+in the resolved server Compose configuration. The application middleware
+currently does not enforce that value at request time; use a firewall or
+reverse-proxy rule if admin routes must be restricted by network.
+
+### About page content
+
+The About page uses one `About` record and ordered `AboutSection` records. Each
+slide's title, Russian description, and photo URL are returned by
+`GET /about-sections/?lang=ru`; the introductory title is returned by
+`GET /abouts/?lang=ru`. The frontend must render `AboutSection.image` to show
+the per-slide photos. This backend repository does not include the frontend
+layout.
+
+### Homepage copy
+
+The public endpoint `GET /home/content/?lang=ru` returns the homepage title and
+supporting copy. It supports `ru`, `en`, `de`, and `zh`. The frontend must fetch
+this endpoint and render its `title`, `description`, `details`, and `promise`
+fields for the copy to appear on the homepage.
+
+To replace all existing About content, first run
+`python -m scripts.replace_about_content` to review the current and new row
+counts. Then run it with `--apply --backup /path/to/new/about-backup.json`.
+The command refuses to overwrite a backup, writes the old About rows before
+the database transaction, replaces the rows atomically, and queues translations
+to English, German, and Chinese using the existing worker. No schema migration
+is needed.
+
+The deployment helper carries the existing Compose environment into its
+generated `/home/ubuntu/kyrgyzgo-deploy.override.yml`.
+>>>>>>> b7bf8b14416a1dd6e5bfc746c086b6e3948db9a1
 
 Database addressing:
 
@@ -44,21 +85,55 @@ Database addressing:
 Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
 
 ```dotenv
-CORS_ALLOWED_ORIGINS=https://your-frontend.example
-CHAT_ALLOWED_ORIGINS=https://your-frontend.example
+CORS_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
+CHAT_ALLOWED_ORIGINS=https://kyrgyzgo-admin.vercel.app;https://tours-app-teal.vercel.app
+FRONTEND_RESET_URL=https://tours-app-teal.vercel.app/ru/reset-password
 ```
 
-Multiple origins are separated by `;`. The example file includes localhost
-ports 3000 and 5173. Replace them with the production frontend origins on the
-server. HTTP CORS accepts the `Authorization` header and preflight requests.
-WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`.
+Multiple origins are separated by `;`. The example file includes the admin
+Vercel origin and localhost ports 3000 and 5173. Add the production site origins
+on the server. HTTP CORS accepts the `Authorization` header and preflight requests.
+Chat WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`. The admin
+request notification socket stays on the same origin as SQLAdmin and requires its
+authenticated admin session. Reset emails use `FRONTEND_RESET_URL` and include a
+single-use token that expires after 15 minutes. SMTP settings must also be valid for
+delivery; the HTTP forgot-password response does not confirm that a message arrived.
 Do not set `*` for CORS origins when using credentials.
+
+The Vercel URL above is the frontend, not an API hostname. To use a custom API domain
+and certificate, point a DNS A record for a domain you control to this server and set
+`API_DOMAIN` to that hostname. Keep enough free disk space for Caddy's certificate
+renewal and take a verified PostgreSQL backup before applying migrations.
 
 Back up an existing database before deployment. Every API container start runs
 `alembic upgrade head` and starts Uvicorn only if migrations succeed. A database
 created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
+
+GitHub Actions runs checks and tests only; it never connects to EC2 or deploys.
+Production updates are started manually by an administrator using
+`scripts/deploy.ps1` from a workstation or the server's documented Docker
+commands. The trusted server-side deploy script compares the current database
+revision with the candidate source and reports `migration_required` before
+replacing the running image if they differ. Back up the database, review and
+apply the required migrations from the candidate source with
+`python -m alembic upgrade head`, then deploy the matching image. The current
+source migration head is `20261103_0022`; revisions `20261030_0018` through
+`20261030_0020` replace and repopulate FAQ content, `20261103_0021` adds tour
+reviews, and `20261103_0022` adds client-owned travel requests. Do not assume the production
+database is at a particular revision; check it before deployment. Although the
+Docker image runs `alembic upgrade head` on startup, the guarded production
+deploy flow requires schema changes to be applied as a backed-up maintenance
+step first.
+The repository no longer uses GitHub Actions deployment secrets. Remove the
+old `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, and `DEPLOY_USER`
+repository secrets. If the old CI public key is still in the server's
+`authorized_keys`, remove that CI-only key while preserving the separate manual
+deployment key.
+Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
+Activate the matching image after the migration and before reopening catalogue
+writes.
 
 ### Start and verify
 
@@ -102,8 +177,8 @@ Create an administrator interactively after the API starts:
 docker compose exec api python create_admin.py
 ```
 
-For updates, back up PostgreSQL, update the source, then run
-`docker compose up --build -d`. Stop the API with `docker compose down`.
+For manual updates, back up PostgreSQL, update the source, then run
+`docker compose up --build -d` when the server can handle a build. Stop the API with `docker compose down`.
 Neither command manages the external PostgreSQL server. The Docker configuration
 requires an external PostgreSQL database.
 
@@ -286,15 +361,16 @@ documentation is available at `/docs`.
 
 ## Tests with PostgreSQL
 
-Set `TEST_DATABASE_URL` to a PostgreSQL connection whose user has `CREATEDB`
-permission. If omitted locally, tests use the connection settings from `.env`.
-Tests create randomly named `test_kyrgyzgo_*` databases, apply Alembic migrations,
-and delete only those databases after completion. They never reset application
-tables. CI starts a separate PostgreSQL 17 service.
+Use `python -m scripts.run_tests -q` for the full suite. Without
+`TEST_DATABASE_URL`, it starts a disposable PostgreSQL 17 Compose service; with
+the variable, it uses that explicitly selected PostgreSQL server. The test user
+needs `CREATEDB`. Tests create randomly named `test_kyrgyzgo_*` databases, apply
+Alembic migrations, and delete only those databases after completion. They do
+not read `DATABASE_URL` or `.env`. CI starts its own PostgreSQL 17 service.
 
 ```bash
-python -m pip install -r requirements.txt pytest
-python -m pytest -q
+python -m pip install -r requirements-dev.txt
+python -m scripts.run_tests -q
 ```
 
 `DATABASE_URL` is mandatory. Unsupported database backends fail at startup.

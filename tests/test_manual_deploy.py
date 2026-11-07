@@ -14,7 +14,7 @@ def make_project(root):
     module = deployment_module()
     for name in module.RUNTIME_FILES:
         (root / name).write_text('runtime', encoding='utf-8')
-    for directory in ('mysite', 'alembic', 'scripts'):
+    for directory in ('ML', 'mysite', 'alembic', 'scripts'):
         (root / directory).mkdir()
         (root / directory / 'source.py').write_text('value = 1', encoding='utf-8')
     (root / 'mysite' / 'source.py').write_text('uncommitted = True', encoding='utf-8')
@@ -84,6 +84,22 @@ def test_manual_ssh_pins_host_key(tmp_path):
     assert 'StrictHostKeyChecking=yes' in arguments
     assert 'BatchMode=yes' in arguments
     assert 'ubuntu@13.53.40.37' in arguments
+
+
+def test_manual_deploy_runs_the_isolated_test_runner(monkeypatch):
+    module = deployment_module()
+    root = Path(module.__file__).resolve().parents[1]
+    calls = []
+    monkeypatch.setattr(
+        module.subprocess, 'run', lambda command, **kwargs: calls.append((command, kwargs))
+    )
+
+    module.run_local_tests(root)
+
+    command, options = calls[0]
+    assert command == [module.sys.executable, '-m', 'scripts.run_tests', '-q']
+    assert options['cwd'] == root
+    assert options['check'] is True
 
 
 def test_manual_archive_requires_runtime_files(tmp_path):

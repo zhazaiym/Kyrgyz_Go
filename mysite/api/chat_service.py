@@ -5,27 +5,34 @@ import json
 import re
 from contextlib import asynccontextmanager
 from datetime import date
+from functools import partial
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from mysite.api.booking_text import booking_text, invalid_preview_text, preview_text
+from ML.agent import respond
+from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
+from mysite.api.booking_text import booking_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import linked_request, processing_status
-from mysite.chain.agent import confirmation_allowed, rejection_allowed, respond
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSession
 from mysite.database.db import SessionLocal
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.selection_models import TravelSelection
+from mysite.database.traveler_validation import validate_travelers_count
+from mysite.local_time import local_today
+from mysite.admin.realtime import publish_new_request
+
 
 _locks = {}
 _lock_users = {}
 
 
-async def _database_call(function, *args):
+async def _database_call(function, *args, on_cancel=None):
     task = asyncio.create_task(asyncio.to_thread(function, *args))
     try:
         return await asyncio.shield(task)
@@ -37,8 +44,16 @@ async def _database_call(function, *args):
             except asyncio.CancelledError:
                 continue
         if not task.cancelled():
-            task.exception()
+            error = task.exception()
+            if error is None and on_cancel is not None:
+                await _database_call(on_cancel, task.result())
         raise
+
+
+def _discard_prepared_message(session_id, result):
+    final, _, _, _, message_id = result
+    if final is None:
+        _discard_failed_message(session_id, message_id)
 
 
 def _is_confirmation_text(message):
@@ -93,14 +108,14 @@ def _discard_failed_message(session_id, message_id):
     if message_id is None:
         return
     with SessionLocal() as db:
-        # Cancellation may arrive while the DB worker commits the reply.
-        # Keep both messages when that worker has already finished saving it.
+        # A later assistant turn may belong to another worker. Preserve only
+        # a reply committed for this exact user message.
         answered = (
             db.query(ChatMessage.id)
             .filter(
                 ChatMessage.session_id == session_id,
                 ChatMessage.role == 'assistant',
-                ChatMessage.id > message_id,
+                ChatMessage.reply_to_message_id == message_id,
             )
             .first()
         )
@@ -186,18 +201,12 @@ def _prepare_message(session_id, client_id, token, message):
                 'booking_submitted': result,
             }
             return final, None, None, None, None
-        last = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.session_id == s.id)
-            .order_by(ChatMessage.id.desc())
-            .first()
-        )
-        user_message_id = None
-        if not last or last.role != 'user' or last.content != message:
-            user_message = ChatMessage(session_id=s.id, role='user', content=message)
-            db.add(user_message)
-            db.commit()
-            user_message_id = user_message.id
+        # Each accepted operation owns its row, including identical concurrent
+        # text. A losing worker may remove only that row.
+        user_message = ChatMessage(session_id=s.id, role='user', content=message)
+        db.add(user_message)
+        db.flush()
+        user_message_id = user_message.id
         previous = (
             db.query(ChatMessage)
             .filter(ChatMessage.session_id == s.id)
@@ -210,6 +219,10 @@ def _prepare_message(session_id, client_id, token, message):
             previous = previous[:-1]
         original = dict(s.state or {})
         message_version = s.message_version
+        # Commit only after history has loaded successfully. Plain snapshots
+        # remain usable after commit expires ORM objects and the session closes.
+        previous = [SimpleNamespace(role=item.role, content=item.content) for item in previous]
+        db.commit()
 
     return None, original, previous, message_version, user_message_id
 
@@ -261,12 +274,12 @@ def _save_message_response(
             s.revision += 1
         preview = build_preview(db, s)
         preview_event = None
+
         if intent or s.stage in ('collecting', 'awaiting_confirmation'):
             if preview['complete']:
-                needs_summary = s.stage != 'awaiting_confirmation' or changed or intent
-                s.stage = 'awaiting_confirmation'
-                preview['can_confirm'] = True
-                if needs_summary:
+                if changed or intent:
+                    s.stage = 'awaiting_confirmation'
+                    preview = build_preview(db, s)
                     preview_event = preview
                     summary = _preview_summary(db, preview)
                     answer = summary
@@ -274,7 +287,14 @@ def _save_message_response(
                 s.stage = 'collecting'
         if not answer.strip():
             raise HTTPException(502, 'AI returned an empty response')
-        db.add(ChatMessage(session_id=s.id, role='assistant', content=answer))
+        db.add(
+            ChatMessage(
+                session_id=s.id,
+                role='assistant',
+                content=answer,
+                reply_to_message_id=user_message_id,
+            )
+        )
         db.commit()
         return {
             'answer': answer,
@@ -288,7 +308,12 @@ def _save_message_response(
 async def _respond_and_save(session_id, client_id, token, message, on_chunk=None):
     # Keep each synchronous database phase off the event loop.
     (final, original, previous, message_version, user_message_id) = await _database_call(
-        _prepare_message, session_id, client_id, token, message
+        _prepare_message,
+        session_id,
+        client_id,
+        token,
+        message,
+        on_cancel=partial(_discard_prepared_message, session_id),
     )
     if final is not None:
         if on_chunk is not None:
@@ -352,7 +377,9 @@ def build_preview(db, s):
         or not 7 <= len(re.sub(r'[^0-9]', '', phone)) <= 15
     ):
         missing.append('phone')
-    if type(people) is not int or not 1 <= people <= 2147483647:
+    try:
+        validate_travelers_count(people)
+    except ValueError:
         missing.append('people_count')
     if duration is not None and (type(duration) is not int or not 1 <= duration <= 2147483647):
         missing.append('duration_days')
@@ -365,30 +392,24 @@ def build_preview(db, s):
         missing.append('tour_or_destination')
     if state.get('travel_date'):
         try:
-            if date.fromisoformat(state['travel_date']) < date.today():
+            if date.fromisoformat(state['travel_date']) < local_today():
                 missing.append('future_travel_date')
         except (ValueError, TypeError):
             missing.append('valid_travel_date')
     if state.get('tour_id') and 'valid_tour' not in unavailable:
         tour = db.get(Tour, state['tour_id'])
-        if (
-            tour
-            and tour.is_active
-            and 'people_count' not in missing
-            and (
-                people < tour.min_people
-                or (tour.max_people is not None and people > tour.max_people)
-            )
-        ):
-            missing.append('people_count')
+
+        if tour and tour.is_active and 'people_count' not in missing:
+            try:
+                validate_travelers_count(people, tour)
+            except ValueError:
+                missing.append('people_count')
     return {
         'status': 'draft',
         'session_id': s.id,
         'revision': s.revision,
         'data': state,
         'missing_fields': missing,
-        # Internal callers use this to decide whether the AI has collected a
-        # complete request. Public preview endpoints additionally gate it on stage.
         'complete': not missing,
         'can_confirm': not missing and s.stage == 'awaiting_confirmation',
     }
@@ -407,7 +428,7 @@ def recover_confirmation(db, session, message=None):
     session.stage = 'collecting'
     session.revision += 1
     preview = build_preview(db, session)
-    answer = invalid_preview_text(session.state or {})
+    answer = booking_text(session.state or {})['invalid_preview']
     if message is not None:
         db.add(ChatMessage(session_id=session.id, role='user', content=message))
     db.add(ChatMessage(session_id=session.id, role='assistant', content=answer))
@@ -424,72 +445,111 @@ def recover_confirmation(db, session, message=None):
 
 def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     if not confirmed:
-        raise HTTPException(400, 'Необходимо явное подтверждение')
+        raise HTTPException(
+            400,
+            'Необходимо явное подтверждение',
+        )
+
     existing = (
         db.query(ChatBookingLink)
-        .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
+        .filter(
+            ChatBookingLink.session_id == s.id,
+            ChatBookingLink.revision == revision,
+        )
         .first()
     )
+
     if existing:
         return already_submitted(existing.request_id, client_id)
+
     if s.stage != 'awaiting_confirmation':
-        raise HTTPException(409, 'Сначала получите полную сводку заявки в чате')
+        raise HTTPException(
+            409,
+            'Сначала получите полную сводку заявки в чате',
+        )
+
     preview = build_preview(db, s)
+
     if revision != s.revision:
-        raise HTTPException(409, 'Данные изменились, запросите новый preview')
+        raise HTTPException(
+            409,
+            'Данные изменились, запросите новый preview',
+        )
+
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
+
     st = preview['data']
-    selections = (
+
+    selection = (
         db.query(TravelSelection)
         .filter(TravelSelection.session_id == s.id)
         .populate_existing()
         .with_for_update()
-        .limit(2)
-        .all()
+        .first()
     )
-    if len(selections) > 1:
-        raise HTTPException(409, 'Chat is linked to conflicting selections; contact the manager')
-    selection = selections[0] if selections else None
-    if selection and processing_status(selection, linked_request(db, selection)) in (
-        'cancelled',
-        'completed',
-    ):
-        raise HTTPException(409, 'Подборка уже отменена или завершена')
+
+    if selection and processing_status(
+        selection,
+        linked_request(db, selection),
+    ) in ('cancelled', 'completed'):
+        raise HTTPException(
+            409,
+            'Подборка уже отменена или завершена',
+        )
+
     try:
         advance_message_version(db, s)
     except HTTPException as exc:
         if exc.status_code != 409:
             raise
+
         existing = (
             db.query(ChatBookingLink)
-            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
+            .filter(
+                ChatBookingLink.session_id == s.id,
+                ChatBookingLink.revision == revision,
+            )
             .first()
         )
+
         if existing:
             return already_submitted(existing.request_id, client_id)
+
         raise
+
     tour_note = ''
     destination = st.get('destination')
+
     if st.get('tour_id'):
-        t = db.get(Tour, st['tour_id'])
-        tour_note = f'Тур #{t.id}: {t.title}. '
-        destination = t.title
+        tour = db.get(Tour, st['tour_id'])
+        tour_note = f'Тур #{tour.id}: {tour.title}. '
+        destination = tour.title
+
     notes = (
         f'Chat Client: KG-{client_id:06d}; session: {s.id}. '
         + tour_note
         + f'Язык общения: {st.get("language") or "не указан"}. '
-        + f'Бюджет: {st.get("budget") or "не указан"}. Пожелания: {st.get("notes") or "нет"}.'
+        + f'Бюджет: {st.get("budget") or "не указан"}. '
+        + f'Пожелания: {st.get("notes") or "нет"}.'
     )
+
     if st['selected_services']:
         notes += '\nSelected services: ' + '; '.join(
-            f'{item["kind"]} #{item["id"]}: {item["name"]}' for item in st['selected_services']
+            f'{item["kind"]} #{item["id"]}: {item["name"]}'
+            for item in st['selected_services']
         )
+
     obj = TravelRequest(
+        client_id=client_id,
         name=st['client_name'],
         phone=st['phone'],
         email=st.get('email'),
-        travel_date=date.fromisoformat(st['travel_date']) if st.get('travel_date') else None,
+        travel_date=(
+            date.fromisoformat(st['travel_date'])
+            if st.get('travel_date')
+            else None
+        ),
         duration_days=st.get('duration_days'),
         travelers_count=st['people_count'],
         destination=destination,
@@ -497,29 +557,57 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         selected_services=st['selected_services'],
         status=RequestStatusChoices.new,
     )
+
     try:
         db.add(obj)
         db.flush()
+
+        request_id = obj.id
+
         db.add(
             ChatBookingLink(
-                client_id=client_id, session_id=s.id, request_id=obj.id, revision=s.revision
+                client_id=client_id,
+                session_id=s.id,
+                request_id=request_id,
+                revision=s.revision,
             )
         )
+
         s.stage = 'submitted'
+
         if selection:
             selection.status = 'in_progress'
+
         db.commit()
+
     except IntegrityError:
         db.rollback()
+
         existing = (
             db.query(ChatBookingLink)
-            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
+            .filter(
+                ChatBookingLink.session_id == s.id,
+                ChatBookingLink.revision == revision,
+            )
             .first()
         )
+
         if existing:
             return already_submitted(existing.request_id, client_id)
-        raise HTTPException(409, 'Конфликт подтверждения заявки')
-    return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
+
+        raise HTTPException(
+            409,
+            'Конфликт подтверждения заявки',
+        )
+
+    # Уведомление отправляем после успешного сохранения заявки.
+    publish_new_request(request_id)
+
+    return {
+        'status': 'submitted',
+        'request_id': request_id,
+        'client_code': f'KG-{client_id:06d}',
+    }
 
 
 def _confirm_booking_for_client(session_id, client_id, token, revision, confirmed):
@@ -565,6 +653,7 @@ def _remove_service(session_id, client_id, token, kind):
         if selection:
             setattr(selection, f'{kind}_id', None)
         preview = build_preview(db, session)
+
         if preview['complete']:
             answer = _preview_summary(db, preview)
         else:

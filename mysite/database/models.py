@@ -2,22 +2,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Date,
-    DateTime,
-    Enum,
-    ForeignKey,
-    Integer,
-    Numeric,
-    String,
-    Text,
-    UniqueConstraint,
-    event,
-    inspect,
-    select,
-)
+from sqlalchemy import (JSON, Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String,
+                        Text, UniqueConstraint, event, inspect, select)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -130,10 +116,15 @@ class Tour(Base):
     )
     category: Mapped['TourCategory | None'] = relationship(back_populates='tours')
     images: Mapped[list['TourImage']] = relationship(
-        back_populates='tour', cascade='all, delete-orphan'
+        back_populates='tour',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TourImage.order, TourImage.id),
     )
+
     programs: Mapped[list['TourProgram']] = relationship(
-        back_populates='tour', cascade='all, delete-orphan'
+        back_populates='tour',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TourProgram.day_number, TourProgram.id),
     )
     translations: Mapped[list['TourTranslation']] = relationship(
         back_populates='tour', cascade='all, delete-orphan'
@@ -351,10 +342,15 @@ class Trekking(LocalizedContent, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     images: Mapped[list['TrekkingImage']] = relationship(
-        back_populates='trekking', cascade='all, delete-orphan'
+        back_populates='trekking',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TrekkingImage.order, TrekkingImage.id),
     )
+
     programs: Mapped[list['TrekkingProgram']] = relationship(
-        back_populates='trekking', cascade='all, delete-orphan'
+        back_populates='trekking',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TrekkingProgram.day_number, TrekkingProgram.id),
     )
 
 
@@ -418,8 +414,24 @@ class FAQ(LocalizedContent, Base):
 
 class TravelRequest(Base):
     __tablename__ = 'travel_requests'
+    __table_args__ = (UniqueConstraint('selection_id', name='uq_travel_requests_selection_id'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            'chat_clients.id', ondelete='SET NULL', name='fk_travel_requests_client_id_chat_clients'
+        ),
+        nullable=True,
+        index=True,
+    )
+    selection_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            'travel_selections.id',
+            ondelete='SET NULL',
+            name='fk_travel_requests_selection_id_travel_selections',
+        ),
+        nullable=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255))

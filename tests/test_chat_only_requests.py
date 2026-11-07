@@ -1,16 +1,13 @@
-import pytest
-
 from mysite.database.db import SessionLocal
 from mysite.database.models import TravelRequest
 
 
-@pytest.mark.parametrize('path', ['/bookings/', '/travel-requests/'])
-def test_direct_submission_is_retired_without_creating_request(client, customer_headers, path):
+def test_direct_booking_submission_is_retired_without_creating_request(client, customer_headers):
     with SessionLocal() as db:
         before = db.query(TravelRequest).count()
     for headers in ({}, customer_headers):
         response = client.post(
-            path,
+            '/bookings/',
             headers=headers,
             json={'name': 'Must not be saved', 'phone': '+996700000001', 'tour_id': 1},
         )
@@ -19,6 +16,27 @@ def test_direct_submission_is_retired_without_creating_request(client, customer_
         assert response.json()['detail']['chat_session_url'] == '/chat/session'
     with SessionLocal() as db:
         assert db.query(TravelRequest).count() == before
+
+
+def test_travel_request_creation_requires_selection_payload(client, customer_headers):
+    assert (
+        client.post(
+            '/travel-requests/',
+            json={
+                'selection_id': 1,
+                'travel_date': '2099-01-01',
+                'travelers_count': 1,
+                'phone': '+996700000001',
+            },
+        ).status_code
+        == 401
+    )
+    response = client.post(
+        '/travel-requests/',
+        headers=customer_headers,
+        json={'name': 'Must not be accepted', 'phone': '+996700000001', 'tour_id': 1},
+    )
+    assert response.status_code == 422
 
 
 def test_admin_only_has_chat_requests_view(client, admin_headers):

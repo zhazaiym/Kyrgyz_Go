@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_filter import FilterDepends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -13,12 +13,9 @@ from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.db import get_db
 from mysite.database.models import Country, Tour, TourCategory, TourTranslation
-from mysite.database.schema import (
-    TourDetailSchema,
-    TourInputSchema,
-    TourOutSchema,
-    TourUpdateSchema,
-)
+from mysite.database.schemas.catalogue import (TourDetailSchema, TourInputSchema, TourOutSchema,
+                                               TourUpdateSchema)
+from mysite.database.tour_review_models import TourReview
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
 from mysite.translations.jobs import schedule_translation, translate_record
@@ -29,6 +26,8 @@ from mysite.translations.source import (
     source_value_changed,
     translation_is_ready,
 )
+from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, source_value_changed,
+                                        translation_ready)
 from mysite.translations.translator import translate_tour
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])
@@ -37,10 +36,6 @@ logger = logging.getLogger(__name__)
 
 LANGUAGES = ['en', 'de', 'zh']
 TRANSLATED_FIELDS = TOUR_TRANSLATION_FIELDS
-
-
-def try_save_translations(tour_db: Tour):
-    return schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
 
 def get_localized_tour(
@@ -62,12 +57,40 @@ def get_localized_tour(
 
     if translation_db is not None:
         source_hashes = translation_db.source_hashes or {}
+
         for field in TRANSLATED_FIELDS if detail or include_description else ('title',):
             value = getattr(translation_db, field)
-            if translation_is_ready(value, getattr(tour_db, field), source_hashes.get(field)):
+
+            if translation_is_ready(
+                value,
+                getattr(tour_db, field),
+                source_hashes.get(field),
+            ):
                 result[field] = value
 
     return result
+
+
+def localized_tour_cards_with_reviews(tours, db: Session, lang: str):
+    tour_ids = [tour.id for tour in tours]
+    aggregates = {}
+    if tour_ids:
+        aggregates = {
+            tour_id: (round(float(average), 2), count)
+            for tour_id, average, count in (
+                db.query(TourReview.tour_id, func.avg(TourReview.rating), func.count(TourReview.id))
+                .filter(TourReview.tour_id.in_(tour_ids))
+                .group_by(TourReview.tour_id)
+                .all()
+            )
+        }
+
+    results = []
+    for tour in tours:
+        result = get_localized_tour(tour, db, lang)
+        result['average_rating'], result['review_count'] = aggregates.get(tour.id, (None, 0))
+        results.append(result)
+    return results
 
 
 @tour_router.post('/', response_model=TourOutSchema, dependencies=[Depends(get_current_admin)])
@@ -86,7 +109,7 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
         db.add(tour_db)
         db.flush()
 
-        try_save_translations(tour_db)
+        schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
         db.commit()
         db.refresh(tour_db)
@@ -108,8 +131,7 @@ def list_tours(
     pagination: Pagination = Depends(),
 ):
     tours = filtered_list(db, Tour, filters, pagination, active_only=True, lang=lang)
-
-    return [get_localized_tour(tour, db, lang) for tour in tours]
+    return localized_tour_cards_with_reviews(tours, db, lang)
 
 
 @tour_router.get(
@@ -180,7 +202,7 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         db.flush()
 
         if source_changed:
-            try_save_translations(tour_db)
+            schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
 
         db.commit()
         db.refresh(tour_db)
@@ -309,4 +331,4 @@ def tours_by_category(
         .limit(pagination.limit)
     ).all()
 
-    return [get_localized_tour(tour, db, lang) for tour in tours]
+    return localized_tour_cards_with_reviews(tours, db, lang)

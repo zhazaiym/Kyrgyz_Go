@@ -2,54 +2,107 @@
 
 import hashlib
 
-TOUR_TRANSLATION_FIELDS = ('title', 'description', 'included', 'excluded')
+
+TOUR_TRANSLATION_FIELDS = (
+    'title',
+    'description',
+    'included',
+    'excluded',
+)
 
 
 def normalize_text(value):
-    if not isinstance(value, str):
-        return value
-    return value.replace('\r\n', '\n').replace('\r', '\n')
+    """Normalize line endings before comparing or storing text."""
+    if isinstance(value, str):
+        return value.replace('\r\n', '\n').replace('\r', '\n')
+    return value
+
+
+def _source_value(value):
+    """Treat None and an empty string as the same source value."""
+    return normalize_text('' if value is None else value)
 
 
 def source_field_hash(value):
-    normalized = '' if value is None or value == '' else normalize_text(value)
-    return hashlib.md5(str(normalized).encode('utf-8'), usedforsecurity=False).hexdigest()
+    normalized = str(_source_value(value))
+
+    return hashlib.md5(
+        normalized.encode('utf-8'),
+        usedforsecurity=False,
+    ).hexdigest()
 
 
 def source_value_changed(old, new):
-    old = '' if old is None or old == '' else old
-    new = '' if new is None or new == '' else new
-    return normalize_text(old) != normalize_text(new)
+    return _source_value(old) != _source_value(new)
 
 
 def translation_is_ready(value, source, source_hash):
+    """Check that a nonempty translation matches the current source."""
     return (
-        isinstance(value, str) and bool(value.strip()) and source_hash == source_field_hash(source)
+        isinstance(value, str)
+        and bool(value.strip())
+        and source_hash == source_field_hash(source)
+    )
+
+
+def translation_ready(value, stored_hash, source):
+    """Check completeness; an empty source requires no translation."""
+    if source in (None, ''):
+        return True
+
+    return translation_is_ready(
+        value,
+        source,
+        stored_hash,
     )
 
 
 def active_manual_fields(fields, hashes, source):
-    return sorted(
+    """Keep manual fields whose hashes match the current source."""
+    if not isinstance(fields, (list, tuple, set)):
+        return []
+
+    if not isinstance(hashes, dict):
+        return []
+
+    if not isinstance(source, dict):
+        return []
+
+    return sorted({
         field
         for field in fields
-        if field in source and hashes.get(field) == source_field_hash(source[field])
-    )
+        if isinstance(field, str)
+        and field in source
+        and hashes.get(field) == source_field_hash(source[field])
+    })
 
 
 def attach_source_hashes(translations, source):
+    """Attach current source hashes to supplied nonempty translations."""
     if not isinstance(translations, dict):
         return {}
+
     result = dict(translations)
+
     for language in ('en', 'de', 'zh'):
         values = result.get(language)
         if not isinstance(values, dict):
             continue
+
         values = dict(values)
+
         hashes = values.get('_source_hashes', {})
         hashes = dict(hashes) if isinstance(hashes, dict) else {}
+
         for field, translated in values.items():
-            if field in source and isinstance(translated, str) and translated.strip():
+            if (
+                field in source
+                and isinstance(translated, str)
+                and translated.strip()
+            ):
                 hashes[field] = source_field_hash(source[field])
+
         values['_source_hashes'] = hashes
         result[language] = values
+
     return result

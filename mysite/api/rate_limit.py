@@ -30,6 +30,16 @@ def _counter_key(scope, principal):
     return hashlib.sha256(f'{scope}\0{principal}'.encode()).hexdigest()
 
 
+def _account_index(principal):
+    if not principal.startswith('account-ip:'):
+        return None
+    account_key = principal[len('account-ip:') :].rsplit(':ip:', 1)[0]
+    if account_key.startswith('unknown:'):
+        identifier = account_key[len('unknown:') :]
+        account_key = 'unknown:' + hashlib.sha256(identifier.encode('utf-8')).hexdigest()
+    return account_key
+
+
 def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
     rows, bounds, identities, retries = [], {}, [], []
@@ -46,7 +56,12 @@ def consume_rate_limits(limits, *, current_time=None):
         identities.append(key)
         retries.append(max(1, start + window - instant))
         rows.append(
-            {'key_hash': key, 'window_start': start, 'request_count': 1, 'group_hash': group_hash}
+            {
+                'key_hash': key,
+                'window_start': start,
+                'request_count': 1,
+                'group_hash': group_hash,
+            }
         )
     table = RateLimitCounter.__table__
     with SessionLocal() as db:
@@ -140,16 +155,22 @@ def enforce_login_attempt(scope, request, account_key):
         ]
     )
 
-
 def clear_account_login_attempt(db, scope, account_key):
-    """Clear every account/IP counter and local cooldown after a verified reset."""
+    """Clear account/IP counters and this worker's local cooldowns."""
     group_hash = _counter_key('rate-limit-group', account_key)
-    db.execute(delete(RateLimitCounter).where(RateLimitCounter.group_hash == group_hash))
+
+    db.execute(
+        delete(RateLimitCounter).where(
+            RateLimitCounter.group_hash == group_hash
+        )
+    )
+
     prefix = f'account-ip:{account_key}:ip:'
+
     with _cache_lock:
-        for blocked in list(_blocked):
-            if blocked[0] == scope and blocked[1].startswith(prefix):
-                _blocked.pop(blocked, None)
+        for limit in list(_blocked):
+            if limit[0] == scope and limit[1].startswith(prefix):
+                _blocked.pop(limit, None)
 
 
 def enforce_request_limits(

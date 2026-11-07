@@ -3,7 +3,7 @@
 import asyncio
 import os
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import contextmanager
 from functools import lru_cache
 from threading import Lock
@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
 from mysite.api.network_identity import client_network, rate_limits_enabled
+from mysite.api.origin_config import configured_origins
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -171,9 +172,12 @@ class ResourceLimitsMiddleware:
             ):
                 origin = request_headers.get('origin')
                 own = f'{scope.get("scheme", "http")}://{request_headers.get("host", "")}'
-                allowed = {
-                    value.strip() for value in os.getenv('CORS_ALLOWED_ORIGINS', '').split(';')
-                }
+                allowed = set(
+                    configured_origins(
+                        'CORS_ALLOWED_ORIGINS',
+                        'http://localhost:3000;http://127.0.0.1:3000',
+                    )
+                )
                 if (origin and origin != own and origin not in allowed) or request_headers.get(
                     'sec-fetch-site'
                 ) == 'cross-site':
@@ -187,7 +191,7 @@ class ResourceLimitsMiddleware:
                     self.http_quota(address)
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail, exc.headers)
-            chunks, size = [], 0
+            chunks, size = deque(), 0
             try:
                 async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT')):
                     while True:
@@ -208,9 +212,28 @@ class ResourceLimitsMiddleware:
 
             async def replay():
                 nonlocal delivered
+
+                if chunks:
+                    chunk = chunks.popleft()
+                    more_body = bool(chunks)
+
+                    if not more_body:
+                        delivered = True
+
+                    return {
+                        'type': 'http.request',
+                        'body': chunk,
+                        'more_body': more_body,
+                    }
+
                 if not delivered:
                     delivered = True
-                    return {'type': 'http.request', 'body': body, 'more_body': False}
+                    return {
+                        'type': 'http.request',
+                        'body': b'',
+                        'more_body': False,
+                    }
+
                 return await receive()
 
             await self.app(scope, replay, safe_send)

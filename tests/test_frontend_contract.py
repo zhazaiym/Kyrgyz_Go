@@ -289,6 +289,204 @@ def test_sqladmin_generates_translations(client, admin_headers):
     client.get('/admin/logout')
 
 
+def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues(
+    client, admin_headers, monkeypatch
+):
+    from mysite.database.models import FAQ
+    from mysite.translations.jobs import translate_record
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    with SessionLocal() as db:
+        record = FAQ(question='Form merge question', answer='Form merge answer', translations={})
+        db.add(record)
+        db.commit()
+        record_id = record.id
+
+    edit_path = f'/admin/faq/edit/{record_id}'
+    opened = client.get(edit_path)
+    assert opened.status_code == 200
+
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        source = {'question': record.question, 'answer': record.answer}
+
+    def translate(values):
+        return {
+            lang: {field: f'{value} {lang}' for field, value in values.items()}
+            for lang in ('en', 'de', 'zh')
+        }
+
+    assert translate_record(FAQ, record_id, source, translate) == 'translated'
+
+    saved = client.post(
+        edit_path,
+        data={
+            'question': source['question'],
+            'answer': source['answer'],
+            'is_active': 'y',
+            'translations': '{}',
+            'save': 'Save',
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code in (302, 303), saved.text
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        assert record.translations['en']['question'] == 'Form merge question en'
+
+    enqueued = []
+
+    def capture_translation(entity, identity, source, translator):
+        enqueued.append((entity, identity, source))
+        return True
+
+    monkeypatch.setattr('mysite.admin.views.enqueue_translation', capture_translation)
+    cleared = client.post(
+        edit_path,
+        data={
+            'question': source['question'],
+            'answer': source['answer'],
+            'is_active': 'y',
+            'translations': '{"en":{"question":""}}',
+            'save': 'Save',
+        },
+        follow_redirects=False,
+    )
+    assert cleared.status_code in (302, 303), cleared.text
+    with SessionLocal() as db:
+        record = db.get(FAQ, record_id)
+        assert 'question' not in record.translations['en']
+        assert record.translations['en']['answer'] == 'Form merge answer en'
+        assert record.translations['en']['_manual_fields'] == []
+    assert len(enqueued) == 1
+    assert enqueued[0][0] is FAQ and enqueued[0][1] == record_id
+    assert enqueued[0][2] == source
+
+
+def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_update(
+    client, admin_headers, monkeypatch
+):
+    import json
+
+    from sqlalchemy.orm import Session
+
+    from mysite.database.models import FAQ
+    from mysite.translations.source import source_field_hash
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    source = {'question': 'Race question', 'answer': 'Race answer'}
+    old_translation = 'Older worker translation'
+    with SessionLocal() as db:
+        record = FAQ(
+            **source,
+            translations={
+                'en': {
+                    'question': old_translation,
+                    '_source_hashes': {'question': source_field_hash(source['question'])},
+                }
+            },
+        )
+        db.add(record)
+        db.commit()
+        identity = record.id
+
+    edit_path = f'/admin/faq/edit/{identity}'
+    assert client.get(edit_path).status_code == 200
+    latest_translation = 'New worker translation'
+    original_refresh = Session.refresh
+    worker_write = []
+
+    def update_worker_before_locked_refresh(session, instance, *args, **kwargs):
+        if (
+            isinstance(instance, FAQ)
+            and instance.id == identity
+            and kwargs.get('with_for_update')
+            and not worker_write
+        ):
+            with SessionLocal() as worker_db:
+                row = worker_db.get(FAQ, identity)
+                row.translations = {
+                    'en': {
+                        'question': latest_translation,
+                        '_source_hashes': {'question': source_field_hash(source['question'])},
+                    }
+                }
+                worker_db.commit()
+            worker_write.append(True)
+        return original_refresh(session, instance, *args, **kwargs)
+
+    monkeypatch.setattr(Session, 'refresh', update_worker_before_locked_refresh)
+    enqueued = []
+    monkeypatch.setattr(
+        'mysite.admin.views.enqueue_translation', lambda *args: enqueued.append(args)
+    )
+    stale_form = {
+        'en': {
+            'question': '',
+            '_source_hashes': {'question': source_field_hash(source['question'])},
+        }
+    }
+    response = client.post(
+        edit_path,
+        data={**source, 'is_active': 'y', 'translations': json.dumps(stale_form), 'save': 'Save'},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in (302, 303), response.text
+    assert worker_write == [True]
+    assert enqueued == []
+    with SessionLocal() as db:
+        saved = db.get(FAQ, identity).translations['en']
+        assert saved['question'] == latest_translation
+        assert saved['_manual_fields'] == []
+
+
+def test_tour_rest_put_only_normalizing_line_endings_keeps_translation(
+    client, admin_headers, customer_headers
+):
+    from mysite.translations.source import source_field_hash
+
+    title_crlf = 'Tour title\r\nsecond line'
+    title_lf = 'Tour title\nsecond line'
+    description_crlf = 'Description\r\nsecond line'
+    with SessionLocal() as db:
+        tour = models.Tour(title=title_crlf, description=description_crlf, price=10)
+        db.add(tour)
+        db.flush()
+        db.add(
+            models.TourTranslation(
+                tour_id=tour.id,
+                lang='en',
+                title='Stable English title',
+                description='Stable English description',
+                source_hashes={
+                    'title': source_field_hash(title_crlf),
+                    'description': source_field_hash(description_crlf),
+                },
+            )
+        )
+        tour_id = tour.id
+        db.commit()
+
+    updated = client.put(f'/tours/{tour_id}/', headers=admin_headers, json={'title': title_lf})
+    assert updated.status_code == 200, updated.text
+    detail = client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()['title'] == 'Stable English title'
+    assert detail.json()['description'] == 'Stable English description'
+    search = client.get('/tours/', params={'lang': 'en', 'search': 'Stable English title'})
+    assert search.status_code == 200, search.text
+    assert any(item['id'] == tour_id for item in search.json())
+
+
 def test_seed_demo_is_repeatable_and_preserves_edits(client, customer_headers):
     from seed_demo import seed_demo
 
@@ -400,7 +598,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(
         tour.title = 'After admin edit'
         db.commit()
         monkeypatch.setattr(
-            'mysite.api.tour.translate_tour',
+            'mysite.admin.views.translate_tour',
             lambda source: {
                 lang: dict(source, title='Fresh English') for lang in ('en', 'de', 'zh')
             },
@@ -414,7 +612,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(
     def fail(source):
         raise RuntimeError('Translation provider unavailable')
 
-    monkeypatch.setattr('mysite.api.tour.translate_tour', fail)
+    monkeypatch.setattr('mysite.admin.views.translate_tour', fail)
     with SessionLocal() as db:
         tour = db.get(models.Tour, tour_id)
         asyncio.run(view.on_model_change({'title': 'New source'}, tour, False, request))
@@ -528,3 +726,61 @@ def test_seed_completes_every_content_field_and_translation(client):
         db.refresh(hotel)
         assert hotel.translations['en']['address'] == 'Manual address'
         assert hotel.main_image == 'https://example.invalid/my-manual-image.jpg'
+
+
+def test_sqladmin_saved_whitespace_translation_is_cleared_and_enqueued_only_once(
+    client, admin_headers, monkeypatch
+):
+    import json
+
+    from mysite.database.models import FAQ
+    from mysite.translations.source import source_field_hash
+
+    assert client.post(
+        '/admin/login',
+        data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
+        follow_redirects=False,
+    ).status_code in (302, 303)
+    translations = {
+        'en': {
+            'question': '\u00a0\n\t',
+            'answer': 'Preserved answer',
+            '_source_hashes': {
+                'question': source_field_hash('Whitespace question'),
+                'answer': source_field_hash('Whitespace answer'),
+            },
+            '_manual_fields': ['question'],
+        }
+    }
+    with SessionLocal() as db:
+        record = FAQ(
+            question='Whitespace question', answer='Whitespace answer', translations=translations
+        )
+        db.add(record)
+        db.commit()
+        identity = record.id
+    path = f'/admin/faq/edit/{identity}'
+    assert client.get(path).status_code == 200
+    enqueued = []
+    monkeypatch.setattr(
+        'mysite.admin.views.enqueue_translation', lambda *args: enqueued.append(args)
+    )
+    data = {
+        'question': 'Whitespace question',
+        'answer': 'Whitespace answer',
+        'is_active': 'y',
+        'translations': json.dumps(translations),
+        'save': 'Save',
+    }
+    for _ in range(2):
+        response = client.post(path, data=data, follow_redirects=False)
+        assert response.status_code in (302, 303), response.text
+    assert len(enqueued) == 1
+    assert enqueued[0][0] is FAQ and enqueued[0][1] == identity
+    with SessionLocal() as db:
+        saved = db.get(FAQ, identity).translations['en']
+        assert 'question' not in saved
+        assert 'question' not in saved['_source_hashes']
+        assert 'question' not in saved['_manual_fields']
+        assert saved['answer'] == 'Preserved answer'
+    client.get('/admin/logout')
