@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 
 
 def text_content(content):
@@ -24,7 +25,11 @@ def recent_messages(history):
     for item in reversed(history[-message_limit:]):
         if item.role not in ('user', 'assistant') or not isinstance(item.content, str):
             continue
-        if characters + len(item.content) > character_limit:
+        remaining = character_limit - characters
+        if remaining <= 0:
+            break
+        if len(item.content) > remaining:
+            selected.append(SimpleNamespace(role=item.role, content=item.content[-remaining:]))
             break
         selected.append(item)
         characters += len(item.content)

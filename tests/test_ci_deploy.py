@@ -2,12 +2,14 @@ import importlib.util
 import io
 import ipaddress
 import json
+import os
 import shutil
 import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 
 SCRIPT = Path('scripts/ci_deploy.py')
 
@@ -473,15 +475,55 @@ def test_activation_override_preserves_allowlist_with_real_compose_cli(monkeypat
     assert calls[3][0] == 'config'
 
 
-def test_github_actions_runs_ci_without_deployment():
-    workflow = Path('.github/workflows/ci.yml').read_text()
-    assert 'pull_request:' in workflow
-    assert 'branches:' in workflow and '- main' in workflow
-    assert '  test:' in workflow
-    assert '  deploy:' not in workflow
-    assert 'DEPLOY_SSH_KEY' not in workflow
-    assert 'DEPLOY_HOST' not in workflow
-    assert 'docker compose up' not in workflow
+@pytest.mark.parametrize(
+    'event,branch,enabled,expected',
+    [
+        ('push', 'refs/heads/main', 'true', True),
+        ('push', 'refs/heads/main', '', False),
+        ('push', 'refs/heads/main', 'false', False),
+        ('pull_request', 'refs/heads/main', 'true', False),
+        ('workflow_dispatch', 'refs/heads/main', 'true', False),
+        ('push', 'refs/heads/feature', 'true', False),
+    ],
+)
+def test_github_deploy_requires_main_push_and_explicit_enable(event, branch, enabled, expected):
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    deploy = workflow['jobs']['deploy']
+    assert deploy['needs'] == 'test'
+    assert deploy['concurrency']['cancel-in-progress'] == 'false'
+    expression = deploy['if'].replace('&&', ' and ')
+    for variable, value in {
+        'github.event_name': event,
+        'github.ref': branch,
+        'vars.DEPLOY_ENABLED': enabled,
+    }.items():
+        expression = expression.replace(variable, repr(value))
+    # Evaluate the actual workflow guard against events that must never deploy.
+    assert eval(expression, {'__builtins__': {}}, {}) is expected
 
-    assert not Path('.github/workflows/deploy.yml').exists()
-    assert not Path('.github/workflows/check-ssh.yml').exists()
+
+@pytest.mark.parametrize(
+    'latest,api_status,expected', [('a' * 40, '0', 0), ('b' * 40, '0', 1), ('', '1', 1)]
+)
+def test_deploy_revision_guard_rejects_stale_commits_and_api_errors(latest, api_status, expected):
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['deploy']['steps']
+    guard = next(step for step in steps if step['name'] == 'Reject a superseded revision')
+    bash = 'C:/Program Files/Git/bin/bash.exe' if os.name == 'nt' else shutil.which('bash')
+    assert bash, 'Bash is required to exercise the actual deployment guard'
+    # Replace only the GitHub transport; execute the workflow shell unchanged.
+    transport = 'gh() { printf "%s\\n" "$TEST_MAIN_SHA"; return "$TEST_API_STATUS"; }\n'
+    result = subprocess.run(
+        [bash, '-c', transport + guard['run']],
+        env={
+            'PATH': os.environ['PATH'],
+            'GITHUB_REPOSITORY': 'fixture/repository',
+            'GITHUB_SHA': 'a' * 40,
+            'TEST_MAIN_SHA': latest,
+            'TEST_API_STATUS': api_status,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == expected, result.stderr

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+import yaml
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -72,11 +73,15 @@ def test_dockerfile_is_shipped_and_legacy_digest_probe_handles_missing_file(monk
     ) == ci_deploy.dockerfile_runtime_digest(source)
 
 
-def test_no_github_actions_job_can_deploy_to_production():
-    workflow = Path('.github/workflows/ci.yml').read_text()
-    assert '  deploy:' not in workflow
-    assert 'kyrgyzgo-production' not in workflow
-    assert 'DEPLOY_SSH_KEY' not in workflow
+def test_production_credentials_are_isolated_from_test_job():
+    workflow = yaml.load(Path('.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    test_job = workflow['jobs']['test']
+    assert 'secrets.' not in json.dumps(test_job)
+    assert 'environment' not in test_job
+    deploy = workflow['jobs']['deploy']
+    assert deploy['environment'] == 'production'
+    assert deploy['needs'] == 'test'
+    assert 'secrets.DEPLOY_SSH_KEY' in json.dumps(deploy)
 
 
 def test_activation_override_preserves_admin_policy():

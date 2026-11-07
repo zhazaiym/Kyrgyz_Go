@@ -86,6 +86,99 @@ def test_manual_ssh_pins_host_key(tmp_path):
     assert 'ubuntu@13.53.40.37' in arguments
 
 
+def test_ssh_accepts_explicit_deployment_target(tmp_path):
+    arguments = deployment_module().ssh_arguments(
+        'ssh', tmp_path / 'key', tmp_path / 'hosts', host='ubuntu@new.example.org'
+    )
+    assert arguments[-1] == 'ubuntu@new.example.org'
+    assert 'ubuntu@13.53.40.37' not in arguments
+    assert 'StrictHostKeyChecking=yes' in arguments
+
+
+@pytest.mark.parametrize('target', ['-oProxyCommand=bad', 'ubuntu@host;echo bad', '', 'host'])
+def test_ssh_rejects_invalid_target_before_connection(tmp_path, target):
+    with pytest.raises(ValueError, match='target'):
+        deployment_module().ssh_arguments('ssh', tmp_path / 'key', tmp_path / 'hosts', host=target)
+
+
+def test_new_server_requires_its_own_known_hosts(tmp_path, monkeypatch, capsys):
+    module = deployment_module()
+    key = tmp_path / 'key'
+    key.write_text('private test fixture')
+    monkeypatch.setattr(
+        module.sys,
+        'argv',
+        ['manual_deploy', '--check', '--key', str(key), '--host', 'ubuntu@new.example.org'],
+    )
+    with pytest.raises(SystemExit) as error:
+        module.main()
+    assert error.value.code == 2
+    assert '--known-hosts' in capsys.readouterr().err
+
+
+def test_configured_deploy_packages_source_and_uses_verified_target(tmp_path, monkeypatch, capsys):
+    module = deployment_module()
+    key = tmp_path / 'key'
+    key.write_text('private test fixture')
+    hosts = tmp_path / 'hosts'
+    trusted = 'new.example.org ssh-ed25519 test-public-key\n'
+    hosts.write_text(trusted)
+    revision = 'a' * 40
+    monkeypatch.setattr(
+        module.sys,
+        'argv',
+        [
+            'manual_deploy',
+            '--skip-tests',
+            '--key',
+            str(key),
+            '--host',
+            'ubuntu@new.example.org',
+            '--known-hosts',
+            str(hosts),
+            '--revision',
+            revision,
+        ],
+    )
+    uploaded = []
+
+    def transport(arguments, **options):
+        assert arguments[-2] == 'ubuntu@new.example.org'
+        host_option = next(arg for arg in arguments if arg.startswith('UserKnownHostsFile='))
+        host_file = Path(host_option.split('=', 1)[1].strip('"'))
+        assert host_file.read_text() == trusted
+        if 'stdin' in options:
+            with tarfile.open(fileobj=options['stdin'], mode='r:gz') as bundle:
+                names = bundle.getnames()
+                assert 'ML/tools.py' in names
+                assert '.env' not in names
+                assert not any(name.endswith(('.key', '.pem')) for name in names)
+            assert 'deploy ' + revision in arguments[-1]
+            uploaded.append(True)
+        return subprocess.CompletedProcess(arguments, 0)
+
+    monkeypatch.setattr(module.subprocess, 'run', transport)
+    module.main()
+    assert uploaded
+    assert 'DEPLOYMENT SUCCEEDED' in capsys.readouterr().out
+
+
+def test_failed_preflight_never_uploads_or_reports_success(tmp_path, monkeypatch, capsys):
+    module = deployment_module()
+    key = tmp_path / 'key'
+    key.write_text('private test fixture')
+    monkeypatch.setattr(module.sys, 'argv', ['manual_deploy', '--skip-tests', '--key', str(key)])
+
+    def fail(arguments, **options):
+        assert 'stdin' not in options
+        raise subprocess.CalledProcessError(255, arguments)
+
+    monkeypatch.setattr(module.subprocess, 'run', fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.main()
+    assert 'DEPLOYMENT SUCCEEDED' not in capsys.readouterr().out
+
+
 def test_manual_deploy_runs_the_isolated_test_runner(monkeypatch):
     module = deployment_module()
     root = Path(module.__file__).resolve().parents[1]

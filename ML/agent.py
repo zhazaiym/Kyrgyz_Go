@@ -223,7 +223,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
                     if visible_characters > 65_536:
                         raise AIError('ai_invalid_response')
             if complete is None:
-                raise ValueError('Gemini returned empty stream')
+                raise AIError('ai_invalid_response', 'Gemini returned empty stream')
             return complete
 
         reply = await _measured_call('generation', stream_reply, timeout=60)
@@ -263,7 +263,7 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
         if not calls:
             answer = ''.join(visible_parts).strip()
             if not answer:
-                raise ValueError('Gemini returned empty final response')
+                raise AIError('ai_invalid_response', 'Gemini returned empty final response')
             if on_chunk is not None:
                 for text in visible_parts:
                     await on_chunk(text)

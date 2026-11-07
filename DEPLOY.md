@@ -128,8 +128,13 @@ created outside Alembic needs its schema reviewed and baselined first; do not
 blindly stamp a populated PostgreSQL database. PostgreSQL is required in all environments. Do not scale this service to multiple replicas without moving
 migrations to a separate deployment step.
 
-GitHub Actions runs checks and tests only; it never connects to EC2 or deploys.
-Production updates are started manually by an administrator using
+GitHub Actions runs checks and tests by default. An opt-in `deploy` job is
+prepared locally but remains disabled unless the repository variable
+`DEPLOY_ENABLED` is exactly `true`. It runs only after successful tests on a
+push to `main`; see [automatic deployment](docs/automatic-deployment.md) for
+the required target, verified host keys and secrets. No production rollout
+has been confirmed by the local checks.
+Production updates can also be started manually by an administrator using
 `scripts/deploy.ps1` from a workstation or the server's documented Docker
 commands. The trusted server-side deploy script compares the current database
 revision with the candidate source and reports `migration_required` before
@@ -146,11 +151,10 @@ database is at a particular revision; check it before deployment. Although the
 Docker image runs `alembic upgrade head` on startup, the guarded production
 deploy flow requires schema changes to be applied as a backed-up maintenance
 step first.
-The repository no longer uses GitHub Actions deployment secrets. Remove the
-old `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, and `DEPLOY_USER`
-repository secrets. If the old CI public key is still in the server's
-`authorized_keys`, remove that CI-only key while preserving the separate manual
-deployment key.
+The opt-in job requires fresh `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` secrets
+in the `production` environment and a repository variable `DEPLOY_TARGET`.
+Do not reuse historical server settings without verifying them. Keep
+`DEPLOY_ENABLED` unset until the actual server and trusted helper are ready.
 Pause catalogue writes through REST and SQLAdmin during a maintenance migration.
 Activate the matching image after the migration and before reopening catalogue
 writes.

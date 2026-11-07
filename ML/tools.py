@@ -12,18 +12,27 @@ from ML.prompts import COMPANY_PROFILE
 _SEPARATORS = r'[\s‐‑‒–—-]+'
 _SQL_SEPARATORS = '[[:space:]‐‑‒–—-]+'
 _LAKE_ALIASES = r'(issyk(kul|kol)|ysyk(kul|kol)|ысык(көл|кол|куль)|иссык(көл|кол|куль))'
+_DESTINATION_ALIASES = (
+    (_LAKE_ALIASES, 'иссыккуль'),
+    (r'karakol', 'каракол'),
+    (r'(song(kol|kul)|son(kol|kul)|сон(көл|кол|куль))', 'сонкуль'),
+)
 _UPPER = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯӨҮҢ'
 
 
 def _destination_key(value):
     compact = re.sub(_SEPARATORS, '', value.casefold())
-    return re.sub(_LAKE_ALIASES, 'иссыккуль', compact)
+    for pattern, canonical in _DESTINATION_ALIASES:
+        compact = re.sub(pattern, canonical, compact)
+    return compact
 
 
 def _destination_column(column):
     lowered = func.lower(func.translate(column, _UPPER, _UPPER.lower()))
     compact = func.regexp_replace(lowered, _SQL_SEPARATORS, '', 'g')
-    return func.regexp_replace(compact, _LAKE_ALIASES, 'иссыккуль', 'g')
+    for pattern, canonical in _DESTINATION_ALIASES:
+        compact = func.regexp_replace(compact, pattern, canonical, 'g')
+    return compact
 
 
 def SessionLocal():
@@ -88,11 +97,7 @@ def _active_tours_query(db):
 @tool
 def list_active_tours() -> list[dict]:
     """Read brief active tours (up to 30). Use for initial recommendations; not live availability."""
-    with SessionLocal() as db:
-        from mysite.database.models import Tour
-
-        rows = _active_tours_query(db).order_by(Tour.id).limit(30).all()
-        return [_tour(tour, brief=True) for tour in rows]
+    return search_tours.invoke({})
 
 
 @tool
@@ -103,7 +108,7 @@ def search_tours(
     min_duration_days: int | None = None,
     max_duration_days: int | None = None,
 ) -> list[dict]:
-    """Read the brief active catalogue; omit filters for initial recommendations. Search by destination aliases, group size and duration. duration_days is exact; use min/max_duration_days for flexible ranges (up to a week: max_duration_days=7). Not live availability."""
+    """Read up to 30 brief active tours; omit filters for initial recommendations. Search by destination aliases, group size and duration. duration_days is exact; use min/max_duration_days for flexible ranges (up to a week: max_duration_days=7). Not live availability."""
     if people_count is not None and people_count <= 0:
         return []
 
@@ -150,7 +155,7 @@ def search_tours(
         if max_duration_days is not None:
             query = query.filter(Tour.duration_days <= max_duration_days)
 
-        tours = query.order_by(Tour.id).limit(20).all()
+        tours = query.order_by(Tour.id).limit(30).all()
 
         return [_tour(tour, brief=True) for tour in tours]
 

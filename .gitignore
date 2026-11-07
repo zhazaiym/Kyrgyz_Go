@@ -20,3 +20,4 @@ pytest-cache-files-*/
 .ml-test-tmp/
 
 .chat-deploy/
+live-test-results.xml
