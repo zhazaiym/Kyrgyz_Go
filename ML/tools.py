@@ -1,43 +1,179 @@
 """Read-only tools for bounded company information and catalogue queries."""
 
 import re
+import unicodedata
 from copy import deepcopy
 from typing import Literal
 
 from langchain_core.tools import tool
-from sqlalchemy import and_, func, or_
+from sqlalchemy import Text, and_, case, cast, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import joinedload, selectinload
 
 from ML.prompts import COMPANY_PROFILE
 
-_SEPARATORS = r'[\s‐‑‒–—-]+'
-_SQL_SEPARATORS = '[[:space:]‐‑‒–—-]+'
-_LAKE_ALIASES = r'(issyk(kul|kol)|ysyk(kul|kol)|ысык(көл|кол|куль)|иссык(көл|кол|куль))'
-_DESTINATION_ALIASES = (
-    (_LAKE_ALIASES, 'иссыккуль'),
-    (r'karakol', 'каракол'),
-    (r'(song(kol|kul)|son(kol|kul)|сон(көл|кол|куль))', 'сонкуль'),
-)
 _UPPER = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯӨҮҢ'
+# Same folding in Python and SQL: separators and soft/hard signs vanish, Kyrgyz and
+# similar letters fold to Russian ones, repeated letters collapse ("Иссык" == "Исык").
+_FOLD_FROM = 'ёйөүңы'
+_FOLD_TO = 'еиоуни'
+_DROP = 'ъь \t\n\r\u00a0\u2010\u2011\u2012\u2013\u2014-'
+_FOLD = str.maketrans(_FOLD_FROM, _FOLD_TO, _DROP)
+_LOWER = str.maketrans(_UPPER, _UPPER.lower())
+# unaccent() expansions that Unicode decomposition does not cover.
+_LATIN_EXTRA = str.maketrans({'ß': 'ss', 'ø': 'o', 'æ': 'ae', 'œ': 'oe', 'ł': 'l', 'đ': 'd'})
+_LATIN_TO_CYRILLIC = (
+    ('shch', 'щ'),
+    ('sh', 'ш'),
+    ('ch', 'ч'),
+    ('zh', 'ж'),
+    ('kh', 'х'),
+    ('ts', 'ц'),
+    ('yu', 'ю'),
+    ('ya', 'я'),
+    ('yo', 'е'),
+    ('ye', 'е'),
+    *(
+        ('a', 'а'),
+        ('b', 'б'),
+        ('c', 'к'),
+        ('d', 'д'),
+        ('e', 'е'),
+        ('f', 'ф'),
+        ('g', 'г'),
+        ('h', 'х'),
+        ('i', 'и'),
+        ('j', 'ж'),
+        ('k', 'к'),
+        ('l', 'л'),
+        ('m', 'м'),
+        ('n', 'н'),
+        ('o', 'о'),
+        ('p', 'п'),
+        ('q', 'к'),
+        ('r', 'р'),
+        ('s', 'с'),
+        ('t', 'т'),
+        ('u', 'у'),
+        ('v', 'в'),
+        ('w', 'в'),
+        ('x', 'кс'),
+        ('y', 'ы'),
+        ('z', 'з'),
+    ),
+)
+_CYRILLIC_TO_LATIN = str.maketrans(
+    {
+        **dict(zip('абвгдезийклмнопрстуфыэөү', 'abvgdeziyklmnoprstufyeou')),
+        'ё': 'yo',
+        'ж': 'zh',
+        'х': 'kh',
+        'ц': 'ts',
+        'ч': 'ch',
+        'ш': 'sh',
+        'щ': 'shch',
+        'ю': 'yu',
+        'я': 'ya',
+        'ң': 'ng',
+        'ъ': '',
+        'ь': '',
+    }
+)
+# word_similarity() threshold, chosen on tests/test_catalogue_search.py (see ML/README.md).
+SEARCH_SIMILARITY = 0.45
+_FUZZY_MIN_LENGTH = 4
+_MAX_VARIANTS = 12
 
 CATALOGUE_LIMIT = 30
 CATALOGUE_KINDS = ('tour', 'helicopter_tour', 'trekking')
 CatalogueKind = Literal['tour', 'helicopter_tour', 'trekking']
 
 
-def _destination_key(value):
-    compact = re.sub(_SEPARATORS, '', value.casefold())
-    for pattern, canonical in _DESTINATION_ALIASES:
-        compact = re.sub(pattern, canonical, compact)
-    return compact
+def normalize_search_text(value):
+    """Python twin of _normalized_sql; both must return identical strings."""
+    text = value.translate(_LOWER).lower().translate(_FOLD).translate(_LATIN_EXTRA)
+    text = ''.join(
+        char for char in unicodedata.normalize('NFKD', text) if not unicodedata.combining(char)
+    )
+    return re.sub(r'(.)\1+', r'\1', text)
 
 
-def _destination_column(column):
-    lowered = func.lower(func.translate(column, _UPPER, _UPPER.lower()))
-    compact = func.regexp_replace(lowered, _SQL_SEPARATORS, '', 'g')
-    for pattern, canonical in _DESTINATION_ALIASES:
-        compact = func.regexp_replace(compact, pattern, canonical, 'g')
-    return compact
+def _normalized_sql(expression):
+    text = func.lower(func.translate(expression, _UPPER, _UPPER.lower()))
+    text = func.unaccent(func.translate(text, _FOLD_FROM + _DROP, _FOLD_TO))
+    return func.regexp_replace(text, r'(.)\1+', r'\1', 'g')
+
+
+def _to_cyrillic(text):
+    for latin, cyrillic in _LATIN_TO_CYRILLIC:
+        text = text.replace(latin, cyrillic)
+    return text
+
+
+def _search_variants(destination):
+    """Normalized query variants with weights: whole phrase, then separate words."""
+    phrase = destination.strip().lower()[:200]
+    words = [word for word in re.split(r'[\W_]+', phrase) if word]
+    candidates = [(phrase, 1.0)]
+    if len(words) > 1:
+        candidates += [(word, 0.9) for word in words]
+    variants = {}
+    for text, weight in candidates:
+        for spelling in (text, _to_cyrillic(text), text.translate(_CYRILLIC_TO_LATIN)):
+            key = normalize_search_text(spelling)
+            if not key or (weight < 1 and len(key) < _FUZZY_MIN_LENGTH):
+                continue
+            # "zzzz" folds to "z": a collapsed key shorter than the query matches everything.
+            if len(key) < 3 and len(text) >= 3:
+                continue
+            variants[key] = max(weight, variants.get(key, 0))
+    return dict(list(variants.items())[:_MAX_VARIANTS])
+
+
+def _translation_values(column):
+    strings = func.jsonb_path_query_array(cast(column, JSONB), '$.*.* ? (@.type() == "string")')
+    return cast(strings, Text)
+
+
+def _haystack(kind, model):
+    from mysite.database.models import Country, TourTranslation
+
+    parts = [
+        model.title,
+        model.description,
+        model.search_keywords,
+        _translation_values(model.translations) if kind != 'tour' else None,
+    ]
+    if kind == 'tour':
+        translated = (
+            select(
+                func.string_agg(
+                    func.concat_ws(' | ', TourTranslation.title, TourTranslation.description), ' | '
+                )
+            )
+            .where(TourTranslation.tour_id == model.id)
+            .correlate(model)
+            .scalar_subquery()
+        )
+        parts += [translated, Country.name, _translation_values(Country.translations)]
+    elif kind == 'helicopter_tour':
+        parts += [model.destination, model.departure_location]
+    else:
+        parts.append(model.route)
+    return _normalized_sql(func.concat_ws(' | ', *(part for part in parts if part is not None)))
+
+
+def _search_score(kind, model, variants):
+    haystack = _haystack(kind, model)
+    scores = []
+    for key, weight in variants.items():
+        fuzzy = (
+            func.word_similarity(key, haystack) * weight
+            if len(key) >= _FUZZY_MIN_LENGTH
+            else literal(0.0)
+        )
+        scores.append(case((func.strpos(haystack, key) > 0, literal(weight)), else_=fuzzy))
+    return scores[0] if len(scores) == 1 else func.greatest(*scores)
 
 
 def SessionLocal():
@@ -153,25 +289,12 @@ def _trekking_item(trek, brief=True):
 
 
 def _catalogue_kinds():
-    from mysite.database.models import Country, HelicopterTour, Tour, Trekking
+    from mysite.database.models import HelicopterTour, Tour, Trekking
 
     return {
-        'tour': (Tour, _tour_item, (Tour.title, Tour.description, Country.name)),
-        'helicopter_tour': (
-            HelicopterTour,
-            _helicopter_item,
-            (
-                HelicopterTour.title,
-                HelicopterTour.description,
-                HelicopterTour.destination,
-                HelicopterTour.departure_location,
-            ),
-        ),
-        'trekking': (
-            Trekking,
-            _trekking_item,
-            (Trekking.title, Trekking.description, Trekking.route),
-        ),
+        'tour': (Tour, _tour_item),
+        'helicopter_tour': (HelicopterTour, _helicopter_item),
+        'trekking': (Trekking, _trekking_item),
     }
 
 
@@ -189,13 +312,6 @@ def _capacity_filter(kind, model, people_count):
         or_(model.min_people.is_(None), model.min_people <= people_count),
         or_(model.max_people.is_(None), model.max_people >= people_count),
     )
-
-
-def _destination_filter(columns, destination):
-    keyword = _destination_key(destination)
-    keyword = keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    pattern = f'%{keyword}%'
-    return or_(*(_destination_column(column).like(pattern, escape='\\') for column in columns))
 
 
 @tool
@@ -219,13 +335,14 @@ def search_catalogue(
         return _empty_catalogue()
 
     kinds = _catalogue_kinds()
-    items, total = [], 0
+    variants = _search_variants(destination) if destination and destination.strip() else None
+    if variants == {}:
+        return _empty_catalogue()
+    ranked, total = [], 0
     with SessionLocal() as db:
-        for name in [kind] if kind else CATALOGUE_KINDS:
-            model, serialize, columns = kinds[name]
+        for position, name in enumerate([kind] if kind else CATALOGUE_KINDS):
+            model, serialize = kinds[name]
             query = _catalogue_query(db, name, model)
-            if destination and destination.strip():
-                query = query.filter(_destination_filter(columns, destination.strip()))
             if people_count is not None:
                 query = query.filter(_capacity_filter(name, model, people_count))
             if name != 'helicopter_tour':
@@ -235,10 +352,21 @@ def search_catalogue(
                     query = query.filter(model.duration_days >= min_duration_days)
                 if max_duration_days is not None:
                     query = query.filter(model.duration_days <= max_duration_days)
-            rows = query.order_by(model.id).limit(CATALOGUE_LIMIT + 1).all()
-            room = CATALOGUE_LIMIT - len(items)
-            items.extend(serialize(row) for row in rows[:room])
+            if variants:
+                score = _search_score(name, model, variants)
+                query = query.filter(score >= SEARCH_SIMILARITY)
+                rows = (
+                    query.add_columns(score)
+                    .order_by(score.desc(), model.id)
+                    .limit(CATALOGUE_LIMIT + 1)
+                    .all()
+                )
+            else:
+                rows = [(row, 1.0) for row in query.order_by(model.id).limit(CATALOGUE_LIMIT + 1)]
+            ranked += [(-float(rank), position, row.id, serialize, row) for row, rank in rows]
             total += len(rows) if len(rows) <= CATALOGUE_LIMIT else query.count()
+        ranked.sort(key=lambda entry: entry[:3])
+        items = [serialize(row) for *_, serialize, row in ranked[:CATALOGUE_LIMIT]]
     return {'items': items, 'total': total, 'has_more': total > len(items)}
 
 
@@ -248,7 +376,7 @@ search_catalogue.handle_validation_error = _invalid_arguments
 @tool
 def get_catalogue_item(kind: CatalogueKind, id: int) -> dict:
     """Read one active catalogue record by kind and exact id from search_catalogue: tour program and inclusions; helicopter tour destination, departure, instruction and inclusions; trekking route, requirements, altitude and program. Never guess an id; not live availability."""
-    model, serialize, _ = _catalogue_kinds()[kind]
+    model, serialize = _catalogue_kinds()[kind]
     with SessionLocal() as db:
         query = _catalogue_query(db, kind, model)
         if kind != 'helicopter_tour':

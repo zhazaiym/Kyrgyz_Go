@@ -15,6 +15,9 @@ def company_database(monkeypatch):
     with temporary_database() as url:
         engine = create_engine(url)
         try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+                connection.exec_driver_sql('CREATE EXTENSION IF NOT EXISTS unaccent')
             Base.metadata.create_all(engine)
             sessions = sessionmaker(bind=engine)
             monkeypatch.setattr(tools, 'SessionLocal', sessions)

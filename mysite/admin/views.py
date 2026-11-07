@@ -20,6 +20,11 @@ from mysite.translations.jobs import enqueue_translation
 from mysite.translations.source import TOUR_TRANSLATION_FIELDS, normalize_text, source_value_changed
 from mysite.translations.translator import translate_tour
 
+SEARCH_KEYWORDS_HINT = (
+    'Слова для поиска в чате через запятую: местные названия и варианты написания, '
+    'например «Ысык-Көл, Issyk-Kul»'
+)
+
 
 class LocalizedAdminMixin:
     async def on_model_change(self, data, model, is_created, request):
@@ -95,6 +100,7 @@ class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model=TourCategory):
 
 class TourAdmin(ModelView, model=Tour):
     column_list = [Tour.id, Tour.title]
+    form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
     # Админге «Ночей» талаасын көрсөтпөйбүз
     form_excluded_columns = [Tour.duration_nights]
@@ -169,6 +175,7 @@ class TransportImageAdmin(ModelView, model=TransportImage):
 
 class HelicopterTourAdmin(LocalizedAdminMixin, ModelView, model=HelicopterTour):
     column_list = [HelicopterTour.id, HelicopterTour.title]
+    form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
 
 class HelicopterImageAdmin(ModelView, model=HelicopterImage):
@@ -177,6 +184,7 @@ class HelicopterImageAdmin(ModelView, model=HelicopterImage):
 
 class TrekkingAdmin(LocalizedAdminMixin, ModelView, model=Trekking):
     column_list = [Trekking.id, Trekking.title]
+    form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
 
 class TrekkingImageAdmin(ModelView, model=TrekkingImage):

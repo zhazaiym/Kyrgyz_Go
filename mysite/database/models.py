@@ -132,6 +132,7 @@ class Tour(Base):
     included: Mapped[str | None] = mapped_column(Text)
     excluded: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person
     )
@@ -329,6 +330,7 @@ class HelicopterTour(LocalizedContent, Base):
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
     max_passengers: Mapped[int | None] = mapped_column(Integer)
     departure_location: Mapped[str | None] = mapped_column(String(255))
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     main_image: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -358,6 +360,7 @@ class Trekking(LocalizedContent, Base):
     route: Mapped[str | None] = mapped_column(Text)
     included: Mapped[str | None] = mapped_column(Text)
     requirements: Mapped[str | None] = mapped_column(Text)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person
