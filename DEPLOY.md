@@ -25,21 +25,20 @@ environment with `env_file`.
 
 Admin cookies are Secure by default. For local HTTP development explicitly
 set `ADMIN_COOKIE_SECURE=false`; keep it true for production HTTPS.
-Admin session lifetimes, refresh tokens and trusted browsers are described in
-«Sessions and trusted browsers» below.
+Admin session lifetimes and refresh tokens are described in «Administrator
+sessions» below.
 
-The admin panel and admin API require a password and TOTP MFA, or a single-use
-recovery code; rollout, enrollment and reset are in «Backend-first MFA rollout»
-below. TOTP secrets are encrypted with a key derived from `SECRET_KEY`, and refresh
-tokens are signed with it: keep `SECRET_KEY` stable, because rotating it signs
-everyone out and requires re-enrolling administrators. The login limiter permits
+The admin panel and admin API require a username and password. Create an
+administrator with `docker compose exec api python create_admin.py`. Refresh tokens
+are signed with `SECRET_KEY`: keep it stable, because rotating it signs everyone
+out. The login limiter permits
 at most **20 attempts/minute per source IP** and **5 attempts/minute for each
 account/IP pair**. Use HTTPS in production.
 
 There are three server-enforced roles: `owner` manages all data and admins,
 `manager` manages travel requests and selections, and `catalog_editor` manages
 catalogue and public content. Existing accounts migrate as `owner`; assign
-least-privilege roles through SQLAdmin after an owner has enrolled.
+least-privilege roles through SQLAdmin.
 The application does not restrict admin routes by network; use a firewall or
 reverse-proxy rule if that is required.
 
@@ -319,50 +318,10 @@ Actions только проверяет код и не имеет доступа
 `docker compose up -d api`. Все скрипты из `scripts/` входят в образ: `docker compose exec api python -m scripts.<имя>`.
 `docker compose run api` не подходит: у `api` фиксированный IP в сети `proxy`.
 
-## Administrators: MFA, sessions and trusted browsers
+## Administrator sessions
 
-### Backend-first MFA rollout
-
-Migrations add tables without enabling enforcement. `ADMIN_MFA_REQUIRED=false`
-allows password login only for accounts that have not been enrolled. An already
-enrolled administrator still needs a code or a valid trusted browser.
-
-1. Deploy the backend; normal container startup applies migrations.
-2. From the server's project directory enroll **every** active administrator:
-
-   ```sh
-   docker compose exec api python -m scripts.enroll_admin_mfa <username>
-   ```
-
-   Verify the authenticator code and store the one-time recovery codes securely.
-   The script is in the image and uses the running API's database and secret key.
-   Do not use `docker compose run`: a second API container conflicts with the
-   service's fixed proxy address.
-3. Set `ADMIN_MFA_REQUIRED=true` only after enrollment is complete, then recreate
-   the API through the normal server deployment procedure.
-
-Emergency recovery for an older image missing the script:
-
-```sh
-docker compose cp scripts/enroll_admin_mfa.py api:/app/scripts/
-docker compose exec api python -m scripts.enroll_admin_mfa <username>
-```
-
-`docker compose exec api python create_admin.py` enrolls new administrators before
-saving the account. Resetting an enrolled administrator requires owner approval:
-
-```sh
-docker compose exec api python -m scripts.enroll_admin_mfa <username> --reset-by <owner>
-```
-
-Password changes, deactivation and MFA enrollment/reset revoke all sessions and
-trusted devices in the same transaction.
-
-### Sessions and trusted browsers
-
-Password is always required. Code login with `remember_device=true` issues a
-30-day device token; at most ten devices are kept, revoking the oldest first.
-API login preserves the existing response fields and adds refresh metadata.
+Login needs a username and password; there is no second factor. API login
+returns an access token and refresh metadata.
 Refresh rotates tokens, accepts the previous token for 30 seconds, expires after
 30 unused days and has an absolute 90-day limit. Only token hashes are stored.
 Authenticated refresh envelopes and keyed rotation reproduce the same replacement
@@ -370,19 +329,16 @@ pair across workers during the grace period without recoverable tokens in the DB
 Reusing an older issued refresh outside that window revokes its session.
 
 SQLAdmin sessions expire after seven idle days, renew on active HTTP use every
-ten minutes and require login after 30 days. Logout revokes the session and keeps
-browser trust. **Забыть этот браузер** revokes trust separately. Owner-only SQLAdmin
-sections list all sessions/devices and allow revocation; API endpoints list/revoke
-only the caller's own records.
+ten minutes and require login after 30 days. Logout revokes the session. The owner-only
+SQLAdmin section lists all sessions and allows revocation; API endpoints list and
+revoke only the caller's own sessions. Password changes and deactivation revoke
+all sessions of that administrator.
 
 | Setting | Backend rollout default |
 | --- | --- |
-| `ADMIN_MFA_REQUIRED` | `false` until all accounts are enrolled |
 | `ADMIN_ACCESS_TOKEN_MINUTES` | `60` until the admin frontend supports refresh |
 | `ADMIN_REFRESH_DAYS` | `30` |
 | `ADMIN_SESSION_HOURS` | `168` |
-| `ADMIN_TRUSTED_DEVICE_DAYS` | `30` |
-| `ADMIN_MAX_TRUSTED_DEVICES` | `10` |
 | `GEMINI_REQUESTS_PER_MINUTE` | `10` shared translation calls |
 
 Set `ADMIN_ACCESS_TOKEN_MINUTES=15` after the new Vercel frontend ships. Keep 60
@@ -440,7 +396,7 @@ python -m pytest --confcutdir=tests/unit tests/unit -q
 ```
 
 CI also checks syntax, Ruff, security and dependencies, builds the runtime image
-and executes `python -m scripts.enroll_admin_mfa --help` inside that image.
+and imports `create_admin` and `scripts.replace_about_content` inside that image.
 Post-deployment verification is performed by the server operator.
 ## Manual deployment without Docker
 

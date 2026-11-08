@@ -94,13 +94,15 @@ jobs:
           sys.exit(result.returncode)
           PY
 
-      - name: Build runtime image and check the documented MFA command
+      - name: Build runtime image and check production scripts
         run: |
           docker build --tag kyrgyzgo-ci .
-          docker run --rm \
-            -e SECRET_KEY=ci-runtime-test-key-at-least-32-bytes \
-            -e DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres \
-            kyrgyzgo-ci python -m scripts.enroll_admin_mfa --help
+          for command in 'python -c "import create_admin"' 'python -m scripts.replace_about_content --help'; do
+            docker run --rm \
+              -e SECRET_KEY=ci-runtime-test-key-at-least-32-bytes \
+              -e DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/postgres \
+              kyrgyzgo-ci sh -c "$command"
+          done
 
       - name: Validate Caddyfile with the pinned Caddy image
         run: |

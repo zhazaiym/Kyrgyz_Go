@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse
 
 from mysite.api.admin_sessions import sql_session_admin
-from mysite.database.admin_security_models import AdminSession, AdminTrustedDevice
+from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
 from mysite.database.token_utils import utcnow
 
@@ -66,18 +66,3 @@ class AdminSessionAdmin(RevocableAdminAccess, ModelView, model=AdminSession):
     ]
     column_details_list = column_list
     column_default_sort = (AdminSession.created_at, True)
-
-
-class AdminTrustedDeviceAdmin(RevocableAdminAccess, ModelView, model=AdminTrustedDevice):
-    name_plural = 'Доверенные браузеры'
-    column_list = [
-        AdminTrustedDevice.id,
-        AdminTrustedDevice.admin_id,
-        AdminTrustedDevice.label,
-        AdminTrustedDevice.created_at,
-        AdminTrustedDevice.last_used_at,
-        AdminTrustedDevice.expires_at,
-        AdminTrustedDevice.revoked_at,
-    ]
-    column_details_list = column_list
-    column_default_sort = (AdminTrustedDevice.created_at, True)

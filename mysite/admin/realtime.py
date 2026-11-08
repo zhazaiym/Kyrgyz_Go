@@ -53,11 +53,7 @@ async def admin_requests_websocket(websocket: WebSocket) -> None:
 
     session = websocket.scope.get('session', {})
     admin_id = session.get('admin_id')
-    if (
-        admin_id is None
-        or not session.get('admin_mfa')
-        or not await run_in_threadpool(_eligible_admin, session)
-    ):
+    if admin_id is None or not await run_in_threadpool(_eligible_admin, session):
         await websocket.close(code=1008)
         return
 
