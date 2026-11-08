@@ -14,10 +14,8 @@ from datetime import timedelta, timezone
 from uuid import uuid4
 
 import jwt
-from sqlalchemy import select
 
-from mysite.api.admin_mfa import consume_admin_mfa
-from mysite.database.admin_security_models import AdminSession, AdminTrustedDevice
+from mysite.database.admin_security_models import AdminSession
 from mysite.database.models import Admin
 from mysite.database.token_utils import digest, utcnow
 
@@ -27,8 +25,6 @@ def setting(name):
         'ADMIN_ACCESS_TOKEN_MINUTES': 60,
         'ADMIN_REFRESH_DAYS': 30,
         'ADMIN_SESSION_HOURS': 168,
-        'ADMIN_TRUSTED_DEVICE_DAYS': 30,
-        'ADMIN_MAX_TRUSTED_DEVICES': 10,
     }
     value = int(os.getenv(name, str(defaults[name])))
     if not 1 <= value <= 10000:
@@ -152,62 +148,6 @@ def rotate_refresh(db, raw):
         result = None
     db.commit()
     return result
-
-
-def trusted_device(db, admin_id, raw):
-    if not raw:
-        return None
-    device = db.scalar(
-        select(AdminTrustedDevice)
-        .where(
-            AdminTrustedDevice.admin_id == admin_id, AdminTrustedDevice.token_hash == digest(raw)
-        )
-        .with_for_update()
-    )
-    if session_live(device):
-        device.last_used_at = utcnow()
-        return device
-    return None
-
-
-def verify_second_factor(db, admin, code='', device_token=None):
-    if trusted_device(db, admin.id, device_token):
-        return True, False
-    if (
-        not admin.totp_secret_encrypted
-        and os.getenv('ADMIN_MFA_REQUIRED', 'false').lower() != 'true'
-    ):
-        return True, False
-    return consume_admin_mfa(admin, code or '', _key().decode()), True
-
-
-def remember_browser(db, admin_id, label=''):
-    now = utcnow()
-    raw = secrets.token_urlsafe(32)
-    # The caller holds the admin row lock, serializing the per-account cap.
-    devices = db.scalars(
-        select(AdminTrustedDevice)
-        .where(
-            AdminTrustedDevice.admin_id == admin_id,
-            AdminTrustedDevice.revoked_at.is_(None),
-            AdminTrustedDevice.expires_at > now,
-        )
-        .order_by(AdminTrustedDevice.created_at, AdminTrustedDevice.id)
-    ).all()
-    cap = min(10, setting('ADMIN_MAX_TRUSTED_DEVICES'))
-    for device in devices[: max(0, len(devices) - cap + 1)]:
-        device.revoked_at = now
-    device = AdminTrustedDevice(
-        id=str(uuid4()),
-        admin_id=admin_id,
-        token_hash=digest(raw),
-        label=label[:200],
-        created_at=now,
-        last_used_at=now,
-        expires_at=now + timedelta(days=min(30, setting('ADMIN_TRUSTED_DEVICE_DAYS'))),
-    )
-    db.add(device)
-    return device, raw
 
 
 def sql_session_admin(db, session, *, touch=False):

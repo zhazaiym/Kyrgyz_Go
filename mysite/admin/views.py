@@ -314,7 +314,7 @@ def _view_roles(view):
 
     def can_access(self, request: Request):
         admin_id = request.session.get('admin_id')
-        if not request.session.get('admin_mfa') or admin_id is None:
+        if admin_id is None:
             return False
         with SessionLocal() as db:
             admin = db.get(Admin, admin_id)

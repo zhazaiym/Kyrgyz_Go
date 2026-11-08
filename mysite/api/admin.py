@@ -12,14 +12,14 @@ from jwt import InvalidTokenError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from mysite.api.admin_sessions import (new_session, remember_browser, rotate_refresh, session_live,
-                                       token_pair, token_session_id, verify_second_factor)
+from mysite.api.admin_sessions import (new_session, rotate_refresh, session_live, token_pair,
+                                       token_session_id)
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.api.selection_status import require_status_transition
-from mysite.database.admin_security_models import AdminSession, AdminTrustedDevice
+from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import get_db
 from mysite.database.models import Admin, RequestStatusChoices, TravelRequest
 from mysite.database.schemas.admin import AdminLoginSchema, AdminOutSchema, TokenSchema
@@ -114,14 +114,8 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     found = db.get(Admin, admin_id, with_for_update=True, populate_existing=True)
     if not found or not found.is_active or found.hashed_password != encoded:
         return invalid
-    accepted, used_code = verify_second_factor(db, found, admin.totp_code, admin.device_token)
-    if not accepted:
-        return invalid
     row, refresh = new_session(db, found.id, request.headers.get('user-agent', ''))
     result = token_pair(row, refresh)
-    if used_code and admin.remember_device:
-        device, raw = remember_browser(db, found.id, request.headers.get('user-agent', ''))
-        result.update(device_token=raw, device_id=device.id)
     db.commit()
     return result
 
@@ -178,20 +172,6 @@ def list_sessions(
     ]
 
 
-@admin_router.get('/devices/')
-def list_devices(
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-    db: Session = Depends(get_db),
-):
-    return [
-        {
-            key: getattr(row, key)
-            for key in ('id', 'label', 'created_at', 'last_used_at', 'expires_at', 'revoked_at')
-        }
-        for row in _own_rows(db, AdminTrustedDevice, current_admin.id).all()
-    ]
-
-
 def _revoke_own(db, model, identity, admin_id):
     row = db.get(model, identity, with_for_update=True)
     if row is None or row.admin_id != admin_id:
@@ -208,27 +188,6 @@ def revoke_session(
     db: Session = Depends(get_db),
 ):
     return _revoke_own(db, AdminSession, str(identity), current_admin.id)
-
-
-@admin_router.delete('/devices/{identity}/', status_code=204)
-def revoke_device(
-    identity: UUID,
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-    db: Session = Depends(get_db),
-):
-    return _revoke_own(db, AdminTrustedDevice, str(identity), current_admin.id)
-
-
-@admin_router.delete('/devices/', status_code=204)
-def revoke_devices(
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-    db: Session = Depends(get_db),
-):
-    db.query(AdminTrustedDevice).filter(
-        AdminTrustedDevice.admin_id == current_admin.id, AdminTrustedDevice.revoked_at.is_(None)
-    ).update({'revoked_at': utcnow()}, synchronize_session=False)
-    db.commit()
-    return Response(status_code=204)
 
 
 @admin_router.get('/me/', response_model=AdminOutSchema)
