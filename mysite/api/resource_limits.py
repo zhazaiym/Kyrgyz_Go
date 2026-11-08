@@ -30,7 +30,7 @@ RESOURCE_LIMITS = {
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
 }
-IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload'}
+IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload', '/chat/images'}
 
 
 @lru_cache(maxsize=len(RESOURCE_LIMITS))

@@ -1,6 +1,7 @@
 """Bounded read-only consultation; booking writes belong to the backend."""
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -11,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from ML.config import integer_setting, output_budget
 from ML.context import extraction_context, recent_messages
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
-from ML.prompts import EXTRACT_PROMPT, SYSTEM_PROMPT
+from ML.prompts import EXTRACT_PROMPT, PHOTO_PROMPT, SYSTEM_PROMPT
 from ML.provider import LazyClient
 from ML.schemas import Changes
 from ML.tools import READ_TOOLS, _not_demo
@@ -36,6 +37,7 @@ FIELDS = (
     'language',
 )
 
+CHAT_IMAGE_MIME_TYPE = 'image/webp'  # mysite/api/chat_images.py re-encodes every photo to WEBP
 llm = LazyClient('llm')
 extract_llm = LazyClient('extract_llm')
 extractor = LazyClient('extractor')
@@ -116,7 +118,23 @@ def active_tour_ids():
         ]
 
 
-async def _respond(message: str, state: dict, history: list, on_chunk=None):
+def user_message(message, image=None):
+    """Client turn for Gemini; a photo travels inline with this message only."""
+    if image is None:
+        return HumanMessage(content=message)
+    return HumanMessage(
+        content=[
+            {'type': 'text', 'text': message},
+            {
+                'type': 'image',
+                'base64': base64.b64encode(image).decode('ascii'),
+                'mime_type': CHAT_IMAGE_MIME_TYPE,
+            },
+        ]
+    )
+
+
+async def _respond(message: str, state: dict, history: list, on_chunk=None, image=None):
     """Extract preferences and consult with bounded read-only tool calls."""
     current = dict(state or {})
     today = bishkek_today().isoformat()
@@ -193,7 +211,9 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None):
             msgs.append(HumanMessage(content=item.content))
         elif item.role == 'assistant':
             msgs.append(AIMessage(content=item.content))
-    msgs.append(HumanMessage(content=message))
+    if image is not None:
+        msgs.append(SystemMessage(content=PHOTO_PROMPT))
+    msgs.append(user_message(message, image))
     compact_retry = False
     tool_calls_used = 0
     for _ in range(5):
@@ -320,14 +340,14 @@ def valid_selected_tour(identity):
         )
 
 
-async def respond(message: str, state: dict, history: list, on_chunk=None):
+async def respond(message: str, state: dict, history: list, on_chunk=None, image=None):
     started = time.perf_counter()
     timings = []
     timing_token = _timings.set(timings)
     outcome = 'failure'
     try:
         async with asyncio.timeout(integer_setting('CHAT_RESPONSE_TIMEOUT', 150, 10, 170)):
-            result = await _respond(message, state, history, on_chunk)
+            result = await _respond(message, state, history, on_chunk, image)
             outcome = 'success'
             return result
     except AIError as exc:

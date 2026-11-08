@@ -550,3 +550,46 @@ def test_live_helicopter_question_names_catalogue_records(live_gemini_runner):
     lowered = answer.casefold()
     assert all(title.casefold().split()[-1] in lowered for title in titles), answer
     assert 'демо' not in lowered, answer
+
+
+@pytest.mark.skipif(os.getenv('RUN_LIVE_GEMINI_EVAL') != '1', reason='Opt-in Gemini photo')
+def test_live_photo_is_answered_from_the_catalogue(live_gemini_runner):
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    from mysite.api.chat_images import encode_chat_image
+    from mysite.database.db import SessionLocal
+    from mysite.database.models import Trekking
+
+    picture = Image.new('RGB', (1600, 1000), (135, 190, 235))
+    draw = ImageDraw.Draw(picture)
+    draw.polygon([(0, 650), (450, 150), (900, 650)], fill=(110, 110, 120))
+    draw.polygon([(600, 650), (1100, 100), (1600, 650)], fill=(90, 95, 105))
+    draw.polygon([(370, 240), (450, 150), (530, 240)], fill='white')
+    draw.polygon([(1010, 200), (1100, 100), (1190, 200)], fill='white')
+    draw.rectangle([(0, 650), (1600, 1000)], fill=(30, 110, 170))
+    raw = BytesIO()
+    picture.save(raw, 'JPEG')
+    raw.seek(0)
+    with SessionLocal() as db:
+        db.add(
+            Trekking(
+                title='Треккинг к озеру Ала-Кёль',
+                description='Горное озеро среди снежных вершин',
+                price=250,
+                duration_days=3,
+            )
+        )
+        db.commit()
+    try:
+        answer, _, _ = live_gemini_runner.run(
+            agent.respond('Хочу в такое место\n[фото]', {}, [], image=encode_chat_image(raw))
+        )
+    finally:
+        with SessionLocal() as db:
+            db.query(Trekking).delete()
+            db.commit()
+    lowered = answer.casefold()
+    assert 'ала-кёль' in lowered or 'ала-кель' in lowered, answer
+    assert not any(place in lowered for place in ('алтай', 'кавказ', 'эльбрус')), answer

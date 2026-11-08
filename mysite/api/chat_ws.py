@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
+from mysite.api.chat_images import take_image
 from mysite.api.chat_service import owned, process_message
 from mysite.api.client_auth import client_by_token
 from mysite.api.network_identity import client_network
@@ -184,12 +185,15 @@ async def socket_session(websocket: WebSocket, session_id: str):
                 await websocket.close(code=1008)
                 return
             continue
-        message = (
-            data.get('message')
-            if isinstance(data, dict) and data.get('type') == 'message'
-            else None
-        )
-        if not isinstance(message, str) or not 1 <= len(message.strip()) <= 2000:
+        frame = data if isinstance(data, dict) and data.get('type') == 'message' else {}
+        image_id = frame.get('image_id')
+        message = frame.get('message', '' if image_id is not None else None)
+        if (
+            not isinstance(message, str)
+            or len(message.strip()) > 2000
+            or (image_id is None and not message.strip())
+            or (image_id is not None and (not isinstance(image_id, str) or len(image_id) > 64))
+        ):
             invalid_messages += 1
             await websocket.send_json(
                 {
@@ -225,6 +229,16 @@ async def socket_session(websocket: WebSocket, session_id: str):
             return
         invalid_messages = 0
         throttled_messages = 0
+        image = take_image(image_id, client_id, session_id) if image_id is not None else None
+        if image_id is not None and image is None:
+            await websocket.send_json(
+                {
+                    'type': 'error',
+                    'code': 'image_not_found',
+                    'message': 'Фото не найдено или устарело. Загрузите его ещё раз.',
+                }
+            )
+            continue
         await websocket.send_json({'type': 'typing', 'status': True})
         message_id = str(uuid.uuid4())
         await websocket.send_json({'type': 'message_start', 'message_id': message_id})
@@ -242,7 +256,12 @@ async def socket_session(websocket: WebSocket, session_id: str):
                 process_connected(
                     websocket,
                     process_message(
-                        session_id, client_id, token, message.strip(), on_chunk=send_chunk
+                        session_id,
+                        client_id,
+                        token,
+                        message.strip(),
+                        on_chunk=send_chunk,
+                        image=image,
                     ),
                     pending,
                 ),

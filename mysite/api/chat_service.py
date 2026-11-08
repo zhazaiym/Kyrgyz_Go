@@ -140,9 +140,12 @@ async def session_lock(session_id):
                 _locks.pop(session_id, None)
 
 
-async def process_message(session_id, client_id, token, message, on_chunk=None):
+async def process_message(session_id, client_id, token, message, on_chunk=None, image=None):
+    if image is not None:
+        # History keeps only a marker: the photo itself is never stored.
+        message = f'{message}\n[фото]' if message else '[фото]'
     async with session_lock(session_id):
-        return await _respond_and_save(session_id, client_id, token, message, on_chunk)
+        return await _respond_and_save(session_id, client_id, token, message, on_chunk, image)
 
 
 def _prepare_message(session_id, client_id, token, message):
@@ -302,7 +305,7 @@ def _save_message_response(
         }, summary
 
 
-async def _respond_and_save(session_id, client_id, token, message, on_chunk=None):
+async def _respond_and_save(session_id, client_id, token, message, on_chunk=None, image=None):
     # Keep each synchronous database phase off the event loop.
     (final, original, previous, message_version, user_message_id) = await _database_call(
         _prepare_message,
@@ -318,7 +321,10 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
         return final
     try:
         with ai_capacity():
-            answer, updated, intent = await respond(message, original, previous, on_chunk=None)
+            photo = {'image': image} if image is not None else {}
+            answer, updated, intent = await respond(
+                message, original, previous, on_chunk=None, **photo
+            )
             if (
                 not isinstance(answer, str)
                 or len(answer) > 65_536
