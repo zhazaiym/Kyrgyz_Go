@@ -54,9 +54,6 @@ class Admin(Base):
     role: Mapped[str] = mapped_column(
         String(30), default='owner', server_default='owner', nullable=False
     )
-    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    totp_last_used_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    recovery_code_hashes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     __table_args__ = (
         CheckConstraint("role IN ('owner', 'manager', 'catalog_editor')", name='ck_admin_role'),
@@ -134,6 +131,7 @@ class Tour(Base):
     included: Mapped[str | None] = mapped_column(Text)
     excluded: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person
     )
@@ -147,6 +145,8 @@ class Tour(Base):
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     main_image: Mapped[str | None] = mapped_column(String(500))
+    # Link to a video about the tour (for example YouTube); optional.
+    video_url: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(
@@ -356,6 +356,7 @@ class HelicopterTour(LocalizedContent, Base):
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
     max_passengers: Mapped[int | None] = mapped_column(Integer)
     departure_location: Mapped[str | None] = mapped_column(String(255))
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     main_image: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -385,6 +386,7 @@ class Trekking(LocalizedContent, Base):
     route: Mapped[str | None] = mapped_column(Text)
     included: Mapped[str | None] = mapped_column(Text)
     requirements: Mapped[str | None] = mapped_column(Text)
+    search_keywords: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_unit: Mapped[PriceUnitChoices] = mapped_column(
         Enum(PriceUnitChoices), default=PriceUnitChoices.per_person

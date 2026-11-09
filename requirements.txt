@@ -12,11 +12,9 @@ pwdlib[argon2]==0.3.1
 python-dotenv==1.2.4
 PyJWT==2.15.1
 certifi>=2026.10.19,<2027
-cryptography==50.0.2
 python-multipart>=0.0.20,<1
 sqladmin==0.29.0
 SQLAlchemy==2.0.51
 starlette==1.9.0
 uvicorn[standard]==0.52.1
-tzdata
 prometheus-client==0.26.0

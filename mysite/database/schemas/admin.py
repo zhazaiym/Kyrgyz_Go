@@ -6,8 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class AdminLoginSchema(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=128)
-    device_token: str | None = Field(default=None, max_length=256)
-    remember_device: bool = False
 
 
 class AdminOutSchema(BaseModel):
@@ -26,5 +24,3 @@ class TokenSchema(BaseModel):
     expires_in: int
     refresh_token: str
     refresh_expires_at: datetime
-    device_token: str | None = None
-    device_id: str | None = None

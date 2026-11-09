@@ -5,18 +5,14 @@ import os
 from fastapi import HTTPException, Request
 from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
-from starlette.responses import RedirectResponse
 
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
-from mysite.api.admin_sessions import (new_session, remember_browser, setting, sql_session_admin,
-                                       trusted_device)
+from mysite.api.admin_sessions import new_session, setting, sql_session_admin
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin
 from mysite.database.token_utils import utcnow
-
-DEVICE_COOKIE = 'kerben_admin_device'
 
 
 class AdminAuthBackend(AuthenticationBackend):
@@ -29,7 +25,7 @@ class AdminAuthBackend(AuthenticationBackend):
         )
 
     @staticmethod
-    def login_identity(request, username, password, remember=False):
+    def login_identity(request, username, password):
         with SessionLocal() as db:
             found = db.query(Admin).filter_by(username=username).first()
             identity = found.id if found else None
@@ -47,13 +43,8 @@ class AdminAuthBackend(AuthenticationBackend):
             admin = db.get(Admin, identity, with_for_update=True, populate_existing=True)
             if not admin or not admin.is_active or admin.hashed_password != encoded:
                 return None
-            device_token = None
-            if remember:
-                _, device_token = remember_browser(
-                    db, identity, request.headers.get('user-agent', '')
-                )
             row, _ = new_session(db, identity, request.headers.get('user-agent', ''))
-            result = (identity, row.id, row.created_at.timestamp(), device_token)
+            result = (identity, row.id, row.created_at.timestamp())
             db.commit()
             return result
 
@@ -63,34 +54,16 @@ class AdminAuthBackend(AuthenticationBackend):
         if not 1 <= len(username) <= 100 or not 1 <= len(password) <= 128:
             return False
         try:
-            identity = await run_in_threadpool(
-                self.login_identity,
-                request,
-                username,
-                password,
-                form.get('remember_device') in ('on', 'true', '1'),
-            )
+            identity = await run_in_threadpool(self.login_identity, request, username, password)
         except HTTPException as exc:
             if exc.status_code == 429:
                 return False
             raise
         if identity is None:
             return False
-        admin_id, sid, login_at, device_token = identity
+        admin_id, sid, login_at = identity
         request.session.clear()
         request.session.update(admin_id=admin_id, sid=sid, login_at=login_at, seen_at=int(login_at))
-        if device_token:
-            response = RedirectResponse(request.url_for('admin:index'), status_code=302)
-            response.set_cookie(
-                DEVICE_COOKIE,
-                device_token,
-                max_age=min(30, setting('ADMIN_TRUSTED_DEVICE_DAYS')) * 86400,
-                httponly=True,
-                secure=True,
-                samesite='strict',
-                path='/admin',
-            )
-            return response
         return True
 
     async def logout(self, request: Request):
@@ -128,24 +101,3 @@ class AdminAuthBackend(AuthenticationBackend):
         if not valid:
             request.session.clear()
         return valid
-
-
-async def forget_browser(request):
-    if not await AdminAuthBackend().authenticate(request):
-        return RedirectResponse(request.url_for('admin:login'), status_code=302)
-
-    def revoke():
-        with SessionLocal() as db:
-            device = trusted_device(
-                db, request.session['admin_id'], request.cookies.get(DEVICE_COOKIE)
-            )
-            if device:
-                device.revoked_at = utcnow()
-                db.commit()
-
-    await run_in_threadpool(revoke)
-    response = RedirectResponse(request.url_for('admin:index'), status_code=303)
-    response.delete_cookie(
-        DEVICE_COOKIE, path='/admin', httponly=True, secure=True, samesite='strict'
-    )
-    return response

@@ -8,11 +8,10 @@ from mysite.api.origin_config import configured_origins
 
 def test_configured_origins_normalizes_semicolon_list(monkeypatch):
     monkeypatch.setenv(
-        'CORS_ALLOWED_ORIGINS',
-        'https://kyrgyzgo-admin.vercel.app; https://tours-app-teal.vercel.app; ;',
+        'CORS_ALLOWED_ORIGINS', 'https://kerben-travel.vercel.app; https://staging.example; ;'
     )
     origins = configured_origins('CORS_ALLOWED_ORIGINS', 'http://localhost:3000')
-    assert origins == ('https://kyrgyzgo-admin.vercel.app', 'https://tours-app-teal.vercel.app')
+    assert origins == ('https://kerben-travel.vercel.app', 'https://staging.example')
 
     app = FastAPI()
 
@@ -23,12 +22,9 @@ def test_configured_origins_normalizes_semicolon_list(monkeypatch):
     app.add_middleware(CORSMiddleware, allow_origins=list(origins), allow_credentials=True)
     response = TestClient(app).options(
         '/ping',
-        headers={
-            'Origin': 'https://tours-app-teal.vercel.app',
-            'Access-Control-Request-Method': 'GET',
-        },
+        headers={'Origin': 'https://staging.example', 'Access-Control-Request-Method': 'GET'},
     )
-    assert response.headers['access-control-allow-origin'] == 'https://tours-app-teal.vercel.app'
+    assert response.headers['access-control-allow-origin'] == 'https://staging.example'
 
 
 def test_chat_websocket_accepts_configured_frontend_origin(client, customer_headers, monkeypatch):
@@ -37,11 +33,10 @@ def test_chat_websocket_accepts_configured_frontend_origin(client, customer_head
 
     session = client.post('/chat/session', headers=customer_headers)
     assert session.status_code == 200, session.text
-    monkeypatch.setenv('CHAT_ALLOWED_ORIGINS', 'https://tours-app-teal.vercel.app')
+    monkeypatch.setenv('CHAT_ALLOWED_ORIGINS', 'https://staging.example')
 
     with client.websocket_connect(
-        f'/ws/chat/{session.json()["session_id"]}',
-        headers={'origin': 'https://tours-app-teal.vercel.app'},
+        f'/ws/chat/{session.json()["session_id"]}', headers={'origin': 'https://staging.example'}
     ) as socket:
         socket.send_json({'type': 'auth', 'token': customer_headers['Authorization'].split()[1]})
         assert socket.receive_json()['type'] == 'connected'

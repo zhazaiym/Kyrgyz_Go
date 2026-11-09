@@ -15,6 +15,9 @@ def company_database(monkeypatch):
     with temporary_database() as url:
         engine = create_engine(url)
         try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql('CREATE EXTENSION IF NOT EXISTS pg_trgm')
+                connection.exec_driver_sql('CREATE EXTENSION IF NOT EXISTS unaccent')
             Base.metadata.create_all(engine)
             sessions = sessionmaker(bind=engine)
             monkeypatch.setattr(tools, 'SessionLocal', sessions)
@@ -211,7 +214,7 @@ def test_tour_list_is_brief_and_details_keep_the_existing_program(company_databa
         statements.append(statement)
 
     event.listen(engine, 'before_cursor_execute', capture_statement)
-    brief = tools.list_active_tours.invoke({})
+    brief = tools.search_catalogue.invoke({'kind': 'tour'})['items']
     event.remove(engine, 'before_cursor_execute', capture_statement)
 
     assert len(brief) == 1
@@ -222,14 +225,14 @@ def test_tour_list_is_brief_and_details_keep_the_existing_program(company_databa
     assert len(statements) == 1
     assert 'tour_programs' not in statements[0].lower()
 
-    detail = tools.get_tour_details.invoke({'tour_id': tour_id})
+    detail = tools.get_catalogue_item.invoke({'kind': 'tour', 'id': tour_id})
     assert detail['included'] == 'Guide included'
     assert detail['excluded'] == 'Lunch excluded'
     assert detail['program'] == [
         {'day': 1, 'title': 'Real first day', 'description': 'Day details'}
     ]
     assert len(detail['description']) > len(brief[0]['description'])
-    assert 'error' in tools.get_tour_details.invoke({'tour_id': hidden_id})
+    assert 'error' in tools.get_catalogue_item.invoke({'kind': 'tour', 'id': hidden_id})
 
 
 def test_demonstration_tours_do_not_consume_real_offer_limit(company_database, monkeypatch):
@@ -243,8 +246,10 @@ def test_demonstration_tours_do_not_consume_real_offer_limit(company_database, m
         db.commit()
         demo_id = demonstrations[0].id
         real_id = real.id
-    assert [tour['id'] for tour in tools.list_active_tours.invoke({})] == [real_id]
-    assert 'error' in tools.get_tour_details.invoke({'tour_id': demo_id})
+    result = tools.search_catalogue.invoke({})
+    assert [(item['kind'], item['id']) for item in result['items']] == [('tour', real_id)]
+    assert result['total'] == 1
+    assert 'error' in tools.get_catalogue_item.invoke({'kind': 'tour', 'id': demo_id})
     monkeypatch.setattr(agent, 'SessionLocal', sessions)
     assert agent.active_tour_ids() == [real_id]
 
@@ -254,4 +259,4 @@ def test_mixed_case_demo_prefixes_are_not_published_by_ai_tools(company_database
     with sessions() as db:
         db.add_all([Tour(title='TeSt: Private demo', price=1), Tour(title='ТеСт: Пример', price=1)])
         db.commit()
-    assert tools.list_active_tours.invoke({}) == []
+    assert tools.search_catalogue.invoke({})['items'] == []

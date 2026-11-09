@@ -1,5 +1,5 @@
+import pytest
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import Session
 
 from alembic import command
 from alembic.config import Config
@@ -15,18 +15,19 @@ def test_upgrade_and_downgrade_preserve_existing_tours(monkeypatch):
         command.upgrade(config, '20261107_0027')
         engine = create_engine(url)
         try:
-            with Session(engine) as db:
-                tour = Tour(
-                    title='Preserved migration tour', price=100, main_image='/media/old.webp'
+            with engine.begin() as connection:
+                identity = connection.scalar(
+                    Tour.__table__.insert()
+                    .values(
+                        title='Preserved migration tour', price=100, main_image='/media/old.webp'
+                    )
+                    .returning(Tour.id)
                 )
-                db.add(tour)
-                db.commit()
-                identity = tour.id
             command.upgrade(config, 'head')
             with engine.begin() as connection:
                 assert (
                     connection.scalar(text('SELECT version_num FROM alembic_version'))
-                    == '20261109_0028'
+                    == '20261109_0031'
                 )
                 assert (
                     connection.scalar(
@@ -49,5 +50,57 @@ def test_upgrade_and_downgrade_preserve_existing_tours(monkeypatch):
                     == 'Preserved migration tour'
                 )
             command.upgrade(config, 'head')
+        finally:
+            engine.dispose()
+
+
+@pytest.mark.parametrize('starting_revision', ['20261109_0030', '20261109_0028'])
+def test_merge_upgrade_preserves_data_from_both_branches(monkeypatch, starting_revision):
+    with temporary_database() as url:
+        monkeypatch.setattr(database, 'DATABASE_URL', url)
+        config = Config('alembic.ini')
+        command.upgrade(config, starting_revision)
+        engine = create_engine(url)
+        try:
+            with engine.begin() as connection:
+                identity = connection.scalar(
+                    Tour.__table__.insert()
+                    .values(title='Existing branch tour', price=100)
+                    .returning(Tour.id)
+                )
+                if starting_revision == '20261109_0030':
+                    connection.execute(
+                        text('UPDATE tours SET video_url=:url WHERE id=:id'),
+                        {'id': identity, 'url': 'https://example.com/existing-video'},
+                    )
+                else:
+                    connection.execute(
+                        text('INSERT INTO tour_videos (tour_id, video_url) VALUES (:id, :url)'),
+                        {'id': identity, 'url': '/media/existing-video.mp4'},
+                    )
+            command.upgrade(config, 'head')
+            command.check(config)
+            with engine.connect() as connection:
+                assert (
+                    connection.scalar(
+                        text('SELECT title FROM tours WHERE id=:id'), {'id': identity}
+                    )
+                    == 'Existing branch tour'
+                )
+                if starting_revision == '20261109_0030':
+                    assert (
+                        connection.scalar(
+                            text('SELECT video_url FROM tours WHERE id=:id'), {'id': identity}
+                        )
+                        == 'https://example.com/existing-video'
+                    )
+                else:
+                    assert (
+                        connection.scalar(
+                            text('SELECT video_url FROM tour_videos WHERE tour_id=:id'),
+                            {'id': identity},
+                        )
+                        == '/media/existing-video.mp4'
+                    )
         finally:
             engine.dispose()

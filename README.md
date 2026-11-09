@@ -75,4 +75,4 @@ Gemini is stubbed by default. A live run requires both `--live-gemini` and
 eight provider calls. Never point the harness at a deployed host or application
 database.
 
-See [API.md](API.md) for the HTTP and WebSocket contract, [DEPLOY.md](DEPLOY.md) for deployment configuration, and [docs/README.md](docs/README.md) for the documentation index. The server deploys tested main revisions itself; see [DEPLOY.md](DEPLOY.md) for migrations and rollout order.
+See [API.md](API.md) for the HTTP and WebSocket contract, [DEPLOY.md](DEPLOY.md) for deployment configuration, and [docs/README.md](docs/README.md) for the documentation index. Production updates itself: every green commit on `main` is deployed with its migrations within 2-3 minutes; read «Перед мержем в main» in [DEPLOY.md](DEPLOY.md) before merging.

@@ -13,9 +13,6 @@ from alembic import command
 from alembic.config import Config
 from tests.postgres_support import temporary_database
 
-_TEST_TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
-
-
 _test_database = temporary_database()
 os.environ['DATABASE_URL'] = _test_database.__enter__()
 
@@ -127,13 +124,7 @@ def admin_headers(client):
                 is_active=True,
             )
             db.add(admin)
-        from mysite.api.admin import SECRET_KEY
-        from mysite.api.admin_mfa import encrypt_totp_secret
-
         admin.role = 'owner'
-        admin.totp_secret_encrypted = encrypt_totp_secret(_TEST_TOTP_SECRET, SECRET_KEY)
-        admin.totp_last_used_step = None
-        admin.recovery_code_hashes = []
         db.commit()
 
     response = client.post('/admin/login/', json={'username': 'test-admin', 'password': password})

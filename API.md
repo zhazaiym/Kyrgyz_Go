@@ -54,7 +54,7 @@
 Восстановление пароля:
 
 - `POST /account/forgot-password` с `{email}` всегда даёт одинаковый ответ `{message}`, если запрос принят. Он не подтверждает наличие пользователя или успешную доставку письма. SMTP и страница восстановления должны быть настроены на сервере.
-- При корректной серверной настройке `FRONTEND_RESET_URL` ссылка ведёт на `https://tours-app-teal.vercel.app/ru/reset-password?token=...`; token действует 15 минут. Ответ API не подтверждает доставку письма.
+- При корректной серверной настройке `FRONTEND_RESET_URL` ссылка ведёт на `https://kerben-travel.vercel.app/ru/reset-password?token=...`; token действует 15 минут. Ответ API не подтверждает доставку письма.
 - `POST /account/reset-password` принимает `{token, new_password}`. При успехе возвращает `{ok:true, message}` и отзывает все клиентские токены и остальные ссылки восстановления. Нужно войти заново.
 - Неверная, использованная или истёкшая ссылка даёт 400.
 
@@ -129,6 +129,23 @@ ws.onmessage = ({ data }) => {
 
 В браузере Origin устанавливается автоматически. Авторизация WebSocket передаётся первым JSON-кадром, не query-параметром и не произвольным заголовком браузерного WebSocket. У первого кадра вид `{type:"auth", token:"..."}`; его надо отправить в течение 30 секунд. Затем сообщения имеют вид `{type:"message", message:"..."}`, длина текста 1-2000 символов. Бинарные кадры и пустые сообщения не принимаются.
 
+Фото в чате отправляется в два шага, потому что WebSocket-кадр ограничен 16 КБ:
+
+```js
+const form = new FormData();
+form.append('session_id', sessionId);
+form.append('file', file); // JPEG, PNG или WEBP, до 10 МБ
+const response = await fetch(`${API_URL}/chat/images`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${clientToken}` },
+  body: form,
+});
+const { image_id } = await response.json(); // 201: {image_id, expires_in: 600}
+ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id }));
+```
+
+Текст при фото необязателен: `{type:"message", image_id}`. Фото проверяется, уменьшается до 1536 px по длинной стороне и очищается от EXIF и GPS. Сервер держит его только в памяти до 10 минут и отдаёт в Gemini один раз — вместе с этим сообщением. На диск и в базу фото не записывается, в истории остаётся текст с отметкой `[фото]`, поэтому после перезагрузки показывайте отметку, а не снимок. Ответы загрузки: 400 — не JPEG/PNG/WEBP, 401 — нет токена, 404 — чужая или несуществующая беседа, 413 — больше 10 МБ, 429 — уже три неотправленных фото или 30 загрузок в час. Если фото устарело, уже отправлено или загружено в другую беседу, WebSocket вернёт ошибку `image_not_found`: загрузите его заново.
+
 События сервера:
 
 | type | Поля | Действие фронтенда |
@@ -146,7 +163,7 @@ ws.onmessage = ({ data }) => {
 
 Стадии чата: `consultation`, `collecting`, `awaiting_confirmation`, `submitted`. После submitted данные заявки не меняются сообщениями; для новой поездки нужен новый чат или обращение к менеджеру.
 
-Коды WS-ошибок: `invalid_message`, `authentication_failed`, `session_expired`, `session_not_found`, `booking_conflict`, `request_invalid`, `rate_limited`, `ai_busy`, `ai_timeout`, `ai_rate_limit`, `ai_unavailable`, `ai_blocked`, `ai_invalid_response`, `internal_error`, `service_unavailable`. При rate_limited учитывайте retry_after. При ошибке авторизации нужно войти заново. Закрытие 1008 означает отказ по политике/протоколу; 1011 - сбой сервиса. После reconnect загрузите историю HTTP-запросом; автоматически повторять действие подтверждения вслепую не нужно.
+Коды WS-ошибок: `invalid_message`, `image_not_found`, `authentication_failed`, `session_expired`, `session_not_found`, `booking_conflict`, `request_invalid`, `rate_limited`, `ai_busy`, `ai_timeout`, `ai_rate_limit`, `ai_unavailable`, `ai_blocked`, `ai_invalid_response`, `internal_error`, `service_unavailable`. При rate_limited учитывайте retry_after. При ошибке авторизации нужно войти заново. Закрытие 1008 означает отказ по политике/протоколу; 1011 - сбой сервиса. После reconnect загрузите историю HTTP-запросом; автоматически повторять действие подтверждения вслепую не нужно.
 
 `ai_blocked` означает блокировку генерации провайдером; предложите переформулировать сообщение. `ai_invalid_response` означает непригодный результат, например повреждённый tool call, повторное исчерпание выходного бюджета или превышение лимита инструментов. Неполный ответ не сохраняется как успешный. Текст исключения Gemini клиенту не передаётся. После исправимой AI-ошибки соединение остаётся доступным для следующего сообщения.
 
@@ -225,7 +242,7 @@ ws.onmessage = ({ data }) => {
 - В формах SQLAdmin у полей `image`, `main_image` и `qr_code` есть кнопка выбора файла: фото загружается на сервер, и ссылка сама подставляется в поле.
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
-- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password, totp_code и необязательный remember_device), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
+- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
 - Подсказка для SQLAdmin: чтобы очистить перевод и запросить автоматический перевод, задайте конкретному полю пустую строку. Отсутствующий ключ в JSON сохраняет текущее значение. Не редактируйте служебные `_source_hashes` и `_manual_fields`.
 
 ## 10. Все HTTP endpoint
@@ -2645,6 +2662,7 @@ ws.onmessage = ({ data }) => {
 | `latitude` | нет | number или string или null | минимум: -90.0; максимум: 90.0 |
 | `longitude` | нет | number или string или null | минимум: -180.0; максимум: 180.0 |
 | `main_image` | нет | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | нет | boolean | по умолчанию: true |
 | `country_id` | нет | integer или null | строго больше: 0.0 |
 
@@ -2668,6 +2686,7 @@ ws.onmessage = ({ data }) => {
 | `latitude` | нет | string или null | - |
 | `longitude` | нет | string или null | - |
 | `main_image` | да | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | да | boolean | - |
 | `created_at` | да | string (date-time) | - |
 | `updated_at` | да | string (date-time) | - |
@@ -2730,6 +2749,7 @@ ws.onmessage = ({ data }) => {
 | `latitude` | нет | number или string или null | минимум: -90.0; максимум: 90.0 |
 | `longitude` | нет | number или string или null | минимум: -180.0; максимум: 180.0 |
 | `main_image` | нет | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | нет | boolean или null | - |
 | `country_id` | нет | integer или null | строго больше: 0.0 |
 
@@ -3021,14 +3041,10 @@ the route is hidden with a 404 response.
 
 ## Administrator authentication
 
-`POST /admin/login/` requires `username` and `password`. It also accepts `totp_code`,
-`device_token` and `remember_device` (default `false`). An enrolled account needs a
-valid trusted-device token or a TOTP/unused recovery code. The rollout flag applies
-only to accounts that have not been enrolled; see [DEPLOY.md](DEPLOY.md).
+`POST /admin/login/` requires `username` and `password`; there is no second factor.
 
 A successful response includes `access_token`, `token_type`, `expires_in`,
-`refresh_token` and `refresh_expires_at`. A code login with `remember_device=true`
-also returns `device_token` and `device_id`. Credential errors all return exactly
+`refresh_token` and `refresh_expires_at`. Credential errors all return exactly
 `401 {"code":"invalid_credentials"}`; the existing 429 limiter remains unchanged.
 
 `POST /admin/token/refresh/` accepts `{ "refresh_token": "..." }` and returns a new
@@ -3037,9 +3053,8 @@ pair across workers. Later reuse revokes the session and returns
 `401 {"code":"session_expired"}`. `POST /admin/logout/` accepts the same body,
 revokes its session and returns 204. Access tokens include a server-checked `sid`.
 
-`GET /admin/sessions/`, `DELETE /admin/sessions/{id}/`, `GET /admin/devices/`,
-`DELETE /admin/devices/{id}/` and `DELETE /admin/devices/` manage the caller's own
-records, for every administrator role. Responses omit token hashes. Other admins'
+`GET /admin/sessions/` and `DELETE /admin/sessions/{id}/` manage the caller's own
+sessions, for every administrator role. Responses omit token hashes. Other admins'
 records are not accessible through these endpoints; owners manage them in SQLAdmin.
 
 The backend rollout keeps access-token lifetime at 60 minutes. Set

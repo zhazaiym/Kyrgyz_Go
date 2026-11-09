@@ -85,5 +85,5 @@ def test_response_writes_one_timing_summary_including_failed_phases(monkeypatch,
 
 def test_model_receives_one_catalogue_tool_schema():
     names = {tool.name for tool in agent.READ_TOOLS}
-    assert 'search_tours' in names
-    assert 'list_active_tours' not in names
+    assert {'search_catalogue', 'get_catalogue_item'} <= names
+    assert not {'search_tours', 'list_active_tours', 'get_tour_details'} & names

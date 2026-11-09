@@ -25,7 +25,7 @@ def test_oversized_non_text_payload_is_rejected_before_tools_or_publication(
             content='',
             tool_calls=[
                 {
-                    'name': 'get_tour_details',
+                    'name': 'get_catalogue_item',
                     'args': {'tour_id': '9' * 1_100_000},
                     'id': 'oversized-call',
                     'type': 'tool_call',
@@ -38,7 +38,7 @@ def test_oversized_non_text_payload_is_rejected_before_tools_or_publication(
         raise AssertionError('Oversized model payload reached a tool')
 
     monkeypatch.setattr(
-        agent, 'tool_map', {'get_tour_details': SimpleNamespace(invoke=must_not_execute)}
+        agent, 'tool_map', {'get_catalogue_item': SimpleNamespace(invoke=must_not_execute)}
     )
     delivered = []
 

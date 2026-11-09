@@ -41,6 +41,7 @@ class TourInputSchema(StorageInput):
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
+    video_url: str | None = None
     is_active: bool = True
     country_id: int | None = Field(default=None, gt=0)
 
@@ -61,6 +62,7 @@ class TourUpdateSchema(StorageInput):
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
+    video_url: str | None = None
     is_active: bool | None = None
     country_id: int | None = Field(default=None, gt=0)
 
@@ -84,6 +86,7 @@ class TourOutSchema(BaseModel):
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None
+    video_url: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

@@ -25,7 +25,8 @@ mimetypes.add_type('image/webp', '.webp')
 media_router = APIRouter(prefix='/admin/media', tags=['Media'])
 
 
-def store_image(content) -> str:
+def open_image(content, max_side=MAX_IMAGE_SIDE):
+    """Validated, upright image without metadata, at most max_side; the caller closes it."""
     try:
         with Image.open(content) as source:
             if source.format not in IMAGE_FORMATS:
@@ -33,8 +34,8 @@ def store_image(content) -> str:
             if source.width * source.height > MAX_IMAGE_PIXELS:
                 raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
             if source.format == 'JPEG':
-                source.draft('RGB', (MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
-            source.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+                source.draft('RGB', (max_side, max_side))
+            source.thumbnail((max_side, max_side))
             image = ImageOps.exif_transpose(source)
             mode = 'RGBA' if image.has_transparency_data else 'RGB'
             if image.mode != mode:
@@ -43,7 +44,12 @@ def store_image(content) -> str:
                 image = converted
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
         raise HTTPException(status_code=400, detail=error_detail('invalid_request')) from exc
-    image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    image.thumbnail((max_side, max_side))
+    return image
+
+
+def store_image(content) -> str:
+    image = open_image(content)
     name = f'{datetime.now(UTC):%Y/%m}/{uuid.uuid4().hex}.webp'
     path = MEDIA_ROOT / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +58,7 @@ def store_image(content) -> str:
     return name
 
 
-async def save_upload(request: Request, upload: UploadFile) -> str:
+async def check_upload_size(upload: UploadFile):
     limit = setting('MAX_IMAGE_UPLOAD_BYTES')
 
     def file_size():
@@ -65,6 +71,10 @@ async def save_upload(request: Request, upload: UploadFile) -> str:
         raise HTTPException(
             status_code=413, detail=f'Сүрөт {limit // 1_048_576} МБдан ашпашы керек'
         )
+
+
+async def save_upload(request: Request, upload: UploadFile) -> str:
+    await check_upload_size(upload)
     name = await run_in_threadpool(store_image, upload.file)
     return f'{MEDIA_URL}/{name}'
 

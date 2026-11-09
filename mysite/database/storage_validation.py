@@ -77,7 +77,14 @@ def validate_storage_values(entity, values, supplied):
             value
         ).scheme.lower() not in {'', 'http', 'https'}:
             raise ValueError(f'Unsafe URL scheme in {name}')
-        if name in {'image', 'main_image', 'qr_code', 'video_url', 'poster_url'}:
+        if name == 'video_url' and entity.__tablename__ == 'tours':
+            parsed = urlsplit(value.strip())
+            if parsed.scheme.lower() not in {'http', 'https'} or not parsed.netloc:
+                raise ValueError('video_url must be an http(s) link')
+            values[name] = value.strip()
+        if name in {'image', 'main_image', 'qr_code', 'poster_url'} or (
+            name == 'video_url' and entity.__tablename__ == 'tour_videos'
+        ):
             parsed = urlsplit(value)
             if parsed.netloc and parsed.path.startswith('/media/'):
                 values[name] = parsed.path

@@ -5,7 +5,7 @@ from sqladmin import Admin as SQLAdmin
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
-from mysite.admin.authentication import AdminAuthBackend, forget_browser
+from mysite.admin.authentication import AdminAuthBackend
 from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.media import save_upload
 from mysite.api.video_media import save_video_upload
@@ -55,7 +55,7 @@ async def upload_video(request: Request):
 
 
 def setup_admin(auth_app: FastAPI):
-    from mysite.admin.security_views import AdminSessionAdmin, AdminTrustedDeviceAdmin
+    from mysite.admin.security_views import AdminSessionAdmin
 
     admin = SQLAdmin(
         auth_app,
@@ -68,10 +68,8 @@ def setup_admin(auth_app: FastAPI):
     )
     admin.admin.router.add_route('/media/upload', upload_image, methods=['POST'])
     admin.admin.router.add_route('/media/video-upload', upload_video, methods=['POST'])
-    admin.admin.router.add_route('/forget-device', forget_browser, methods=['POST'])
     admin.add_view(AdminAdmin)
     admin.add_view(AdminSessionAdmin)
-    admin.add_view(AdminTrustedDeviceAdmin)
     admin.add_view(AboutAdmin)
     admin.add_view(AboutSectionAdmin)
     admin.add_view(TourCategoryAdmin)

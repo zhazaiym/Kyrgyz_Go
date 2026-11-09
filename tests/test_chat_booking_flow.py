@@ -44,6 +44,10 @@ def complete_state():
         'Я готова бронировать тур',
         'Я готов бронировать тур',
         'Я готова бронировать туры',
+        'Да, отправляйте',
+        'Подтверждаю отправку',
+        'Да, всё верно, отправьте заявку',
+        'Yes, send it',
     ],
 )
 def test_complete_chat_requires_approval_and_shows_in_admin(
@@ -446,7 +450,7 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
     assert preview['can_confirm']
     assert preview['data']['client_name'] == 'Анна'
     assert preview['data']['people_count'] == 2
-    assert 'Я готова бронировать тур' in results[-1]['answer']
+    assert '«Подтверждаю»' in results[-1]['answer']
 
     submitted = asyncio.run(
         chat_service.process_message(session_id, identity, token, 'Я готова бронировать тур')
@@ -538,3 +542,88 @@ def test_server_shows_one_authoritative_preview_and_keeps_followup_answers(clien
     assert followup['answer'] == 'Подробное объяснение маршрута.'
     assert followup['stage'] == 'awaiting_confirmation'
     assert followup['booking_preview'] is None
+
+
+def test_confirmation_before_summary_lists_missing_fields_without_ai(client, monkeypatch):
+    from mysite.api import chat_service
+
+    token, identity, session_id = start_chat(client, 'confirm_before_summary_missing')
+
+    async def reply(message, state, history, on_chunk=None):
+        partial = complete_state()
+        partial['travel_date'] = '2020-06-20'
+        return 'Заявка сформирована, напишите «Подтверждаю».', partial, True
+
+    monkeypatch.setattr(chat_service, 'respond', reply)
+    first = asyncio.run(chat_service.process_message(session_id, identity, token, 'Оформите'))
+    assert first['stage'] == 'collecting'
+
+    async def unexpected(*args, **kwargs):
+        raise AssertionError('Confirmation before a summary must not reach the AI')
+
+    monkeypatch.setattr(chat_service, 'respond', unexpected)
+    result = asyncio.run(chat_service.process_message(session_id, identity, token, 'Подтверждаю'))
+    assert result['stage'] == 'collecting'
+    assert 'не отправлена' in result['answer']
+    assert 'дата поездки в будущем' in result['answer']
+    assert 'future_travel_date' in result['booking_preview']['missing_fields']
+    with SessionLocal() as db:
+        assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
+
+
+def test_confirmation_before_summary_shows_full_summary_then_submits(client, admin_headers):
+    from mysite.api import chat_service
+
+    token, identity, session_id = start_chat(client, 'confirm_before_summary_complete')
+    with SessionLocal() as db:
+        session = db.get(ChatSession, session_id)
+        session.state = complete_state()
+        session.stage = 'collecting'
+        db.commit()
+
+    shown = asyncio.run(chat_service.process_message(session_id, identity, token, 'Подтверждаю'))
+    assert shown['stage'] == 'awaiting_confirmation'
+    for value in ('Approval Guest', '+996700000123', 'Issyk Kul', '2099-06-01', 'Подтверждаете'):
+        assert value in shown['answer']
+    assert shown['booking_preview']['can_confirm']
+    with SessionLocal() as db:
+        assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
+
+    submitted = asyncio.run(
+        chat_service.process_message(session_id, identity, token, 'Подтверждаю')
+    )
+    request_id = submitted['booking_submitted']['request_id']
+    client.post(
+        '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
+    )
+    page = client.get('/admin/travel-request/list')
+    assert page.status_code == 200 and 'Approval Guest' in page.text
+    assert client.get(f'/admin/travel-request/details/{request_id}').status_code == 200
+    client.get('/admin/logout')
+
+
+def test_echoed_ai_answer_while_collecting_is_replaced_by_missing_fields(client, monkeypatch):
+    from mysite.api import chat_service
+
+    token, identity, session_id = start_chat(client, 'echoed_answer_collecting')
+    canned = 'Готовых туров по этому запросу в каталоге сейчас нет.'
+
+    async def reply(message, state, history, on_chunk=None):
+        partial = dict(state or {})
+        partial.update({'destination': 'Иссык-Куль', 'language': 'ru'})
+        if message.startswith('Меня зовут'):
+            partial.update({'client_name': 'Бакыт', 'phone': '+996555112233'})
+        return canned, partial, True
+
+    monkeypatch.setattr(chat_service, 'respond', reply)
+    first = asyncio.run(chat_service.process_message(session_id, identity, token, 'Оформите'))
+    assert first['answer'] == canned
+    second = asyncio.run(
+        chat_service.process_message(
+            session_id, identity, token, 'Меня зовут Бакыт, телефон +996555112233'
+        )
+    )
+    assert second['stage'] == 'collecting'
+    assert second['answer'] != canned
+    assert 'количество человек' in second['answer']
+    assert 'дата начала поездки' in second['answer']
