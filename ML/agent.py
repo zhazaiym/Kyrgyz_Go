@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from ML.config import integer_setting, output_budget
 from ML.context import extraction_context, recent_messages
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
+from ML.grounding import destination_is_trusted
 from ML.prompts import EXTRACT_PROMPT, PHOTO_PROMPT, SYSTEM_PROMPT
 from ML.provider import LazyClient
 from ML.schemas import Changes
@@ -209,6 +210,13 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
         if 'destination' in dumped and 'tour_id' not in dumped:
             if current.get('tour_id') is not None:
                 dumped.pop('destination', None)
+        if 'destination' in dumped:
+            language = dumped.get('language') or current.get('language')
+            if not destination_is_trusted(
+                dumped['destination'], message + '\n' + extraction_context(history), language
+            ):
+                log.warning('Discarded extracted destination absent from the conversation')
+                dumped.pop('destination')
         if 'tour_id' in dumped:
             current.pop('destination', None)
         for k, v in dumped.items():
