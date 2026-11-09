@@ -2662,6 +2662,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 | `latitude` | нет | number или string или null | минимум: -90.0; максимум: 90.0 |
 | `longitude` | нет | number или string или null | минимум: -180.0; максимум: 180.0 |
 | `main_image` | нет | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | нет | boolean | по умолчанию: true |
 | `country_id` | нет | integer или null | строго больше: 0.0 |
 
@@ -2685,6 +2686,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 | `latitude` | нет | string или null | - |
 | `longitude` | нет | string или null | - |
 | `main_image` | да | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | да | boolean | - |
 | `created_at` | да | string (date-time) | - |
 | `updated_at` | да | string (date-time) | - |
@@ -2747,6 +2749,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 | `latitude` | нет | number или string или null | минимум: -90.0; максимум: 90.0 |
 | `longitude` | нет | number или string или null | минимум: -180.0; максимум: 180.0 |
 | `main_image` | нет | string или null | - |
+| `video_url` | нет | string или null | Ссылка http(s) на видео о туре (например, YouTube) |
 | `is_active` | нет | boolean или null | - |
 | `country_id` | нет | integer или null | строго больше: 0.0 |
 

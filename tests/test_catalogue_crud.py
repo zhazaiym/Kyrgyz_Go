@@ -182,3 +182,27 @@ def test_gallery_lists_filter_by_parent(client, admin_headers, customer_headers)
 
         assert response.status_code == 200, response.text
         assert [image[f'{name}_id'] for image in response.json()] == [first['id']]
+
+
+def test_tour_video_link_is_stored_and_validated(client, admin_headers, customer_headers):
+    tour = create(
+        client,
+        '/tours/',
+        {
+            'title': 'Video tour',
+            'price': '100',
+            'video_url': ' https://www.youtube.com/watch?v=abc123 ',
+        },
+        admin_headers,
+    )
+    assert tour['video_url'] == 'https://www.youtube.com/watch?v=abc123'
+    detail = client.get(f'/tours/{tour["id"]}/', headers=customer_headers)
+    assert detail.status_code == 200
+    assert detail.json()['video_url'] == 'https://www.youtube.com/watch?v=abc123'
+    for unsafe in ('javascript:alert(1)', 'youtube.com/watch?v=abc', 'ftp://example.com/v'):
+        response = client.put(
+            f'/tours/{tour["id"]}/', json={'video_url': unsafe}, headers=admin_headers
+        )
+        assert response.status_code == 422, (unsafe, response.text)
+    cleared = client.put(f'/tours/{tour["id"]}/', json={'video_url': None}, headers=admin_headers)
+    assert cleared.status_code == 200 and cleared.json()['video_url'] is None
