@@ -332,7 +332,7 @@ def test_catalogue_routes_have_unique_operation_ids_and_keep_public_cards(client
         assert response.status_code == 200
         assert len(response.json()) == 1 and response.json()[0]['id'] == service['id']
         assert 'description' not in response.json()[0]
-        assert client.get(path + str(service['id']) + '/').status_code == 401
+        assert client.get(path + str(service['id']) + '/').status_code == 200
         assert (
             client.get(path + str(service['id']) + '/', headers=headers(account)).status_code == 200
         )

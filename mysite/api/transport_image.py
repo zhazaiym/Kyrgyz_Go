@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -35,9 +34,7 @@ def create_transport_image(
     return image_db
 
 
-@transport_image_router.get(
-    '/', response_model=list[TransportImageOutSchema], dependencies=[Depends(current_client)]
-)
+@transport_image_router.get('/', response_model=list[TransportImageOutSchema])
 def list_transport_images(
     transport_id: int | None = None,
     db: Session = Depends(get_db),
@@ -45,6 +42,9 @@ def list_transport_images(
 ):
     query = db.query(TransportImage).join(Transport).filter(Transport.is_active.is_(True))
     if transport_id is not None:
+        parent = db.get(Transport, transport_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(TransportImage.transport_id == transport_id)
     return (
         query.order_by(TransportImage.order, TransportImage.id)
@@ -54,9 +54,7 @@ def list_transport_images(
     )
 
 
-@transport_image_router.get(
-    '/{image_id}/', response_model=TransportImageOutSchema, dependencies=[Depends(current_client)]
-)
+@transport_image_router.get('/{image_id}/', response_model=TransportImageOutSchema)
 def detail_transport_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TransportImage, image_id)
 

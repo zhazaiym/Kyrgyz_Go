@@ -1,0 +1,320 @@
+{
+  "ala-kul-keldike-4d": {
+    "price": "38000",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Mean of two 4-person, 4-day guided packages: (340+530)/2 USD. Budget scenario: local Karakol transfers, guide, basic camping/yurt and meals; no Bishkek travel.",
+    "unrounded_kgs": "38039.7930",
+    "rounding_kgs": "500",
+    "source_ids": [
+      "ala_budget",
+      "ala_standard"
+    ],
+    "sources": [
+      "https://kyrgyz-tours.com/tour/ala-kul-lake-tour/",
+      "https://ecotourism.kg/tours/ala-kul-lake-trekking-4-days"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "jeti-oguz-ala-kul-5d": {
+    "price": "47500",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "4-day private-package midpoint scaled to 5 walking days: 435*5/4 USD. Allows an extra guide/food/camp day. Not the unrelated 5-calendar-day Bishkek package.",
+    "unrounded_kgs": "47549.741250",
+    "rounding_kgs": "500",
+    "source_ids": [
+      "ala_budget",
+      "ala_standard",
+      "jeti_sanity"
+    ],
+    "sources": [
+      "https://kyrgyz-tours.com/tour/ala-kul-lake-tour/",
+      "https://ecotourism.kg/tours/ala-kul-lake-trekking-4-days",
+      "https://kyrgyzguidedtours.com/en/product/trekking-to-ala-kol-lake-5-days/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "archa-tor-3d": {
+    "price": "41500",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Mean of 3-day normalized regional package (435*3/4 USD) and published Archa-Tor full-support price (620 USD at four). Range reflects porter/cook and access differences.",
+    "unrounded_kgs": "41373.7403750",
+    "rounding_kgs": "500",
+    "source_ids": [
+      "ala_budget",
+      "ala_standard",
+      "archa"
+    ],
+    "sources": [
+      "https://kyrgyz-tours.com/tour/ala-kul-lake-tour/",
+      "https://ecotourism.kg/tours/ala-kul-lake-trekking-4-days",
+      "https://hikingkyrgyzstan.com/best-hikes-in-kyrgyzstan/archa-tor-pass/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "karakol-radial-4d": {
+    "price": "38000",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Same four guide-days and three basic camp nights as the 4-day Karakol-package comparators. No unsupported discount for a fixed camp; local transfers/food considered.",
+    "unrounded_kgs": "38039.7930",
+    "rounding_kgs": "500",
+    "source_ids": [
+      "ala_budget",
+      "ala_standard"
+    ],
+    "sources": [
+      "https://kyrgyz-tours.com/tour/ala-kul-lake-tour/",
+      "https://ecotourism.kg/tours/ala-kul-lake-trekking-4-days"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "jyrgalan-turnaluu-1d": {
+    "price": "3400",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Guide-service comparator 4000/group/day divided by four + two taxi legs 4000/car divided by four + 350/person picnic. No overnight, horse or additional meals; same full-day guide booking for each loop.",
+    "unrounded_kgs": "3350",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "jyrgalan_guide",
+      "jyrgalan_transfer",
+      "food"
+    ],
+    "sources": [
+      "https://www.travel-kyrgyzstan.com/tours/jyrgalan-skitouring-yurt-lodge/",
+      "https://destinationkarakol.com/what-to-do/day-trips/",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "jyrgalan-kok-bel-1d": {
+    "price": "3400",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Guide-service comparator 4000/group/day divided by four + two taxi legs 4000/car divided by four + 350/person picnic. No overnight, horse or additional meals; same full-day guide booking for each loop.",
+    "unrounded_kgs": "3350",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "jyrgalan_guide",
+      "jyrgalan_transfer",
+      "food"
+    ],
+    "sources": [
+      "https://www.travel-kyrgyzstan.com/tours/jyrgalan-skitouring-yurt-lodge/",
+      "https://destinationkarakol.com/what-to-do/day-trips/",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "jyrgalan-uuru-tor-1d": {
+    "price": "3400",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Guide-service comparator 4000/group/day divided by four + two taxi legs 4000/car divided by four + 350/person picnic. No overnight, horse or additional meals; same full-day guide booking for each loop.",
+    "unrounded_kgs": "3350",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "jyrgalan_guide",
+      "jyrgalan_transfer",
+      "food"
+    ],
+    "sources": [
+      "https://www.travel-kyrgyzstan.com/tours/jyrgalan-skitouring-yurt-lodge/",
+      "https://destinationkarakol.com/what-to-do/day-trips/",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "kyzart-song-kol-2d": {
+    "price": "8600",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": null,
+    "min_people": 1,
+    "group_assumption": "joining_group_size_unpublished",
+    "basis": "Published join-in package 7000 plus four meals budgeted at regional 400/meal; one dinner and one breakfast already in comparator. Not a private four-person quote.",
+    "unrounded_kgs": "8600",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "songkol",
+      "food"
+    ],
+    "sources": [
+      "https://www.tuk.kg/tours/song-kol-trekking-trip",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "kol-ukok-kol-tor-2d": {
+    "price": "7900",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": null,
+    "min_people": 1,
+    "group_assumption": "joining_group_size_unpublished",
+    "basis": "Mean of two join-in guided camping packages plus six meals at 400/meal. Transport/camping already in anchors; no extra yurt dinner or private-group premium claimed.",
+    "unrounded_kgs": "7900",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "kolukok_tuk",
+      "kolukok_intourists",
+      "food"
+    ],
+    "sources": [
+      "https://www.tuk.kg/tours/kol-ukok-kol-tor-lakes",
+      "https://www.intourists.kg/en/tours/kol-tor-and-kol-ukok-lakes",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "belogorka-1d": {
+    "price": "6200",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Published private four-person guide/vehicle rate 59 USD plus 12 USD lunch. No overnight.",
+    "unrounded_kgs": "6208.7938",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "belogorka"
+    ],
+    "sources": [
+      "https://kyrgyzconcept.kg/tours/inbounds/106/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "ratsek-hut-2d": {
+    "price": "7400",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": null,
+    "min_people": 1,
+    "group_assumption": "joining_group_size_unpublished",
+    "basis": "Conservative overnight-trip comparator 5000 includes guide, transfers and Ratsek hut/kit; add six meals at 400. Comparator summit is harder; no speculative deduction, and neither summit nor glacier services promised.",
+    "unrounded_kgs": "7400",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "ratsek_comparator",
+      "food"
+    ],
+    "sources": [
+      "https://www.tuk.kg/tours/peak-uchitel",
+      "https://jyrgalan.com/where-to-stay/salamat-guesthouse/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "konorchek-central-1d": {
+    "price": "6900",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Conservative private four-person day-trip budget 67 USD plus lunch 12 USD. Comparator also visits Burana; no unsupported component deduction, Burana not added to the route or confirmed inclusions.",
+    "unrounded_kgs": "6908.3762",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "konorchek"
+    ],
+    "sources": [
+      "https://kyrgyzconcept.kg/tours/inbounds/86/"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  },
+  "alamedin-teke-tor-1d": {
+    "price": "3900",
+    "price_unit": "per_person",
+    "currency": "KGS",
+    "is_estimate": true,
+    "authorized_estimate": true,
+    "checked_on": "2026-11-09",
+    "assumed_group_size": 4,
+    "min_people": 1,
+    "group_assumption": "private_four_adults",
+    "basis": "Published 4+ person analogue 45 USD includes guide, car and lunch. No overnight.",
+    "unrounded_kgs": "3935.1510",
+    "rounding_kgs": "100",
+    "source_ids": [
+      "alamedin"
+    ],
+    "sources": [
+      "https://peopletravel.kg/alamedinru"
+    ],
+    "usd_kgs": "87.4478",
+    "fx_source": "https://www.nbkr.kg/index1.jsp?item=1562&lang=ENG&valuta_id=15"
+  }
+}

@@ -374,7 +374,32 @@ class TrekkingProgramOutSchema(BaseModel):
     description: str | None
 
 
+class TourVideoInputSchema(StorageInput):
+    tour_id: int
+    video_url: str
+    poster_url: str | None = None
+    order: int = 0
+
+
+class TourVideoUpdateSchema(StorageInput):
+    tour_id: int | None = None
+    video_url: str | None = None
+    poster_url: str | None = None
+    order: int | None = None
+
+
+class TourVideoOutSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    tour_id: int
+    video_url: str
+    poster_url: str | None
+    order: int
+
+
 class TourDetailSchema(TourOutSchema):
+    videos: list[TourVideoOutSchema] = Field(default_factory=list)
     images: list[TourImageOutSchema] = []
     programs: list[TourProgramOutSchema] = []
 

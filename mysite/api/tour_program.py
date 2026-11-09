@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -31,9 +30,7 @@ def create_tour_program(data: TourProgramInputSchema, db: Session = Depends(get_
     return program_db
 
 
-@tour_program_router.get(
-    '/', response_model=list[TourProgramOutSchema], dependencies=[Depends(current_client)]
-)
+@tour_program_router.get('/', response_model=list[TourProgramOutSchema])
 def list_tour_programs(
     tour_id: int | None = None,
     lang: Language = 'ru',
@@ -42,6 +39,9 @@ def list_tour_programs(
 ):
     query = db.query(TourProgram).join(Tour).filter(Tour.is_active.is_(True))
     if tour_id is not None:
+        parent = db.get(Tour, tour_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(TourProgram.tour_id == tour_id)
     return [
         localized(record, lang)
@@ -52,9 +52,7 @@ def list_tour_programs(
     ]
 
 
-@tour_program_router.get(
-    '/{program_id}/', response_model=TourProgramOutSchema, dependencies=[Depends(current_client)]
-)
+@tour_program_router.get('/{program_id}/', response_model=TourProgramOutSchema)
 def detail_tour_program(program_id: int, lang: Language = 'ru', db: Session = Depends(get_db)):
     program_db = db.get(TourProgram, program_id)
     if not program_db or not program_db.tour.is_active:

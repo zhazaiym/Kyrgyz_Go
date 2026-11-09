@@ -41,7 +41,7 @@ def auth(tokens):
     return {'Authorization': 'Bearer ' + tokens['access_token']}
 
 
-def test_remembered_device_skips_mfa_but_never_password(client, security_admin):
+def test_remembered_device_never_replaces_password(client, security_admin):
     first = sign_in(client, security_admin, totp_code=totp_code(SECRET), remember_device=True)
     assert first.status_code == 200, first.text
     tokens = first.json()
@@ -54,11 +54,12 @@ def test_remembered_device_skips_mfa_but_never_password(client, security_admin):
     }
 
 
-def test_bad_password_and_bad_mfa_have_identical_responses(client, security_admin):
+def test_bad_password_rejected_and_obsolete_mfa_ignored(client, security_admin):
     wrong_password = sign_in(client, {**security_admin, 'password': 'incorrect'})
     wrong_code = sign_in(client, security_admin, totp_code='000000')
-    assert wrong_password.status_code == wrong_code.status_code == 401
-    assert wrong_password.json() == wrong_code.json() == {'code': 'invalid_credentials'}
+    assert wrong_password.status_code == 401
+    assert wrong_password.json() == {'code': 'invalid_credentials'}
+    assert wrong_code.status_code == 200
 
 
 def test_refresh_rotation_grace_returns_same_pair_then_revokes(client, security_admin, monkeypatch):
@@ -108,7 +109,7 @@ def test_password_change_revokes_sessions_and_devices(client, security_admin):
         == 401
     )
     changed = {**security_admin, 'password': 'ChangedPassword123!'}
-    assert sign_in(client, changed, device_token=tokens['device_token']).status_code == 401
+    assert sign_in(client, changed, device_token=tokens['device_token']).status_code == 200
 
 
 def test_device_is_bound_to_admin_and_can_be_revoked(client, security_admin):
@@ -129,7 +130,7 @@ def test_device_is_bound_to_admin_and_can_be_revoked(client, security_admin):
         sign_in(
             client, {**security_admin, 'username': other_name}, device_token=tokens['device_token']
         ).status_code
-        == 401
+        == 200
     )
     assert (
         client.delete(
@@ -137,18 +138,18 @@ def test_device_is_bound_to_admin_and_can_be_revoked(client, security_admin):
         ).status_code
         == 204
     )
-    assert sign_in(client, security_admin, device_token=tokens['device_token']).status_code == 401
+    assert sign_in(client, security_admin, device_token=tokens['device_token']).status_code == 200
 
 
-def test_recovery_code_is_one_time_and_access_contains_session(client, security_admin):
+def test_legacy_recovery_code_is_ignored_and_access_contains_session(client, security_admin):
     first = sign_in(client, security_admin, totp_code='recovery-test-code')
     assert first.status_code == 200
     payload = jwt.decode(first.json()['access_token'], SECRET_KEY, algorithms=['HS256'])
     assert payload.get('sid')
-    assert sign_in(client, security_admin, totp_code='recovery-test-code').status_code == 401
+    assert sign_in(client, security_admin, totp_code='recovery-test-code').status_code == 200
 
 
-def test_mfa_rollout_flag_only_allows_unenrolled_accounts_when_disabled(client, monkeypatch):
+def test_obsolete_mfa_flag_cannot_enable_second_factor(client, monkeypatch):
     account = {'username': 'unenrolled_' + uuid4().hex, 'password': PASSWORD}
     with SessionLocal() as db:
         db.add(
@@ -160,7 +161,7 @@ def test_mfa_rollout_flag_only_allows_unenrolled_accounts_when_disabled(client, 
         )
         db.commit()
     monkeypatch.setenv('ADMIN_MFA_REQUIRED', 'true')
-    assert sign_in(client, account).status_code == 401
+    assert sign_in(client, account).status_code == 200
     monkeypatch.setenv('ADMIN_MFA_REQUIRED', 'false')
     assert sign_in(client, account).status_code == 200
 
@@ -261,7 +262,7 @@ def test_device_expiry_and_oldest_device_eviction(client, security_admin):
         for code in codes
     ]
     assert (
-        sign_in(client, security_admin, device_token=enrolled[0]['device_token']).status_code == 401
+        sign_in(client, security_admin, device_token=enrolled[0]['device_token']).status_code == 200
     )
     with SessionLocal() as db:
         active = (
@@ -276,7 +277,7 @@ def test_device_expiry_and_oldest_device_eviction(client, security_admin):
         db.commit()
     assert (
         sign_in(client, security_admin, device_token=enrolled[-1]['device_token']).status_code
-        == 401
+        == 200
     )
 
 
@@ -346,7 +347,7 @@ def test_sqladmin_trusted_browser_survives_logout_until_forgotten(security_admin
                 data={'username': security_admin['username'], 'password': PASSWORD},
                 follow_redirects=False,
             ).status_code
-            == 400
+            == 302
         )
 
 

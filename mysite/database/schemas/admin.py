@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class AdminLoginSchema(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=1, max_length=128)
-    totp_code: str = Field(default='', max_length=32)
     device_token: str | None = Field(default=None, max_length=256)
     remember_device: bool = False
 

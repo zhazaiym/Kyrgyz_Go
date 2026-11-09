@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from mysite.api.admin_sessions import (new_session, remember_browser, rotate_refresh, session_live,
-                                       token_pair, token_session_id, verify_second_factor)
+                                       token_pair, token_session_id)
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.password_work import BoundedPasswords
@@ -114,12 +114,9 @@ def login_admin(admin: AdminLoginSchema, request: Request, db: Session = Depends
     found = db.get(Admin, admin_id, with_for_update=True, populate_existing=True)
     if not found or not found.is_active or found.hashed_password != encoded:
         return invalid
-    accepted, used_code = verify_second_factor(db, found, admin.totp_code, admin.device_token)
-    if not accepted:
-        return invalid
     row, refresh = new_session(db, found.id, request.headers.get('user-agent', ''))
     result = token_pair(row, refresh)
-    if used_code and admin.remember_device:
+    if admin.remember_device:
         device, raw = remember_browser(db, found.id, request.headers.get('user-agent', ''))
         result.update(device_token=raw, device_id=device.id)
     db.commit()

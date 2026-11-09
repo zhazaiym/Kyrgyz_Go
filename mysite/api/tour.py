@@ -7,7 +7,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.deletion_guards import protect_selected_item
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
@@ -128,9 +127,7 @@ def list_tours(
     return localized_tour_cards_with_reviews(tours, db, lang)
 
 
-@tour_router.get(
-    '/{tour_id}/', response_model=TourDetailSchema, dependencies=[Depends(current_client)]
-)
+@tour_router.get('/{tour_id}/', response_model=TourDetailSchema)
 def detail_tour(
     tour_id: int,
     lang: str = Query(default='ru', pattern='^(ru|en|de|zh)$'),
@@ -139,7 +136,10 @@ def detail_tour(
     tour_db = db.scalars(
         select(Tour)
         .options(
-            selectinload(Tour.images), selectinload(Tour.programs), selectinload(Tour.translations)
+            selectinload(Tour.videos),
+            selectinload(Tour.images),
+            selectinload(Tour.programs),
+            selectinload(Tour.translations),
         )
         .where(Tour.id == tour_id)
     ).first()

@@ -39,8 +39,8 @@ def test_public_read_routes_respond(client, path):
         '/trekking-programs/',
     ],
 )
-def test_catalogue_detail_resources_require_customer(client, customer_headers, path):
-    assert client.get(path).status_code == 401
+def test_catalogue_detail_resources_are_public(client, customer_headers, path):
+    assert client.get(path).status_code == 200
     assert client.get(path, headers=customer_headers).status_code == 200
 
 

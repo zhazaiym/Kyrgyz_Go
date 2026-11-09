@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Подбор путешествия</title>
+<style>
+body { max-width: 40rem; margin: 3rem auto; padding: 1rem; font: 18px system-ui; }
+label { display: block; margin: 1rem 0; } input, select, textarea, button { font: inherit; }
+#answer { white-space: pre-wrap; } button { padding: .6rem 1rem; }
+</style>
+<h1>Подбор путешествия</h1>
+<form id="preferences">
+  <label>Направление <input name="destination" maxlength="200"></label>
+  <label>Количество человек <input name="people" type="number" min="1" max="100" value="2"></label>
+  <label>Дата поездки <input name="date" type="date"></label>
+  <label>Тип отдыха <select name="style"><option>Экскурсии</option><option>Горы</option><option>Отдых у озера</option></select></label>
+  <label><input name="hotel" type="checkbox"> Нужен отель</label>
+  <label>Пожелания <textarea name="notes" maxlength="2000"></textarea></label>
+  <button id="ask">Спросить</button>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<div id="answer" aria-live="polite"></div>
+<script type="module">
+// Serve on the website origin with /api proxied to FastAPI,
+// or replace with your HTTPS API origin allowed by CORS_ALLOWED_ORIGINS.
+const endpoint = '/api/ask-ai';
+const key = 'ai_user_context';
+const form = document.querySelector('#preferences');
+const status = document.querySelector('#status');
+const answer = document.querySelector('#answer');
+const button = document.querySelector('#ask');
+const fields = [...form.elements].filter(field => field.name);
+try {
+  const saved = JSON.parse(localStorage.getItem(key) || 'null');
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+    for (const field of fields) {
+      if (!Object.hasOwn(saved, field.name)) continue;
+      if (field.type === 'checkbox') field.checked = saved[field.name] === true;
+      else if (typeof saved[field.name] === 'string') field.value = saved[field.name];
+    }
+  }
+} catch { status.textContent = 'Не удалось восстановить сохранённые параметры.'; }
+function save() {
+  const context = Object.fromEntries(fields.map(field => [
+    field.name, field.type === 'checkbox' ? field.checked : field.value
+  ]));
+  try { localStorage.setItem(key, JSON.stringify(context)); }
+  catch { status.textContent = 'Браузер запретил сохранение. Параметры сохранятся только до перезагрузки.'; }
+  return context;
+}
+form.addEventListener('input', save);
+form.addEventListener('change', save);
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (button.disabled) return;
+  const context = save();
+  button.disabled = true;
+  status.textContent = 'ИИ думает…';
+  answer.textContent = '';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 55000);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context }), signal: controller.signal
+    });
+    if (!response.ok) throw new Error(response.status === 429
+      ? 'Слишком много запросов. Попробуйте позже.' : 'Не удалось получить ответ. Попробуйте ещё раз.');
+    const data = await response.json();
+    if (typeof data.answer !== 'string') throw new Error('Получен некорректный ответ.');
+    answer.textContent = data.answer;
+    status.textContent = '';
+  } catch (error) {
+    status.textContent = error.name === 'AbortError' ? 'Время ожидания истекло. Попробуйте ещё раз.' : error.message;
+  } finally { clearTimeout(timer); button.disabled = false; }
+});
+</script>
+</html>

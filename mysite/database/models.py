@@ -159,6 +159,12 @@ class Tour(Base):
         order_by=lambda: (TourImage.order, TourImage.id),
     )
 
+    videos: Mapped[list['TourVideo']] = relationship(
+        back_populates='tour',
+        cascade='all, delete-orphan',
+        order_by=lambda: (TourVideo.order, TourVideo.id),
+    )
+
     programs: Mapped[list['TourProgram']] = relationship(
         back_populates='tour',
         cascade='all, delete-orphan',
@@ -197,6 +203,20 @@ class TourImage(Base):
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
     tour: Mapped['Tour'] = relationship(back_populates='images')
+
+
+class TourVideo(Base):
+    __tablename__ = 'tour_videos'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tour_id: Mapped[int] = mapped_column(
+        ForeignKey('tours.id', ondelete='CASCADE'), nullable=False, index=True
+    )
+    video_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    poster_url: Mapped[str | None] = mapped_column(String(500))
+    order: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    tour: Mapped['Tour'] = relationship(back_populates='videos')
+    __table_args__ = (CheckConstraint('"order" >= 0', name='ck_tour_video_order'),)
 
 
 class TourProgram(LocalizedContent, Base):

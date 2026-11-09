@@ -16,7 +16,6 @@ from uuid import uuid4
 import jwt
 from sqlalchemy import select
 
-from mysite.api.admin_mfa import consume_admin_mfa
 from mysite.database.admin_security_models import AdminSession, AdminTrustedDevice
 from mysite.database.models import Admin
 from mysite.database.token_utils import digest, utcnow
@@ -168,17 +167,6 @@ def trusted_device(db, admin_id, raw):
         device.last_used_at = utcnow()
         return device
     return None
-
-
-def verify_second_factor(db, admin, code='', device_token=None):
-    if trusted_device(db, admin.id, device_token):
-        return True, False
-    if (
-        not admin.totp_secret_encrypted
-        and os.getenv('ADMIN_MFA_REQUIRED', 'false').lower() != 'true'
-    ):
-        return True, False
-    return consume_admin_mfa(admin, code or '', _key().decode()), True
 
 
 def remember_browser(db, admin_id, label=''):

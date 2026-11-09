@@ -3,7 +3,6 @@ from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import (HelicopterCatalogueDetailSchema,
@@ -34,11 +33,7 @@ def create_helicopter_tour(helicopter: HelicopterTourInputSchema, db: Session = 
     return helicopter_db
 
 
-@helicopter_tour_router.get(
-    '/{helicopter_id}/',
-    response_model=HelicopterCatalogueDetailSchema,
-    dependencies=[Depends(current_client)],
-)
+@helicopter_tour_router.get('/{helicopter_id}/', response_model=HelicopterCatalogueDetailSchema)
 def detail_helicopter_tour(
     helicopter_id: int, lang: Language = 'ru', db: Session = Depends(get_db)
 ):

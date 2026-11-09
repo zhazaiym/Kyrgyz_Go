@@ -26,11 +26,13 @@ RESOURCE_LIMITS = {
     'HTTP_IP_BUCKETS': (8192, 65_536),
     'MAX_REQUEST_BODY_BYTES': (1_048_576, 16_777_216),
     'MAX_IMAGE_UPLOAD_BYTES': (10_485_760, 33_554_432),
+    'MAX_VIDEO_UPLOAD_BYTES': (104_857_600, 1_073_741_824),
     'REQUEST_BODY_TIMEOUT': (10, 60),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
 }
 IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload'}
+VIDEO_UPLOAD_PATHS = {'/admin/media/videos/', '/admin/media/video-upload'}
 
 
 @lru_cache(maxsize=len(RESOURCE_LIMITS))
@@ -165,6 +167,8 @@ class ResourceLimitsMiddleware:
             maximum = setting('MAX_REQUEST_BODY_BYTES')
             if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
                 maximum = setting('MAX_IMAGE_UPLOAD_BYTES') + 65_536
+            if scope.get('method') == 'POST' and scope.get('path') in VIDEO_UPLOAD_PATHS:
+                maximum = setting('MAX_VIDEO_UPLOAD_BYTES') + 65_536
             lengths = request_headers.getlist('content-length')
             if lengths:
                 try:
@@ -198,7 +202,10 @@ class ResourceLimitsMiddleware:
                     self.http_quota(address)
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail, exc.headers)
-            if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
+            if (
+                scope.get('method') == 'POST'
+                and scope.get('path') in IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
+            ):
                 size = 0
                 deadline = asyncio.get_running_loop().time() + setting('REQUEST_BODY_TIMEOUT')
 

@@ -19,46 +19,25 @@ Uploads return `/media/YYYY/MM/<uuid>.webp`. Resolve these paths against the API
 base URL. A migration removes old hosts from `/media/` references in every image
 column. External catalogue images keep their external sources.
 
-## Backend-first MFA rollout
+## Administrator login
 
-Migrations add tables without enabling enforcement. `ADMIN_MFA_REQUIRED=false`
-allows password login only for accounts that have not been enrolled. An already
-enrolled administrator still needs a code or a valid trusted browser.
+API and SQLAdmin login require an active administrator account and its password.
+Administrator MFA is no longer enforced; `ADMIN_MFA_REQUIRED` and old TOTP fields
+do not enable a second factor. Historical MFA data and utility scripts remain for
+compatibility and are not part of the login flow.
 
-1. Deploy the backend; normal container startup applies migrations.
-2. From the server's project directory enroll **every** active administrator:
-
-   ```sh
-   docker compose exec api python -m scripts.enroll_admin_mfa <username>
-   ```
-
-   Verify the authenticator code and store the one-time recovery codes securely.
-   The script is in the image and uses the running API's database and secret key.
-   Do not use `docker compose run`: a second API container conflicts with the
-   service's fixed proxy address.
-3. Set `ADMIN_MFA_REQUIRED=true` only after enrollment is complete, then recreate
-   the API through the normal server deployment procedure.
-
-Emergency recovery for an older image missing the script:
+Create a password-based account with:
 
 ```sh
-docker compose cp scripts/enroll_admin_mfa.py api:/app/scripts/
-docker compose exec api python -m scripts.enroll_admin_mfa <username>
+docker compose exec api python create_admin.py
 ```
 
-`docker compose exec api python create_admin.py` enrolls new administrators before
-saving the account. Resetting an enrolled administrator requires owner approval:
-
-```sh
-docker compose exec api python -m scripts.enroll_admin_mfa <username> --reset-by <owner>
-```
-
-Password changes, deactivation and MFA enrollment/reset revoke all sessions and
-trusted devices in the same transaction.
+Role checks, login rate limits and revocable sessions remain enabled. Password
+changes and account deactivation revoke existing sessions and trusted devices.
 
 ## Sessions and trusted browsers
 
-Password is always required. Code login with `remember_device=true` issues a
+Password is always required. Login with `remember_device=true` issues a
 30-day device token; at most ten devices are kept, revoking the oldest first.
 API login preserves the existing response fields and adds refresh metadata.
 Refresh rotates tokens, accepts the previous token for 30 seconds, expires after
@@ -75,7 +54,6 @@ only the caller's own records.
 
 | Setting | Backend rollout default |
 | --- | --- |
-| `ADMIN_MFA_REQUIRED` | `false` until all accounts are enrolled |
 | `ADMIN_ACCESS_TOKEN_MINUTES` | `60` until the admin frontend supports refresh |
 | `ADMIN_REFRESH_DAYS` | `30` |
 | `ADMIN_SESSION_HOURS` | `168` |
@@ -118,5 +96,6 @@ python -m pytest --confcutdir=tests/unit tests/unit -q
 ```
 
 CI also checks syntax, Ruff, security and dependencies, builds the runtime image
-and executes `python -m scripts.enroll_admin_mfa --help` inside that image.
+and checks the historical MFA utility entry point inside that image. This build
+check does not enable MFA or make enrollment a deployment requirement.
 Post-deployment verification is performed by the server operator.

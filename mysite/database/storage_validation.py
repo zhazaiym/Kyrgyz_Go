@@ -73,13 +73,11 @@ def validate_storage_values(entity, values, supplied):
             raise ValueError('longitude must be between -180 and 180')
         if name == 'email':
             values[name] = optional_email(value)
-        if name in {'image', 'main_image', 'qr_code'} and urlsplit(value).scheme.lower() not in {
-            '',
-            'http',
-            'https',
-        }:
+        if name in {'image', 'main_image', 'qr_code', 'video_url', 'poster_url'} and urlsplit(
+            value
+        ).scheme.lower() not in {'', 'http', 'https'}:
             raise ValueError(f'Unsafe URL scheme in {name}')
-        if name in {'image', 'main_image', 'qr_code'}:
+        if name in {'image', 'main_image', 'qr_code', 'video_url', 'poster_url'}:
             parsed = urlsplit(value)
             if parsed.netloc and parsed.path.startswith('/media/'):
                 values[name] = parsed.path

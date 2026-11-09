@@ -9,7 +9,7 @@ from starlette.responses import RedirectResponse
 
 from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
 from mysite.api.admin_sessions import (new_session, remember_browser, setting, sql_session_admin,
-                                       trusted_device, verify_second_factor)
+                                       trusted_device)
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
@@ -29,7 +29,7 @@ class AdminAuthBackend(AuthenticationBackend):
         )
 
     @staticmethod
-    def login_identity(request, username, password, totp_code, remember=False):
+    def login_identity(request, username, password, remember=False):
         with SessionLocal() as db:
             found = db.query(Admin).filter_by(username=username).first()
             identity = found.id if found else None
@@ -47,13 +47,8 @@ class AdminAuthBackend(AuthenticationBackend):
             admin = db.get(Admin, identity, with_for_update=True, populate_existing=True)
             if not admin or not admin.is_active or admin.hashed_password != encoded:
                 return None
-            accepted, used_code = verify_second_factor(
-                db, admin, totp_code, request.cookies.get(DEVICE_COOKIE)
-            )
-            if not accepted:
-                return None
             device_token = None
-            if used_code and remember:
+            if remember:
                 _, device_token = remember_browser(
                     db, identity, request.headers.get('user-agent', '')
                 )
@@ -65,8 +60,7 @@ class AdminAuthBackend(AuthenticationBackend):
     async def login(self, request: Request):
         form = await request.form()
         username, password = str(form.get('username', '')).strip(), str(form.get('password', ''))
-        code = str(form.get('totp_code', ''))
-        if not 1 <= len(username) <= 100 or not 1 <= len(password) <= 128 or len(code) > 32:
+        if not 1 <= len(username) <= 100 or not 1 <= len(password) <= 128:
             return False
         try:
             identity = await run_in_threadpool(
@@ -74,7 +68,6 @@ class AdminAuthBackend(AuthenticationBackend):
                 request,
                 username,
                 password,
-                code,
                 form.get('remember_device') in ('on', 'true', '1'),
             )
         except HTTPException as exc:
@@ -85,9 +78,7 @@ class AdminAuthBackend(AuthenticationBackend):
             return False
         admin_id, sid, login_at, device_token = identity
         request.session.clear()
-        request.session.update(
-            admin_id=admin_id, sid=sid, login_at=login_at, seen_at=int(login_at), admin_mfa=True
-        )
+        request.session.update(admin_id=admin_id, sid=sid, login_at=login_at, seen_at=int(login_at))
         if device_token:
             response = RedirectResponse(request.url_for('admin:index'), status_code=302)
             response.set_cookie(
