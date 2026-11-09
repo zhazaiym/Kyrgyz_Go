@@ -118,6 +118,27 @@ def active_tour_ids():
         ]
 
 
+REQUIRED_FOR_REQUEST = (
+    ('tour_or_destination', 'тур или направление'),
+    ('travel_date', 'точная дата начала поездки'),
+    ('people_count', 'общее число людей'),
+    ('client_name', 'имя'),
+    ('phone', 'телефон'),
+)
+
+
+def missing_for_request(state):
+    """Required request fields the client has not given yet, for the agent to ask."""
+    present = {
+        'tour_or_destination': state.get('tour_id') or state.get('destination'),
+        'travel_date': state.get('travel_date'),
+        'people_count': state.get('people_count'),
+        'client_name': state.get('client_name'),
+        'phone': state.get('phone'),
+    }
+    return [label for key, label in REQUIRED_FOR_REQUEST if not present[key]]
+
+
 def user_message(message, image=None):
     """Client turn for Gemini; a photo travels inline with this message only."""
     if image is None:
@@ -201,9 +222,12 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
         failure = classify_error(exc)
         log.warning('Structured extraction failed: %s', failure.code)
 
+    prompt_state = {**current, 'missing_for_request': missing_for_request(current)}
     msgs = [
         SystemMessage(
-            content=SYSTEM_PROMPT.format(state=json.dumps(current, ensure_ascii=False), today=today)
+            content=SYSTEM_PROMPT.format(
+                state=json.dumps(prompt_state, ensure_ascii=False), today=today
+            )
         )
     ]
     for item in recent_messages(history):
@@ -216,7 +240,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
     msgs.append(user_message(message, image))
     compact_retry = False
     tool_calls_used = 0
-    for _ in range(5):
+    # A photo turn may need several searches before reading the matching item.
+    for _ in range(7 if image is not None else 5):
         visible_parts = []
 
         async def stream_reply():

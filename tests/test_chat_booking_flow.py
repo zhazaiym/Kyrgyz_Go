@@ -44,6 +44,10 @@ def complete_state():
         'Я готова бронировать тур',
         'Я готов бронировать тур',
         'Я готова бронировать туры',
+        'Да, отправляйте',
+        'Подтверждаю отправку',
+        'Да, всё верно, отправьте заявку',
+        'Yes, send it',
     ],
 )
 def test_complete_chat_requires_approval_and_shows_in_admin(
@@ -446,7 +450,7 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
     assert preview['can_confirm']
     assert preview['data']['client_name'] == 'Анна'
     assert preview['data']['people_count'] == 2
-    assert 'Я готова бронировать тур' in results[-1]['answer']
+    assert '«Подтверждаю»' in results[-1]['answer']
 
     submitted = asyncio.run(
         chat_service.process_message(session_id, identity, token, 'Я готова бронировать тур')
