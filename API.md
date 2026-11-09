@@ -3053,6 +3053,13 @@ pair across workers. Later reuse revokes the session and returns
 `401 {"code":"session_expired"}`. `POST /admin/logout/` accepts the same body,
 revokes its session and returns 204. Access tokens include a server-checked `sid`.
 
+`POST /admin/password/` changes the caller's own password, for every administrator
+role. Body: `{ "current_password": "...", "new_password": "..." }`; the new password
+has 8-128 characters and must differ from the current one (otherwise 422). A wrong
+current password returns `401 {"code":"invalid_credentials"}` and counts towards the
+login limiter. Success returns 204 and revokes all of the caller's sessions,
+including the current one, so every device must sign in again.
+
 `GET /admin/sessions/` and `DELETE /admin/sessions/{id}/` manage the caller's own
 sessions, for every administrator role. Responses omit token hashes. Other admins'
 records are not accessible through these endpoints; owners manage them in SQLAdmin.

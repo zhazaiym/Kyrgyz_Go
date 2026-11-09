@@ -229,3 +229,49 @@ def test_refresh_slides_without_crossing_absolute_ninety_days(client, security_a
         ).status_code
         == 401
     )
+
+
+def test_admin_changes_own_password_and_all_sessions_end(client, security_admin):
+    first = sign_in(client, security_admin).json()
+    second = sign_in(client, security_admin).json()
+    new_password = 'ChangedPassword456!'
+
+    wrong = client.post(
+        '/admin/password/',
+        json={'current_password': 'incorrect', 'new_password': new_password},
+        headers=auth(first),
+    )
+    assert wrong.status_code == 401 and wrong.json() == {'code': 'invalid_credentials'}
+    same = client.post(
+        '/admin/password/',
+        json={'current_password': PASSWORD, 'new_password': PASSWORD},
+        headers=auth(first),
+    )
+    assert same.status_code == 422
+    short = client.post(
+        '/admin/password/',
+        json={'current_password': PASSWORD, 'new_password': 'short'},
+        headers=auth(first),
+    )
+    assert short.status_code == 422
+    assert (
+        client.post(
+            '/admin/password/', json={'current_password': PASSWORD, 'new_password': new_password}
+        ).status_code
+        == 401
+    )
+
+    changed = client.post(
+        '/admin/password/',
+        json={'current_password': PASSWORD, 'new_password': new_password},
+        headers=auth(first),
+    )
+    assert changed.status_code == 204
+    for tokens in (first, second):
+        assert client.get('/admin/me/', headers=auth(tokens)).status_code == 401
+        refreshed = client.post(
+            '/admin/token/refresh/', json={'refresh_token': tokens['refresh_token']}
+        )
+        assert refreshed.status_code == 401
+    assert sign_in(client, security_admin).status_code == 401
+    assert sign_in(client, {**security_admin, 'password': new_password}).status_code == 200

@@ -143,6 +143,40 @@ def logout_admin(data: RefreshInput, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+class PasswordChangeInput(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+@admin_router.post('/password/', status_code=204)
+def change_admin_password(
+    data: PasswordChangeInput,
+    request: Request,
+    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    db: Session = Depends(get_db),
+):
+    """Change the caller's own password and sign out every session, including this one."""
+    enforce_login_attempt('admin-login', request, f'admin:{current_admin.id}')
+    encoded = current_admin.hashed_password
+    db.rollback()
+    if not verify_password(data.current_password, encoded):
+        return JSONResponse({'code': 'invalid_credentials'}, status_code=401)
+    if data.new_password == data.current_password:
+        raise HTTPException(422, detail=error_detail('validation_error'))
+    new_hash = password_hash.hash(data.new_password)
+    admin = db.get(Admin, current_admin.id, with_for_update=True, populate_existing=True)
+    if admin is None or not admin.is_active or admin.hashed_password != encoded:
+        return JSONResponse({'code': 'invalid_credentials'}, status_code=401)
+    admin.hashed_password = new_hash
+    (
+        db.query(AdminSession)
+        .filter(AdminSession.admin_id == admin.id, AdminSession.revoked_at.is_(None))
+        .update({AdminSession.revoked_at: utcnow()}, synchronize_session=False)
+    )
+    db.commit()
+    return Response(status_code=204)
+
+
 def _own_rows(db, model, admin_id):
     return (
         db.query(model)
