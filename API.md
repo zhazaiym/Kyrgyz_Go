@@ -242,7 +242,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 - В формах SQLAdmin у полей `image`, `main_image` и `qr_code` есть кнопка выбора файла: фото загружается на сервер, и ссылка сама подставляется в поле.
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
-- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password, totp_code и необязательный remember_device), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
+- `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
 - Подсказка для SQLAdmin: чтобы очистить перевод и запросить автоматический перевод, задайте конкретному полю пустую строку. Отсутствующий ключ в JSON сохраняет текущее значение. Не редактируйте служебные `_source_hashes` и `_manual_fields`.
 
 ## 10. Все HTTP endpoint
@@ -3038,14 +3038,10 @@ the route is hidden with a 404 response.
 
 ## Administrator authentication
 
-`POST /admin/login/` requires `username` and `password`. It also accepts `totp_code`,
-`device_token` and `remember_device` (default `false`). An enrolled account needs a
-valid trusted-device token or a TOTP/unused recovery code. The rollout flag applies
-only to accounts that have not been enrolled; see [DEPLOY.md](DEPLOY.md).
+`POST /admin/login/` requires `username` and `password`; there is no second factor.
 
 A successful response includes `access_token`, `token_type`, `expires_in`,
-`refresh_token` and `refresh_expires_at`. A code login with `remember_device=true`
-also returns `device_token` and `device_id`. Credential errors all return exactly
+`refresh_token` and `refresh_expires_at`. Credential errors all return exactly
 `401 {"code":"invalid_credentials"}`; the existing 429 limiter remains unchanged.
 
 `POST /admin/token/refresh/` accepts `{ "refresh_token": "..." }` and returns a new
@@ -3054,9 +3050,8 @@ pair across workers. Later reuse revokes the session and returns
 `401 {"code":"session_expired"}`. `POST /admin/logout/` accepts the same body,
 revokes its session and returns 204. Access tokens include a server-checked `sid`.
 
-`GET /admin/sessions/`, `DELETE /admin/sessions/{id}/`, `GET /admin/devices/`,
-`DELETE /admin/devices/{id}/` and `DELETE /admin/devices/` manage the caller's own
-records, for every administrator role. Responses omit token hashes. Other admins'
+`GET /admin/sessions/` and `DELETE /admin/sessions/{id}/` manage the caller's own
+sessions, for every administrator role. Responses omit token hashes. Other admins'
 records are not accessible through these endpoints; owners manage them in SQLAdmin.
 
 The backend rollout keeps access-token lifetime at 60 minutes. Set
