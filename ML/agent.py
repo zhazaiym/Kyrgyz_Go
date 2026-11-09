@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from contextvars import ContextVar
+from datetime import date
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -136,7 +137,16 @@ def missing_for_request(state):
         'client_name': state.get('client_name'),
         'phone': state.get('phone'),
     }
-    return [label for key, label in REQUIRED_FOR_REQUEST if not present[key]]
+    missing = [label for key, label in REQUIRED_FOR_REQUEST if not present[key]]
+    travel_date = state.get('travel_date')
+    if travel_date:
+        try:
+            past = date.fromisoformat(travel_date) < bishkek_today()
+        except (TypeError, ValueError):
+            past = True
+        if past:
+            missing.append('дата поездки в будущем (прошедшая или неверная не подходит)')
+    return missing
 
 
 def user_message(message, image=None):

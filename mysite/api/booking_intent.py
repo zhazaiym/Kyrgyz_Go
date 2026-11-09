@@ -188,7 +188,7 @@ def normalized_reply(message: str) -> str:
     return ' '.join(re.sub(r'[^\w\s]', ' ', message.casefold()).split())
 
 
-def _explicit_confirmation(message: str) -> bool:
+def explicit_confirmation(message: str) -> bool:
     if '?' in message or '？' in message:
         return False
     reply = normalized_reply(message)
@@ -206,7 +206,7 @@ def _explicit_confirmation(message: str) -> bool:
 
 
 def confirmation_allowed(stage: str, message: str) -> bool:
-    return stage == 'awaiting_confirmation' and _explicit_confirmation(message)
+    return stage == 'awaiting_confirmation' and explicit_confirmation(message)
 
 
 def rejection_allowed(stage: str, message: str) -> bool:

@@ -12,8 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from ML.agent import respond
 from mysite.admin.realtime import publish_new_request
-from mysite.api.booking_intent import confirmation_allowed, rejection_allowed
-from mysite.api.booking_text import booking_text, preview_text
+from mysite.api.booking_intent import confirmation_allowed, explicit_confirmation, rejection_allowed
+from mysite.api.booking_text import booking_text, not_ready_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.errors import error_detail
 from mysite.api.observability import record_booking_conflict
@@ -203,6 +203,20 @@ def _prepare_message(session_id, client_id, token, message):
                 'booking_submitted': result,
             }
             return final, None, None, None, None
+        if (
+            s.stage in ('consultation', 'collecting')
+            and explicit_confirmation(message)
+            and (
+                s.stage == 'collecting'
+                or build_preview(db, s)['complete']
+                or _assistant_asked_to_confirm(db, s)
+            )
+        ):
+            # The client confirms before any server summary, often after the AI
+            # paraphrased one. The AI must not answer this: show the real
+            # summary, or say exactly what is still missing. A first "book it"
+            # with nothing collected yet still goes to the AI.
+            return _confirmation_before_summary(db, s, message), None, None, None, None
         # Each accepted operation owns its row, including identical concurrent
         # text. A losing worker may remove only that row.
         user_message = ChatMessage(session_id=s.id, role='user', content=message)
@@ -227,6 +241,50 @@ def _prepare_message(session_id, client_id, token, message):
         db.commit()
 
     return None, original, previous, message_version, user_message_id
+
+
+CONFIRM_PROMPTS = ('«подтверждаю»', 'i confirm', '«ырастайм»', 'ich bestätige', '确认提交')
+
+
+def _last_assistant_text(db, s):
+    last = (
+        db.query(ChatMessage.content)
+        .filter(ChatMessage.session_id == s.id, ChatMessage.role == 'assistant')
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    return last[0] if last else ''
+
+
+def _assistant_asked_to_confirm(db, s):
+    text = _last_assistant_text(db, s).casefold()
+    return any(prompt in text for prompt in CONFIRM_PROMPTS)
+
+
+def _confirmation_before_summary(db, s, message):
+    advance_message_version(db, s)
+    preview = build_preview(db, s)
+    if preview['complete']:
+        s.stage = 'awaiting_confirmation'
+        preview = build_preview(db, s)
+        answer = _preview_summary(db, preview)
+    else:
+        s.stage = 'collecting'
+        answer = not_ready_text(s.state or {}, preview['missing_fields'])
+    db.add_all(
+        [
+            ChatMessage(session_id=s.id, role='user', content=message),
+            ChatMessage(session_id=s.id, role='assistant', content=answer),
+        ]
+    )
+    db.commit()
+    return {
+        'answer': answer,
+        'revision': s.revision,
+        'booking_intent': True,
+        'stage': s.stage,
+        'booking_preview': preview,
+    }
 
 
 def _save_message_response(
@@ -285,6 +343,10 @@ def _save_message_response(
                 s.stage = 'awaiting_confirmation'
             else:
                 s.stage = 'collecting'
+                if answer.strip() == _last_assistant_text(db, s).strip():
+                    # The model echoed its previous turn instead of asking for the
+                    # next field; name the missing fields deterministically.
+                    answer = not_ready_text(s.state or {}, preview['missing_fields'])
         if not answer.strip():
             raise HTTPException(502, error_detail('service_unavailable'))
         db.add(

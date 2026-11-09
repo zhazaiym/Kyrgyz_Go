@@ -24,6 +24,21 @@ TEXT = {
         'дату поездки и контакты. Заявка не отправлена; уточните данные, чтобы '
         'получить новую сводку.',
         'service_removed': 'Выбранная услуга убрана из заявки. Уточните остальные детали поездки.',
+        'not_ready': 'Заявка ещё не отправлена: не хватает данных — {fields}. Напишите их, и я покажу сводку для подтверждения.',
+        'fields': {
+            'tour_or_destination': 'тур или направление',
+            'travel_date': 'дата начала поездки',
+            'future_travel_date': 'дата поездки в будущем (с годом)',
+            'valid_travel_date': 'корректная дата поездки',
+            'people_count': 'количество человек',
+            'client_name': 'имя',
+            'phone': 'телефон',
+            'valid_email': 'корректный email',
+            'duration_days': 'длительность в днях',
+            'valid_tour': 'актуальный тур',
+            'valid_hotel': 'актуальный отель',
+            'valid_transport': 'актуальный транспорт',
+        },
     },
     'en': {
         'heading': 'Please review your request:',
@@ -50,6 +65,21 @@ TEXT = {
         'update the details to get a new summary.',
         'service_removed': 'The selected service was removed. Please review the remaining trip '
         'details.',
+        'not_ready': 'The request has not been sent yet: missing {fields}. Send them and I will show the summary to confirm.',
+        'fields': {
+            'tour_or_destination': 'tour or destination',
+            'travel_date': 'start date',
+            'future_travel_date': 'a future travel date (with year)',
+            'valid_travel_date': 'a valid travel date',
+            'people_count': 'number of people',
+            'client_name': 'name',
+            'phone': 'phone',
+            'valid_email': 'a valid email',
+            'duration_days': 'duration in days',
+            'valid_tour': 'an available tour',
+            'valid_hotel': 'an available hotel',
+            'valid_transport': 'available transport',
+        },
     },
     'ky': {
         'heading': 'Өтүнмөнүн маалыматтарын текшериңиз:',
@@ -75,6 +105,21 @@ TEXT = {
         'сапардын күнүн жана байланыштарды текшериңиз. Өтүнмө жөнөтүлгөн жок.',
         'service_removed': 'Тандалган кызмат өтүнмөдөн алынды. Сапардын калган маалыматын '
         'тактаңыз.',
+        'not_ready': 'Өтүнмө азырынча жөнөтүлгөн жок: маалымат жетишпейт — {fields}. Жазыңыз, ырастоо үчүн корутунду көрсөтөм.',
+        'fields': {
+            'tour_or_destination': 'тур же багыт',
+            'travel_date': 'сапардын башталыш күнү',
+            'future_travel_date': 'келечектеги сапар күнү (жылы менен)',
+            'valid_travel_date': 'туура сапар күнү',
+            'people_count': 'адамдардын саны',
+            'client_name': 'аты',
+            'phone': 'телефон',
+            'valid_email': 'туура email',
+            'duration_days': 'күн менен узактыгы',
+            'valid_tour': 'жеткиликтүү тур',
+            'valid_hotel': 'жеткиликтүү мейманкана',
+            'valid_transport': 'жеткиликтүү унаа',
+        },
     },
     'de': {
         'heading': 'Bitte prüfen Sie Ihre Anfrage:',
@@ -102,6 +147,21 @@ TEXT = {
         'gesendet.',
         'service_removed': 'Die gewählte Leistung wurde entfernt. Bitte prüfen Sie die weiteren '
         'Reisedaten.',
+        'not_ready': 'Die Anfrage wurde noch nicht gesendet: es fehlen {fields}. Schreiben Sie diese, dann zeige ich die Zusammenfassung zur Bestätigung.',
+        'fields': {
+            'tour_or_destination': 'Tour oder Reiseziel',
+            'travel_date': 'Reisebeginn',
+            'future_travel_date': 'ein künftiges Reisedatum (mit Jahr)',
+            'valid_travel_date': 'ein gültiges Reisedatum',
+            'people_count': 'Personenzahl',
+            'client_name': 'Name',
+            'phone': 'Telefon',
+            'valid_email': 'eine gültige E-Mail',
+            'duration_days': 'Dauer in Tagen',
+            'valid_tour': 'eine verfügbare Tour',
+            'valid_hotel': 'ein verfügbares Hotel',
+            'valid_transport': 'verfügbarer Transport',
+        },
     },
     'zh': {
         'heading': '请核对申请信息：',
@@ -122,6 +182,21 @@ TEXT = {
         'submitted': '申请编号 {request_id} 已发送给 Kerben Travel 客服。客服会尽快联系您，核实详细信息并确认预订。',
         'invalid_preview': '申请信息已更改或失效。请核对服务、旅行日期和联系方式。申请尚未发送，请更新信息以获取新的摘要。',
         'service_removed': '已移除所选服务。请核对其余旅行信息。',
+        'not_ready': '申请尚未发送：还缺少{fields}。请补充，我会显示摘要供您确认。',
+        'fields': {
+            'tour_or_destination': '行程或目的地',
+            'travel_date': '出发日期',
+            'future_travel_date': '未来的出行日期（含年份）',
+            'valid_travel_date': '有效的出行日期',
+            'people_count': '人数',
+            'client_name': '姓名',
+            'phone': '电话',
+            'valid_email': '有效邮箱',
+            'duration_days': '天数',
+            'valid_tour': '可用行程',
+            'valid_hotel': '可用酒店',
+            'valid_transport': '可用交通',
+        },
     },
 }
 
@@ -129,6 +204,12 @@ TEXT = {
 def booking_text(data):
     language = data.get('language', 'ru')
     return TEXT.get(language, TEXT['en'])
+
+
+def not_ready_text(data, missing):
+    text = booking_text(data)
+    names = [text['fields'].get(code, code) for code in dict.fromkeys(missing)]
+    return text['not_ready'].format(fields=', '.join(names))
 
 
 def preview_text(data, choice):
