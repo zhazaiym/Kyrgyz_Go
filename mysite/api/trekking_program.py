@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -35,9 +34,7 @@ def create_trekking_program(program: TrekkingProgramInputSchema, db: Session = D
     return program_db
 
 
-@trekking_program_router.get(
-    '/', response_model=list[TrekkingProgramOutSchema], dependencies=[Depends(current_client)]
-)
+@trekking_program_router.get('/', response_model=list[TrekkingProgramOutSchema])
 def list_trekking_programs(
     lang: Language = 'ru',
     trekking_id: int | None = None,
@@ -47,6 +44,9 @@ def list_trekking_programs(
     query = db.query(TrekkingProgram).join(Trekking).filter(Trekking.is_active.is_(True))
 
     if trekking_id is not None:
+        parent = db.get(Trekking, trekking_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(TrekkingProgram.trekking_id == trekking_id)
 
     records = (
@@ -59,11 +59,7 @@ def list_trekking_programs(
     return [localized(record, lang) for record in records]
 
 
-@trekking_program_router.get(
-    '/{program_id}/',
-    response_model=TrekkingProgramOutSchema,
-    dependencies=[Depends(current_client)],
-)
+@trekking_program_router.get('/{program_id}/', response_model=TrekkingProgramOutSchema)
 def detail_trekking_program(program_id: int, lang: Language = 'ru', db: Session = Depends(get_db)):
     program_db = db.get(TrekkingProgram, program_id)
 

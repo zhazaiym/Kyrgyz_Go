@@ -10,6 +10,7 @@ CATALOGUE_PREFIXES = {
     'tour-categories',
     'tours',
     'tour-images',
+    'tour-videos',
     'tour-programs',
     'hotels',
     'hotel-images',

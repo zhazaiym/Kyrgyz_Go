@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -29,14 +28,15 @@ def create_tour_image(data: TourImageInputSchema, db: Session = Depends(get_db))
     return image_db
 
 
-@tour_image_router.get(
-    '/', response_model=list[TourImageOutSchema], dependencies=[Depends(current_client)]
-)
+@tour_image_router.get('/', response_model=list[TourImageOutSchema])
 def list_tour_images(
     tour_id: int | None = None, db: Session = Depends(get_db), pagination: Pagination = Depends()
 ):
     query = db.query(TourImage).join(Tour).filter(Tour.is_active.is_(True))
     if tour_id is not None:
+        parent = db.get(Tour, tour_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(TourImage.tour_id == tour_id)
     return (
         query.order_by(TourImage.order, TourImage.id)
@@ -46,9 +46,7 @@ def list_tour_images(
     )
 
 
-@tour_image_router.get(
-    '/{image_id}/', response_model=TourImageOutSchema, dependencies=[Depends(current_client)]
-)
+@tour_image_router.get('/{image_id}/', response_model=TourImageOutSchema)
 def detail_tour_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(TourImage, image_id)
     if not image_db or not image_db.tour.is_active:

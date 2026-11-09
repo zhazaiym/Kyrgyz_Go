@@ -104,14 +104,14 @@ def test_tour_filters_are_applied_before_pagination(client, filtered_tours, para
     assert all('description' not in row for row in response.json())
 
 
-def test_public_tour_category_cannot_bypass_private_details(
+def test_public_tour_category_and_details_are_available_to_guests(
     client, filtered_tours, customer_headers
 ):
     _, low, _, _, category = filtered_tours
     response = client.get(f'/tours/category/{category}/')
     assert response.status_code == 200
     assert all(not {'description', 'included', 'excluded'} & row.keys() for row in response.json())
-    assert client.get(f'/tours/{low}/').status_code == 401
+    assert client.get(f'/tours/{low}/').status_code == 200
     assert (
         client.get(f'/tours/{low}/', headers=customer_headers).json()['description']
         == 'Private description'

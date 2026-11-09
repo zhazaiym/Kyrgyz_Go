@@ -1,0 +1,1661 @@
+{
+  "routes": [
+    {
+      "key": "ala-kul-keldike-4d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Каракольское ущелье — Ала-Куль — Алтын-Арашан — Ак-Суу",
+          "description": "Пеший маршрут: Каракольское ущелье — Ала-Куль — Алтын-Арашан — Ак-Суу. Местоположение: Кыргызстан, Иссык-Кульская область, Терскей Ала-Тоо. Продолжительность: 4 дн. Сезон: июнь–сентябрь. Этапы:\n1. Первый мост Каракольского ущелья — Кургактор — приют Сирота\n2. Приют Сирота — озеро Ала-Куль — перевал Ала-Куль — Кельдике\n3. Кельдике — Алтын-Арашан\n4. Алтын-Арашан — нижняя часть долины Арашан у Ак-Суу",
+          "route": "1. Первый мост Каракольского ущелья — Кургактор — приют Сирота\n2. Приют Сирота — озеро Ала-Куль — перевал Ала-Куль — Кельдике\n3. Кельдике — Алтын-Арашан\n4. Алтын-Арашан — нижняя часть долины Арашан у Ак-Суу",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "Walking itinerary: Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu. Location: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Duration: 4 day(s). Season: June–September. Stages:\n1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "route": "1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "Wanderroute: Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu. Region: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Dauer: 4 Tag(e). Saison: Juni–September. Etappen:\n1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "route": "1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "徒步路线：Karakol Gorge — Ala-Kul — Altyn-Arashan — Ak-Suu。地区：Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too。时长：4天。季节：6月至9月。每日路线：\n1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "route": "1. First bridge in Karakol Gorge — Kurgaktor — Sirota Hut\n2. Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike\n3. Keldike — Altyn-Arashan\n4. Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 4,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Первый мост Каракольского ущелья — Кургактор — приют Сирота",
+              "description": "Первый мост Каракольского ущелья — Кургактор — приют Сирота"
+            },
+            "en": {
+              "title": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut",
+              "description": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut"
+            },
+            "de": {
+              "title": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut",
+              "description": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut"
+            },
+            "zh": {
+              "title": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut",
+              "description": "First bridge in Karakol Gorge — Kurgaktor — Sirota Hut"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Приют Сирота — озеро Ала-Куль — перевал Ала-Куль — Кельдике",
+              "description": "Приют Сирота — озеро Ала-Куль — перевал Ала-Куль — Кельдике"
+            },
+            "en": {
+              "title": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike",
+              "description": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike"
+            },
+            "de": {
+              "title": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike",
+              "description": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike"
+            },
+            "zh": {
+              "title": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike",
+              "description": "Sirota Hut — Ala-Kul Lake — Ala-Kul Pass — Keldike"
+            }
+          }
+        },
+        {
+          "day_number": 3,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Кельдике — Алтын-Арашан",
+              "description": "Кельдике — Алтын-Арашан"
+            },
+            "en": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            },
+            "de": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            },
+            "zh": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            }
+          }
+        },
+        {
+          "day_number": 4,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Алтын-Арашан — нижняя часть долины Арашан у Ак-Суу",
+              "description": "Алтын-Арашан — нижняя часть долины Арашан у Ак-Суу"
+            },
+            "en": {
+              "title": "Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+              "description": "Altyn-Arashan — lower Arashan Valley near Ak-Suu"
+            },
+            "de": {
+              "title": "Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+              "description": "Altyn-Arashan — lower Arashan Valley near Ak-Suu"
+            },
+            "zh": {
+              "title": "Altyn-Arashan — lower Arashan Valley near Ak-Suu",
+              "description": "Altyn-Arashan — lower Arashan Valley near Ak-Suu"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://destinationkarakol.com/tours/hiking-trekking/the-pearl-ala-kul-lake/"
+      ],
+      "review_notes": "В заголовке дня 1 источника ошибочно указаны Жети-Огуз/Телеты; выбран вариант из текста дня через Сироту. Сумма этапов не совпадает с общим километражем; distance_km и max_altitude не заполнены.",
+      "image_key": "ala-kul",
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "jeti-oguz-ala-kul-5d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Жети-Огуз — Телеты — Ала-Куль — Алтын-Арашан — Ак-Суу",
+          "description": "Пеший маршрут: Жети-Огуз — Телеты — Ала-Куль — Алтын-Арашан — Ак-Суу. Местоположение: Кыргызстан, Иссык-Кульская область, Терскей Ала-Тоо. Продолжительность: 5 дн. Сезон: июнь–сентябрь. Этапы:\n1. Начало тропы к Телеты в Жети-Огузе — лагерь под перевалом Телеты\n2. Перевал Телеты — восточная долина Телеты — Каракольский альплагерь\n3. Каракольский альплагерь — Ала-Куль — перевал Ала-Куль — Кельдике\n4. Кельдике — Алтын-Арашан\n5. Алтын-Арашан — долина Арашан — Ак-Суу",
+          "route": "1. Начало тропы к Телеты в Жети-Огузе — лагерь под перевалом Телеты\n2. Перевал Телеты — восточная долина Телеты — Каракольский альплагерь\n3. Каракольский альплагерь — Ала-Куль — перевал Ала-Куль — Кельдике\n4. Кельдике — Алтын-Арашан\n5. Алтын-Арашан — долина Арашан — Ак-Суу",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "Walking itinerary: Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu. Location: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Duration: 5 day(s). Season: June–September. Stages:\n1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "route": "1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "Wanderroute: Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu. Region: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Dauer: 5 Tag(e). Saison: Juni–September. Etappen:\n1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "route": "1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu",
+          "description": "徒步路线：Jeti-Oguz — Telety — Ala-Kul — Altyn-Arashan — Ak-Suu。地区：Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too。时长：5天。季节：6月至9月。每日路线：\n1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "route": "1. Telety trailhead in Jeti-Oguz — camp below Telety Pass\n2. Telety Pass — East Telety Valley — Karakol Alp Camp\n3. Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike\n4. Keldike — Altyn-Arashan\n5. Altyn-Arashan — Arashan Valley — Ak-Suu",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 5,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Начало тропы к Телеты в Жети-Огузе — лагерь под перевалом Телеты",
+              "description": "Начало тропы к Телеты в Жети-Огузе — лагерь под перевалом Телеты"
+            },
+            "en": {
+              "title": "Telety trailhead in Jeti-Oguz — camp below Telety Pass",
+              "description": "Telety trailhead in Jeti-Oguz — camp below Telety Pass"
+            },
+            "de": {
+              "title": "Telety trailhead in Jeti-Oguz — camp below Telety Pass",
+              "description": "Telety trailhead in Jeti-Oguz — camp below Telety Pass"
+            },
+            "zh": {
+              "title": "Telety trailhead in Jeti-Oguz — camp below Telety Pass",
+              "description": "Telety trailhead in Jeti-Oguz — camp below Telety Pass"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Перевал Телеты — восточная долина Телеты — Каракольский альплагерь",
+              "description": "Перевал Телеты — восточная долина Телеты — Каракольский альплагерь"
+            },
+            "en": {
+              "title": "Telety Pass — East Telety Valley — Karakol Alp Camp",
+              "description": "Telety Pass — East Telety Valley — Karakol Alp Camp"
+            },
+            "de": {
+              "title": "Telety Pass — East Telety Valley — Karakol Alp Camp",
+              "description": "Telety Pass — East Telety Valley — Karakol Alp Camp"
+            },
+            "zh": {
+              "title": "Telety Pass — East Telety Valley — Karakol Alp Camp",
+              "description": "Telety Pass — East Telety Valley — Karakol Alp Camp"
+            }
+          }
+        },
+        {
+          "day_number": 3,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Каракольский альплагерь — Ала-Куль — перевал Ала-Куль — Кельдике",
+              "description": "Каракольский альплагерь — Ала-Куль — перевал Ала-Куль — Кельдике"
+            },
+            "en": {
+              "title": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike",
+              "description": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike"
+            },
+            "de": {
+              "title": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike",
+              "description": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike"
+            },
+            "zh": {
+              "title": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike",
+              "description": "Karakol Alp Camp — Ala-Kul — Ala-Kul Pass — Keldike"
+            }
+          }
+        },
+        {
+          "day_number": 4,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Кельдике — Алтын-Арашан",
+              "description": "Кельдике — Алтын-Арашан"
+            },
+            "en": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            },
+            "de": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            },
+            "zh": {
+              "title": "Keldike — Altyn-Arashan",
+              "description": "Keldike — Altyn-Arashan"
+            }
+          }
+        },
+        {
+          "day_number": 5,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Алтын-Арашан — долина Арашан — Ак-Суу",
+              "description": "Алтын-Арашан — долина Арашан — Ак-Суу"
+            },
+            "en": {
+              "title": "Altyn-Arashan — Arashan Valley — Ak-Suu",
+              "description": "Altyn-Arashan — Arashan Valley — Ak-Suu"
+            },
+            "de": {
+              "title": "Altyn-Arashan — Arashan Valley — Ak-Suu",
+              "description": "Altyn-Arashan — Arashan Valley — Ak-Suu"
+            },
+            "zh": {
+              "title": "Altyn-Arashan — Arashan Valley — Ak-Suu",
+              "description": "Altyn-Arashan — Arashan Valley — Ak-Suu"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://destinationkarakol.com/tours/hiking-trekking/celestial-mountains/"
+      ],
+      "review_notes": "Выбран пятидневный вариант, без конных участков. Сумма дневных расстояний отличается от итога источника; точные цифры опущены.",
+      "image_key": "ala-kul",
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "archa-tor-3d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Чон-Кызыл-Суу — Кашка-Тор — Арча-Тор — Жети-Огуз",
+          "description": "Пеший маршрут: Чон-Кызыл-Суу — Кашка-Тор — Арча-Тор — Жети-Огуз. Местоположение: Кыргызстан, Иссык-Кульская область, Терскей Ала-Тоо. Продолжительность: 3 дн. Сезон: июнь–октябрь. Этапы:\n1. Пеший старт в Чон-Кызыл-Суу — долина Кашка-Тор\n2. Кашка-Тор — перевал Арча-Тор — верхняя долина Жети-Огуз\n3. Верхняя долина Жети-Огуз — юрточная поляна — водопад Жети-Огуз",
+          "route": "1. Пеший старт в Чон-Кызыл-Суу — долина Кашка-Тор\n2. Кашка-Тор — перевал Арча-Тор — верхняя долина Жети-Огуз\n3. Верхняя долина Жети-Огуз — юрточная поляна — водопад Жети-Огуз",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz",
+          "description": "Walking itinerary: Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz. Location: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Duration: 3 day(s). Season: June–October. Stages:\n1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "route": "1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz",
+          "description": "Wanderroute: Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz. Region: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Dauer: 3 Tag(e). Saison: Juni–Oktober. Etappen:\n1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "route": "1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz",
+          "description": "徒步路线：Chon-Kyzyl-Suu — Kashka-Tor — Archa-Tor — Jeti-Oguz。地区：Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too。时长：3天。季节：6月至10月。每日路线：\n1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "route": "1. Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley\n2. Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley\n3. Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 3,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": 3800,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Пеший старт в Чон-Кызыл-Суу — долина Кашка-Тор",
+              "description": "Пеший старт в Чон-Кызыл-Суу — долина Кашка-Тор"
+            },
+            "en": {
+              "title": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley",
+              "description": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley"
+            },
+            "de": {
+              "title": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley",
+              "description": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley"
+            },
+            "zh": {
+              "title": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley",
+              "description": "Chon-Kyzyl-Suu trailhead — Kashka-Tor Valley"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Кашка-Тор — перевал Арча-Тор — верхняя долина Жети-Огуз",
+              "description": "Кашка-Тор — перевал Арча-Тор — верхняя долина Жети-Огуз"
+            },
+            "en": {
+              "title": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley",
+              "description": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley"
+            },
+            "de": {
+              "title": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley",
+              "description": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley"
+            },
+            "zh": {
+              "title": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley",
+              "description": "Kashka-Tor — Archa-Tor Pass — upper Jeti-Oguz Valley"
+            }
+          }
+        },
+        {
+          "day_number": 3,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Верхняя долина Жети-Огуз — юрточная поляна — водопад Жети-Огуз",
+              "description": "Верхняя долина Жети-Огуз — юрточная поляна — водопад Жети-Огуз"
+            },
+            "en": {
+              "title": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+              "description": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall"
+            },
+            "de": {
+              "title": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+              "description": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall"
+            },
+            "zh": {
+              "title": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall",
+              "description": "Upper Jeti-Oguz Valley — yurt meadow — Jeti-Oguz waterfall"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://destinationkarakol.com/tours/hiking-trekking/archa-tor-pass/"
+      ],
+      "review_notes": "В источнике общий путь 25 км, дневные этапы дают 26 км: distance_km оставлено пустым. После пешего финиша оператор описывает автотрансфер в Каракол; он не обещается как услуга нашей компании.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "karakol-radial-4d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Каракольский альплагерь: подножие пика Каракол и Ала-Куль",
+          "description": "Пеший маршрут: Каракольский альплагерь: подножие пика Каракол и Ала-Куль. Местоположение: Кыргызстан, Иссык-Кульская область, Терскей Ала-Тоо. Продолжительность: 4 дн. Сезон: июнь–октябрь. Этапы:\n1. Первый мост Каракольского ущелья — Каракольский альплагерь\n2. Каракольский альплагерь — подножие пика Каракол — альплагерь\n3. Каракольский альплагерь — озеро Ала-Куль — альплагерь\n4. Каракольский альплагерь — начало тропы у первого моста",
+          "route": "1. Первый мост Каракольского ущелья — Каракольский альплагерь\n2. Каракольский альплагерь — подножие пика Каракол — альплагерь\n3. Каракольский альплагерь — озеро Ала-Куль — альплагерь\n4. Каракольский альплагерь — начало тропы у первого моста",
+          "difficulty": "Классификация источника противоречива; требуется уточнение",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Karakol Alp Camp: Karakol Peak foot and Ala-Kul",
+          "description": "Walking itinerary: Karakol Alp Camp: Karakol Peak foot and Ala-Kul. Location: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Duration: 4 day(s). Season: June–October. Stages:\n1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "route": "1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "difficulty": "Conflicting source grading; confirmation required",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Karakol Alp Camp: Karakol Peak foot and Ala-Kul",
+          "description": "Wanderroute: Karakol Alp Camp: Karakol Peak foot and Ala-Kul. Region: Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too. Dauer: 4 Tag(e). Saison: Juni–Oktober. Etappen:\n1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "route": "1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "difficulty": "Widersprüchliche Einstufung; Klärung erforderlich",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Karakol Alp Camp: Karakol Peak foot and Ala-Kul",
+          "description": "徒步路线：Karakol Alp Camp: Karakol Peak foot and Ala-Kul。地区：Kyrgyzstan, Issyk-Kul Region, Terskey Ala-Too。时长：4天。季节：6月至10月。每日路线：\n1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "route": "1. First bridge in Karakol Gorge — Karakol Alp Camp\n2. Karakol Alp Camp — foot of Karakol Peak — Alp Camp\n3. Karakol Alp Camp — Ala-Kul Lake — Alp Camp\n4. Karakol Alp Camp — trailhead near the first bridge",
+          "difficulty": "来源难度分级不一致，需确认",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 4,
+      "duration_hours": null,
+      "distance_km": "49.00",
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Первый мост Каракольского ущелья — Каракольский альплагерь",
+              "description": "Первый мост Каракольского ущелья — Каракольский альплагерь"
+            },
+            "en": {
+              "title": "First bridge in Karakol Gorge — Karakol Alp Camp",
+              "description": "First bridge in Karakol Gorge — Karakol Alp Camp"
+            },
+            "de": {
+              "title": "First bridge in Karakol Gorge — Karakol Alp Camp",
+              "description": "First bridge in Karakol Gorge — Karakol Alp Camp"
+            },
+            "zh": {
+              "title": "First bridge in Karakol Gorge — Karakol Alp Camp",
+              "description": "First bridge in Karakol Gorge — Karakol Alp Camp"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Каракольский альплагерь — подножие пика Каракол — альплагерь",
+              "description": "Каракольский альплагерь — подножие пика Каракол — альплагерь"
+            },
+            "en": {
+              "title": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp",
+              "description": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp"
+            },
+            "de": {
+              "title": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp",
+              "description": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp"
+            },
+            "zh": {
+              "title": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp",
+              "description": "Karakol Alp Camp — foot of Karakol Peak — Alp Camp"
+            }
+          }
+        },
+        {
+          "day_number": 3,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Каракольский альплагерь — озеро Ала-Куль — альплагерь",
+              "description": "Каракольский альплагерь — озеро Ала-Куль — альплагерь"
+            },
+            "en": {
+              "title": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp",
+              "description": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp"
+            },
+            "de": {
+              "title": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp",
+              "description": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp"
+            },
+            "zh": {
+              "title": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp",
+              "description": "Karakol Alp Camp — Ala-Kul Lake — Alp Camp"
+            }
+          }
+        },
+        {
+          "day_number": 4,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Каракольский альплагерь — начало тропы у первого моста",
+              "description": "Каракольский альплагерь — начало тропы у первого моста"
+            },
+            "en": {
+              "title": "Karakol Alp Camp — trailhead near the first bridge",
+              "description": "Karakol Alp Camp — trailhead near the first bridge"
+            },
+            "de": {
+              "title": "Karakol Alp Camp — trailhead near the first bridge",
+              "description": "Karakol Alp Camp — trailhead near the first bridge"
+            },
+            "zh": {
+              "title": "Karakol Alp Camp — trailhead near the first bridge",
+              "description": "Karakol Alp Camp — trailhead near the first bridge"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://visitkarakol.com/radialtrekkings"
+      ],
+      "review_notes": "49 км — явно указанная пешая часть, не 63 км с транспортом. Источник одновременно называет маршрут подходящим начинающим и требующим опыта; сложность оставлена на уточнение. Восхождения на пик нет.",
+      "image_key": "ala-kul",
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "jyrgalan-turnaluu-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Жыргалан — озеро Турналуу-Кёль — Жыргалан",
+          "description": "Пеший маршрут: Жыргалан — озеро Турналуу-Кёль — Жыргалан. Местоположение: Кыргызстан, Иссык-Кульская область, окрестности Жыргалана. Продолжительность: 1 дн. Сезон: июнь–сентябрь. Этапы:\n1. Жыргалан — озеро Турналуу-Кёль — панорамы долины — Жыргалан",
+          "route": "1. Жыргалан — озеро Турналуу-Кёль — панорамы долины — Жыргалан",
+          "difficulty": "Лёгкая",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Jyrgalan — Turnaluu-Kol Lake — Jyrgalan",
+          "description": "Walking itinerary: Jyrgalan — Turnaluu-Kol Lake — Jyrgalan. Location: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Duration: 1 day(s). Season: June–September. Stages:\n1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "route": "1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "difficulty": "Easy",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Jyrgalan — Turnaluu-Kol Lake — Jyrgalan",
+          "description": "Wanderroute: Jyrgalan — Turnaluu-Kol Lake — Jyrgalan. Region: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Dauer: 1 Tag(e). Saison: Juni–September. Etappen:\n1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "route": "1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "difficulty": "Leicht",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Jyrgalan — Turnaluu-Kol Lake — Jyrgalan",
+          "description": "徒步路线：Jyrgalan — Turnaluu-Kol Lake — Jyrgalan。地区：Kyrgyzstan, Issyk-Kul Region, Jyrgalan。时长：1天。季节：6月至9月。每日路线：\n1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "route": "1. Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+          "difficulty": "简单",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": "13.30",
+      "max_altitude": 2862,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Жыргалан — озеро Турналуу-Кёль — панорамы долины — Жыргалан",
+              "description": "Жыргалан — озеро Турналуу-Кёль — панорамы долины — Жыргалан"
+            },
+            "en": {
+              "title": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+              "description": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan"
+            },
+            "de": {
+              "title": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+              "description": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan"
+            },
+            "zh": {
+              "title": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan",
+              "description": "Jyrgalan — Turnaluu-Kol Lake — valley viewpoints — Jyrgalan"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://jyrgalan.com/what-to-do/trekking/"
+      ],
+      "review_notes": "Выбран пеший Lake Panorama 13.3 км; не конный маршрут 12 км.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "jyrgalan-kok-bel-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Жыргалан — водопад Кок-Бель — Жыргалан",
+          "description": "Пеший маршрут: Жыргалан — водопад Кок-Бель — Жыргалан. Местоположение: Кыргызстан, Иссык-Кульская область, окрестности Жыргалана. Продолжительность: 1 дн. Сезон: май–октябрь. Этапы:\n1. Жыргалан — восточные пастбища — узкий каньон — Кок-Бель — Жыргалан",
+          "route": "1. Жыргалан — восточные пастбища — узкий каньон — Кок-Бель — Жыргалан",
+          "difficulty": "Лёгкая",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Jyrgalan — Kok-Bel Waterfall — Jyrgalan",
+          "description": "Walking itinerary: Jyrgalan — Kok-Bel Waterfall — Jyrgalan. Location: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Duration: 1 day(s). Season: May–October. Stages:\n1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "route": "1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "difficulty": "Easy",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Jyrgalan — Kok-Bel Waterfall — Jyrgalan",
+          "description": "Wanderroute: Jyrgalan — Kok-Bel Waterfall — Jyrgalan. Region: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Dauer: 1 Tag(e). Saison: Mai–Oktober. Etappen:\n1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "route": "1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "difficulty": "Leicht",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Jyrgalan — Kok-Bel Waterfall — Jyrgalan",
+          "description": "徒步路线：Jyrgalan — Kok-Bel Waterfall — Jyrgalan。地区：Kyrgyzstan, Issyk-Kul Region, Jyrgalan。时长：1天。季节：5月至10月。每日路线：\n1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "route": "1. Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+          "difficulty": "简单",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": "12.00",
+      "max_altitude": 2659,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Жыргалан — восточные пастбища — узкий каньон — Кок-Бель — Жыргалан",
+              "description": "Жыргалан — восточные пастбища — узкий каньон — Кок-Бель — Жыргалан"
+            },
+            "en": {
+              "title": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+              "description": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan"
+            },
+            "de": {
+              "title": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+              "description": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan"
+            },
+            "zh": {
+              "title": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan",
+              "description": "Jyrgalan — eastern pastures — narrow canyon — Kok-Bel — Jyrgalan"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://jyrgalan.com/what-to-do/trekking/"
+      ],
+      "review_notes": "",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "jyrgalan-uuru-tor-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан",
+          "description": "Пеший маршрут: Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан. Местоположение: Кыргызстан, Иссык-Кульская область, окрестности Жыргалана. Продолжительность: 1 дн. Сезон: июнь–сентябрь. Этапы:\n1. Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан",
+          "route": "1. Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "description": "Walking itinerary: Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan. Location: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Duration: 1 day(s). Season: June–September. Stages:\n1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "route": "1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "description": "Wanderroute: Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan. Region: Kyrgyzstan, Issyk-Kul Region, Jyrgalan. Dauer: 1 Tag(e). Saison: Juni–September. Etappen:\n1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "route": "1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "description": "徒步路线：Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan。地区：Kyrgyzstan, Issyk-Kul Region, Jyrgalan。时长：1天。季节：6月至9月。每日路线：\n1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "route": "1. Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": "19.00",
+      "max_altitude": 3117,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан",
+              "description": "Жыргалан — Эки-Чат — Ууру-Тор — панорамный гребень — Жыргалан"
+            },
+            "en": {
+              "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+              "description": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan"
+            },
+            "de": {
+              "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+              "description": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan"
+            },
+            "zh": {
+              "title": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan",
+              "description": "Jyrgalan — Eki-Chat — Uuru-Tor — panorama ridge — Jyrgalan"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://jyrgalan.com/what-to-do/trekking/"
+      ],
+      "review_notes": "Пешая Robber’s Canyon loop. Название Emil’s Peak не переименовано в Tuzdun Bashy: у пешего и конного описаний различается номенклатура.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "kyzart-song-kol-2d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Кызарт — Чаарарча — Килемче — Бучук — Сон-Куль",
+          "description": "Пеший маршрут: Кызарт — Чаарарча — Килемче — Бучук — Сон-Куль. Местоположение: Кыргызстан, Нарынская область, Кызарт — Сон-Куль. Продолжительность: 2 дн. Сезон: июнь–август. Этапы:\n1. Кызарт — перевал Чаарарча — Килемче\n2. Килемче — перевал Бучук — берег Сон-Куля",
+          "route": "1. Кызарт — перевал Чаарарча — Килемче\n2. Килемче — перевал Бучук — берег Сон-Куля",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol",
+          "description": "Walking itinerary: Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol. Location: Kyrgyzstan, Naryn Region, Kyzart — Song-Kol. Duration: 2 day(s). Season: June–August. Stages:\n1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "route": "1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol",
+          "description": "Wanderroute: Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol. Region: Kyrgyzstan, Naryn Region, Kyzart — Song-Kol. Dauer: 2 Tag(e). Saison: Juni–August. Etappen:\n1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "route": "1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol",
+          "description": "徒步路线：Kyzart — Chaararcha — Kilemche — Buchuk — Song-Kol。地区：Kyrgyzstan, Naryn Region, Kyzart — Song-Kol。时长：2天。季节：6月至8月。每日路线：\n1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "route": "1. Kyzart — Chaararcha Pass — Kilemche\n2. Kilemche — Buchuk Pass — Song-Kol shore",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 2,
+      "duration_hours": null,
+      "distance_km": "26.00",
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Кызарт — перевал Чаарарча — Килемче",
+              "description": "Кызарт — перевал Чаарарча — Килемче"
+            },
+            "en": {
+              "title": "Kyzart — Chaararcha Pass — Kilemche",
+              "description": "Kyzart — Chaararcha Pass — Kilemche"
+            },
+            "de": {
+              "title": "Kyzart — Chaararcha Pass — Kilemche",
+              "description": "Kyzart — Chaararcha Pass — Kilemche"
+            },
+            "zh": {
+              "title": "Kyzart — Chaararcha Pass — Kilemche",
+              "description": "Kyzart — Chaararcha Pass — Kilemche"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Килемче — перевал Бучук — берег Сон-Куля",
+              "description": "Килемче — перевал Бучук — берег Сон-Куля"
+            },
+            "en": {
+              "title": "Kilemche — Buchuk Pass — Song-Kol shore",
+              "description": "Kilemche — Buchuk Pass — Song-Kol shore"
+            },
+            "de": {
+              "title": "Kilemche — Buchuk Pass — Song-Kol shore",
+              "description": "Kilemche — Buchuk Pass — Song-Kol shore"
+            },
+            "zh": {
+              "title": "Kilemche — Buchuk Pass — Song-Kol shore",
+              "description": "Kilemche — Buchuk Pass — Song-Kol shore"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://www.tuk.kg/tours/song-kol-trekking-trip"
+      ],
+      "review_notes": "Только пеший двухдневный вариант ТУК, не конный тур. Июнь–август — сезон выбранной программы, а не доступные даты компании.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "kol-ukok-kol-tor-2d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Тропа Кол-Укок — Кол-Укок — Кол-Тор — возврат к тропе",
+          "description": "Пеший маршрут: Тропа Кол-Укок — Кол-Укок — Кол-Тор — возврат к тропе. Местоположение: Кыргызстан, Нарынская область, Кочкорский район. Продолжительность: 2 дн. Сезон: июнь–сентябрь. Этапы:\n1. Автомобильный конец подъездной дороги в ущелье Кол-Укок — озеро Кол-Укок\n2. Кол-Укок — радиальный выход к Кол-Тору — спуск к месту старта",
+          "route": "1. Автомобильный конец подъездной дороги в ущелье Кол-Укок — озеро Кол-Укок\n2. Кол-Укок — радиальный выход к Кол-Тору — спуск к месту старта",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead",
+          "description": "Walking itinerary: Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead. Location: Kyrgyzstan, Naryn Region, Kochkor District. Duration: 2 day(s). Season: June–September. Stages:\n1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "route": "1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead",
+          "description": "Wanderroute: Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead. Region: Kyrgyzstan, Naryn Region, Kochkor District. Dauer: 2 Tag(e). Saison: Juni–September. Etappen:\n1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "route": "1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead",
+          "description": "徒步路线：Kol-Ukok trailhead — Kol-Ukok — Kol-Tor — trailhead。地区：Kyrgyzstan, Naryn Region, Kochkor District。时长：2天。季节：6月至9月。每日路线：\n1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "route": "1. Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake\n2. Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 2,
+      "duration_hours": null,
+      "distance_km": "24.00",
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Автомобильный конец подъездной дороги в ущелье Кол-Укок — озеро Кол-Укок",
+              "description": "Автомобильный конец подъездной дороги в ущелье Кол-Укок — озеро Кол-Укок"
+            },
+            "en": {
+              "title": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake",
+              "description": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake"
+            },
+            "de": {
+              "title": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake",
+              "description": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake"
+            },
+            "zh": {
+              "title": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake",
+              "description": "Road-end trailhead in Kol-Ukok Gorge — Kol-Ukok Lake"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Кол-Укок — радиальный выход к Кол-Тору — спуск к месту старта",
+              "description": "Кол-Укок — радиальный выход к Кол-Тору — спуск к месту старта"
+            },
+            "en": {
+              "title": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+              "description": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead"
+            },
+            "de": {
+              "title": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+              "description": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead"
+            },
+            "zh": {
+              "title": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead",
+              "description": "Kol-Ukok — side hike to Kol-Tor — descent to the trailhead"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://www.tuk.kg/tours/kol-ukok-kol-tor-lakes",
+        "https://www.intourists.kg/en/tours/kol-tor-and-kol-ukok-lakes"
+      ],
+      "review_notes": "Точный GPS автомобильной высадки в источниках не опубликован; не подменять его селом Исаакеев из другого варианта. Высоты начала и наборы в источниках расходятся; max_altitude пусто.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "belogorka-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Конец дороги в ущелье Сокулук — водопад Белогорка — возврат",
+          "description": "Пеший маршрут: Конец дороги в ущелье Сокулук — водопад Белогорка — возврат. Местоположение: Кыргызстан, Чуйская область, Кыргызский хребет. Продолжительность: 1 дн. Сезон: июнь–август. Этапы:\n1. Конец дороги в ущелье Сокулук — Белогорский водопад — место старта",
+          "route": "1. Конец дороги в ущелье Сокулук — Белогорский водопад — место старта",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Sokuluk Gorge road end — Belogorka Waterfall — return",
+          "description": "Walking itinerary: Sokuluk Gorge road end — Belogorka Waterfall — return. Location: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Duration: 1 day(s). Season: June–August. Stages:\n1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "route": "1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Sokuluk Gorge road end — Belogorka Waterfall — return",
+          "description": "Wanderroute: Sokuluk Gorge road end — Belogorka Waterfall — return. Region: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Dauer: 1 Tag(e). Saison: Juni–August. Etappen:\n1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "route": "1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Sokuluk Gorge road end — Belogorka Waterfall — return",
+          "description": "徒步路线：Sokuluk Gorge road end — Belogorka Waterfall — return。地区：Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too。时长：1天。季节：6月至8月。每日路线：\n1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "route": "1. Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Конец дороги в ущелье Сокулук — Белогорский водопад — место старта",
+              "description": "Конец дороги в ущелье Сокулук — Белогорский водопад — место старта"
+            },
+            "en": {
+              "title": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+              "description": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead"
+            },
+            "de": {
+              "title": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+              "description": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead"
+            },
+            "zh": {
+              "title": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead",
+              "description": "Sokuluk Gorge road end — Belogorka Waterfall — trailhead"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://kyrgyzconcept.kg/tours/inbounds/106/",
+        "https://tour.too.kg/tur-vodopad-belogorka"
+      ],
+      "review_notes": "Высоты 2100/2200 м и время у разных операторов различаются. duration_hours и max_altitude не заполняются; 1 день — без обещания расписания.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "ak-sai-waterfall-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Альплагерь Ала-Арча — Разбитое сердце — Ак-Сай — возврат",
+          "description": "Пеший маршрут: Альплагерь Ала-Арча — Разбитое сердце — Ак-Сай — возврат. Местоположение: Кыргызстан, Чуйская область, Кыргызский хребет. Продолжительность: 1 дн. Сезон: июнь–сентябрь. Этапы:\n1. Альплагерь Ала-Арча — скала Разбитое сердце — водопад Ак-Сай — альплагерь",
+          "route": "1. Альплагерь Ала-Арча — скала Разбитое сердце — водопад Ак-Сай — альплагерь",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return",
+          "description": "Walking itinerary: Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return. Location: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Duration: 1 day(s). Season: June–September. Stages:\n1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return",
+          "description": "Wanderroute: Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return. Region: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Dauer: 1 Tag(e). Saison: Juni–September. Etappen:\n1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return",
+          "description": "徒步路线：Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — return。地区：Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too。时长：1天。季节：6月至9月。每日路线：\n1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Альплагерь Ала-Арча — скала Разбитое сердце — водопад Ак-Сай — альплагерь",
+              "description": "Альплагерь Ала-Арча — скала Разбитое сердце — водопад Ак-Сай — альплагерь"
+            },
+            "en": {
+              "title": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+              "description": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager"
+            },
+            "de": {
+              "title": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+              "description": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager"
+            },
+            "zh": {
+              "title": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager",
+              "description": "Ala-Archa Alplager — Broken Heart rock — Ak-Sai Waterfall — Alplager"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://concept.kg/tours/inbounds/to_pdf/63/",
+        "https://alaarchapark.com/trails",
+        "https://bookit.kg/en/kyrgyzstan/bishkek-chuy/ak-sai-waterfall-ratsek"
+      ],
+      "review_notes": "Источники дают диапазоны расстояний и высот. Точные числовые поля пусты. Перед выходом уточнить актуальное начало тропы из-за изменений инфраструктуры.",
+      "image_key": "ak-sai",
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "ratsek-hut-2d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Альплагерь Ала-Арча — хижина Рацека — альплагерь",
+          "description": "Пеший маршрут: Альплагерь Ала-Арча — хижина Рацека — альплагерь. Местоположение: Кыргызстан, Чуйская область, Кыргызский хребет. Продолжительность: 2 дн. Сезон: июнь–сентябрь. Этапы:\n1. Альплагерь Ала-Арча — Разбитое сердце — водопад Ак-Сай — хижина Рацека\n2. Хижина Рацека — тропа Ак-Сай — альплагерь Ала-Арча",
+          "route": "1. Альплагерь Ала-Арча — Разбитое сердце — водопад Ак-Сай — хижина Рацека\n2. Хижина Рацека — тропа Ак-Сай — альплагерь Ала-Арча",
+          "difficulty": "Сложная",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Ala-Archa Alplager — Ratsek Hut — Alplager",
+          "description": "Walking itinerary: Ala-Archa Alplager — Ratsek Hut — Alplager. Location: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Duration: 2 day(s). Season: June–September. Stages:\n1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "difficulty": "Hard",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Ala-Archa Alplager — Ratsek Hut — Alplager",
+          "description": "Wanderroute: Ala-Archa Alplager — Ratsek Hut — Alplager. Region: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Dauer: 2 Tag(e). Saison: Juni–September. Etappen:\n1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "difficulty": "Schwer",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Ala-Archa Alplager — Ratsek Hut — Alplager",
+          "description": "徒步路线：Ala-Archa Alplager — Ratsek Hut — Alplager。地区：Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too。时长：2天。季节：6月至9月。每日路线：\n1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "route": "1. Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut\n2. Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+          "difficulty": "困难",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 2,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Альплагерь Ала-Арча — Разбитое сердце — водопад Ак-Сай — хижина Рацека",
+              "description": "Альплагерь Ала-Арча — Разбитое сердце — водопад Ак-Сай — хижина Рацека"
+            },
+            "en": {
+              "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut",
+              "description": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut"
+            },
+            "de": {
+              "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut",
+              "description": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut"
+            },
+            "zh": {
+              "title": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut",
+              "description": "Ala-Archa Alplager — Broken Heart — Ak-Sai Waterfall — Ratsek Hut"
+            }
+          }
+        },
+        {
+          "day_number": 2,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Хижина Рацека — тропа Ак-Сай — альплагерь Ала-Арча",
+              "description": "Хижина Рацека — тропа Ак-Сай — альплагерь Ала-Арча"
+            },
+            "en": {
+              "title": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+              "description": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager"
+            },
+            "de": {
+              "title": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+              "description": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager"
+            },
+            "zh": {
+              "title": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager",
+              "description": "Ratsek Hut — Ak-Sai trail — Ala-Archa Alplager"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://travelhub.kg/partners/doctourkyrgyz/tours/ratsek-hut",
+        "https://alaarchapark.com/trails",
+        "https://bookit.kg/en/kyrgyzstan/bishkek-chuy/ak-sai-waterfall-ratsek"
+      ],
+      "review_notes": "Выбран летний двухдневный вариант с ночёвкой, не однодневный рывок. Выход на ледник и восхождения не входят в пеший маршрут. Ночёвка компанией не подтверждена; высоты в источниках даны диапазоном.",
+      "image_key": "ak-sai",
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "kegeti-kol-tor-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Начало тропы в Кегеты — озеро Көл-Төр — возврат",
+          "description": "Пеший маршрут: Начало тропы в Кегеты — озеро Көл-Төр — возврат. Местоположение: Кыргызстан, Чуйская область, Кыргызский хребет. Продолжительность: 1 дн. Сезон: июнь–октябрь. Этапы:\n1. Начало тропы Кол-Тор в ущелье Кегеты — озеро Көл-Төр — та же точка старта",
+          "route": "1. Начало тропы Кол-Тор в ущелье Кегеты — озеро Көл-Төр — та же точка старта",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Kegeti trailhead — Kol-Tor Lake — return",
+          "description": "Walking itinerary: Kegeti trailhead — Kol-Tor Lake — return. Location: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Duration: 1 day(s). Season: June–October. Stages:\n1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "route": "1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Kegeti trailhead — Kol-Tor Lake — return",
+          "description": "Wanderroute: Kegeti trailhead — Kol-Tor Lake — return. Region: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Dauer: 1 Tag(e). Saison: Juni–Oktober. Etappen:\n1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "route": "1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Kegeti trailhead — Kol-Tor Lake — return",
+          "description": "徒步路线：Kegeti trailhead — Kol-Tor Lake — return。地区：Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too。时长：1天。季节：6月至10月。每日路线：\n1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "route": "1. Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Начало тропы Кол-Тор в ущелье Кегеты — озеро Көл-Төр — та же точка старта",
+              "description": "Начало тропы Кол-Тор в ущелье Кегеты — озеро Көл-Төр — та же точка старта"
+            },
+            "en": {
+              "title": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+              "description": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead"
+            },
+            "de": {
+              "title": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+              "description": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead"
+            },
+            "zh": {
+              "title": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead",
+              "description": "Kol-Tor trailhead in Kegeti Gorge — Kol-Tor Lake — same trailhead"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://travelhub.kg/tours/kegeti-kol-tor",
+        "https://needguide.net/view_tour.php?tour_id=38461"
+      ],
+      "review_notes": "Не путать с Кол-Тором над Кол-Укоком в Нарынской области. Опубликованный километраж неодинаков у разных вариантов; оставлен пустым.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "konorchek-central-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Главный вход Конорчека — центральный амфитеатр — возврат",
+          "description": "Пеший маршрут: Главный вход Конорчека — центральный амфитеатр — возврат. Местоположение: Кыргызстан, Боомское ущелье, Конорчек. Продолжительность: 1 дн. Сезон: весна и ранняя осень; только в сухую погоду. Этапы:\n1. Парковка у указателя перед Красным мостом — главный вход — центральная площадь каньона — возврат к парковке",
+          "route": "1. Парковка у указателя перед Красным мостом — главный вход — центральная площадь каньона — возврат к парковке",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Konorchek main entrance — central amphitheatre — return",
+          "description": "Walking itinerary: Konorchek main entrance — central amphitheatre — return. Location: Kyrgyzstan, Boom Gorge, Konorchek. Duration: 1 day(s). Season: spring and early autumn; dry weather only. Stages:\n1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "route": "1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Konorchek main entrance — central amphitheatre — return",
+          "description": "Wanderroute: Konorchek main entrance — central amphitheatre — return. Region: Kyrgyzstan, Boom Gorge, Konorchek. Dauer: 1 Tag(e). Saison: Frühling und Frühherbst; nur bei trockenem Wetter. Etappen:\n1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "route": "1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Konorchek main entrance — central amphitheatre — return",
+          "description": "徒步路线：Konorchek main entrance — central amphitheatre — return。地区：Kyrgyzstan, Boom Gorge, Konorchek。时长：1天。季节：春季和初秋；仅限干燥天气。每日路线：\n1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "route": "1. Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Парковка у указателя перед Красным мостом — главный вход — центральная площадь каньона — возврат к парковке",
+              "description": "Парковка у указателя перед Красным мостом — главный вход — центральная площадь каньона — возврат к парковке"
+            },
+            "en": {
+              "title": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+              "description": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park"
+            },
+            "de": {
+              "title": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+              "description": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park"
+            },
+            "zh": {
+              "title": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park",
+              "description": "Signed car park before the Red Bridge — main entrance — central canyon amphitheatre — return to car park"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://hiking.kg/ru/chuy/konorchek",
+        "https://kyrgyzconcept.kg/tours/inbounds/86/",
+        "https://www.xtravel.kg/ru/blog/kanony-konorchek-krasnye-skaly-boomskogo-uschelya-po-doroge-na-issyk-kul"
+      ],
+      "review_notes": "Выбран маршрут главного входа до центральной площади. Не весь лабиринт и не короткая остановка у трассы. Уровень 3/5 hiking.kg; сезон — рекомендация xtravel. Не идти при угрозе ливней.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    },
+    {
+      "key": "alamedin-teke-tor-1d",
+      "checked_on": "2026-11-09",
+      "content": {
+        "ru": {
+          "title": "Конец дороги у Тёплых Ключей — Теке-Төр — возврат",
+          "description": "Пеший маршрут: Конец дороги у Тёплых Ключей — Теке-Төр — возврат. Местоположение: Кыргызстан, Чуйская область, Кыргызский хребет. Продолжительность: 1 дн. Сезон: конец весны — начало лета. Этапы:\n1. Конец дороги выше Тёплых Ключей — тропа по Аламедину — водопад Теке-Төр — возврат к парковке",
+          "route": "1. Конец дороги выше Тёплых Ключей — тропа по Аламедину — водопад Теке-Төр — возврат к парковке",
+          "difficulty": "Средняя",
+          "requirements": "Обувь для горных троп, защита от дождя и холода, вода и питание. Перед выходом проверить погоду, доступность тропы и собственную подготовку. Ночёвки, сопровождение, транспорт и питание компанией пока не подтверждены.",
+          "included": null
+        },
+        "en": {
+          "title": "Road end near Teplye Klyuchi — Teke-Tor Waterfall — return",
+          "description": "Walking itinerary: Road end near Teplye Klyuchi — Teke-Tor Waterfall — return. Location: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Duration: 1 day(s). Season: late spring–early summer. Stages:\n1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "route": "1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "difficulty": "Moderate",
+          "requirements": "Trail footwear, rain and cold protection, water and food. Check weather, trail access and personal fitness before departure. Overnight stays, guiding, transport and meals have not been confirmed by our company.",
+          "included": null
+        },
+        "de": {
+          "title": "Road end near Teplye Klyuchi — Teke-Tor Waterfall — return",
+          "description": "Wanderroute: Road end near Teplye Klyuchi — Teke-Tor Waterfall — return. Region: Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too. Dauer: 1 Tag(e). Saison: Spätfrühling–Frühsommer. Etappen:\n1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "route": "1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "difficulty": "Mittel",
+          "requirements": "Wanderschuhe, Regen- und Kälteschutz, Wasser und Verpflegung. Wetter, Wegzugang und eigene Kondition vorher prüfen. Übernachtung, Führung, Transport und Verpflegung sind von unserem Unternehmen noch nicht bestätigt.",
+          "included": null
+        },
+        "zh": {
+          "title": "Road end near Teplye Klyuchi — Teke-Tor Waterfall — return",
+          "description": "徒步路线：Road end near Teplye Klyuchi — Teke-Tor Waterfall — return。地区：Kyrgyzstan, Chuy Region, Kyrgyz Ala-Too。时长：1天。季节：晚春至初夏。每日路线：\n1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "route": "1. Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+          "difficulty": "中等",
+          "requirements": "请准备徒步鞋、防雨保暖衣物、饮水和食品。出发前确认天气、路线开放情况和身体条件。本公司的住宿、向导、交通和餐饮服务尚未确认。",
+          "included": null
+        }
+      },
+      "duration_days": 1,
+      "duration_hours": null,
+      "distance_km": null,
+      "max_altitude": null,
+      "price": null,
+      "price_unit": null,
+      "is_active": false,
+      "main_image": null,
+      "min_people": null,
+      "max_people": null,
+      "programs": [
+        {
+          "day_number": 1,
+          "start_time": null,
+          "end_time": null,
+          "content": {
+            "ru": {
+              "title": "Конец дороги выше Тёплых Ключей — тропа по Аламедину — водопад Теке-Төр — возврат к парковке",
+              "description": "Конец дороги выше Тёплых Ключей — тропа по Аламедину — водопад Теке-Төр — возврат к парковке"
+            },
+            "en": {
+              "title": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+              "description": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park"
+            },
+            "de": {
+              "title": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+              "description": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park"
+            },
+            "zh": {
+              "title": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park",
+              "description": "Road end above Teplye Klyuchi — Alamedin trail — Teke-Tor Waterfall — return to car park"
+            }
+          }
+        }
+      ],
+      "sources": [
+        "https://peopletravel.kg/alamedinru",
+        "https://www.intourists.kg/ru/tours/uschele-alamedin-pohod-do-vodopada-teke-tor",
+        "https://soltoholidays.kg/ru/alamedin-gorge"
+      ],
+      "review_notes": "Сезон — рекомендация Solto Holidays; маршрут и длительность подтверждены местными операторами. Не включать термальные ванны как услугу.",
+      "image_key": null,
+      "missing_company_fields": [
+        "price",
+        "price_unit",
+        "included",
+        "group_limits",
+        "confirmed_services_and_departures"
+      ]
+    }
+  ],
+  "images": {
+    "ala-kul": {
+      "source": "https://commons.wikimedia.org/wiki/File:Ala-Kul_lake.jpg",
+      "author": "Ekrem Canli",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "subject": "Ala-Kul Lake south of Karakol, Kyrgyzstan",
+      "commons_file": "Ala-Kul lake.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/1/1d/Ala-Kul_lake.jpg",
+      "sha1": "d4ec839acc93f88801e521f9d867f2a69a0f79b4",
+      "changes": "None; original file",
+      "checked_on": "2026-11-09"
+    },
+    "ak-sai": {
+      "source": "https://commons.wikimedia.org/wiki/File:Ala_Archa_waterfall_01.jpg",
+      "author": "Davide Mauro",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "subject": "Ak-Sai waterfall, Ala-Archa National Park, Kyrgyzstan",
+      "commons_file": "Ala Archa waterfall 01.jpg",
+      "download_url": "https://upload.wikimedia.org/wikipedia/commons/f/f9/Ala_Archa_waterfall_01.jpg",
+      "sha1": "6a02e5af3af004ef55a47319dd8b5205564350d6",
+      "changes": "None; original file",
+      "checked_on": "2026-11-09"
+    }
+  }
+}

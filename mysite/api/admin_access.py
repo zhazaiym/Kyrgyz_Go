@@ -11,7 +11,12 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-UPLOAD_PATHS = {'/admin/media', '/admin/media/upload'}
+UPLOAD_PATHS = {
+    '/admin/media',
+    '/admin/media/upload',
+    '/admin/media/videos',
+    '/admin/media/video-upload',
+}
 
 
 def upload_admin_allowed(scope) -> bool:
@@ -25,7 +30,7 @@ def upload_admin_allowed(scope) -> bool:
     path = scope.get('path', '').rstrip('/')
 
     # Этот маршрут использует Bearer-токен.
-    if path == '/admin/media':
+    if path in {'/admin/media', '/admin/media/videos'}:
         authorization = request.headers.get('authorization', '')
         scheme, _, token = authorization.partition(' ')
 

@@ -8,9 +8,9 @@ from starlette.requests import Request
 from mysite.database.db import SessionLocal
 from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
-                                    Tour, TourCategory, TourImage, TourProgram, Transport,
-                                    TransportImage, TravelRequest, Trekking, TrekkingImage,
-                                    TrekkingProgram)
+                                    Tour, TourCategory, TourImage, TourProgram, TourVideo,
+                                    Transport, TransportImage, TravelRequest, Trekking,
+                                    TrekkingImage, TrekkingProgram)
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
                                          manual_translation_changed,
                                          manual_translation_needs_refresh, mark_manual_translations,
@@ -197,6 +197,18 @@ class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
         enqueue_translation(Tour, tour_id, source, translate_tour)
 
 
+class TourVideoAdmin(ModelView, model=TourVideo):
+    column_list = [
+        TourVideo.id,
+        TourVideo.tour_id,
+        TourVideo.video_url,
+        TourVideo.poster_url,
+        TourVideo.order,
+    ]
+    form_columns = [TourVideo.tour, TourVideo.video_url, TourVideo.poster_url, TourVideo.order]
+    column_default_sort = [(TourVideo.order, False), (TourVideo.id, False)]
+
+
 class TourImageAdmin(ModelView, model=TourImage):
     column_list = [TourImage.id, TourImage.image]
 
@@ -330,6 +342,7 @@ for _admin_view in (
     AboutSectionAdmin,
     TourCategoryAdmin,
     TourImageAdmin,
+    TourVideoAdmin,
     TourAdmin,
     TourProgramAdmin,
     RegionAdmin,

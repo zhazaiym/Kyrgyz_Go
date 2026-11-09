@@ -8,13 +8,14 @@ from starlette.responses import JSONResponse
 from mysite.admin.authentication import AdminAuthBackend
 from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.media import save_upload
+from mysite.api.video_media import save_video_upload
 from mysite.database.db import engine
 
 from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ContactAdmin, DistrictAdmin,
                     FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
                     HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
-                    TourProgramAdmin, TransportAdmin, TransportImageAdmin, TravelRequestAdmin,
-                    TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin)
+                    TourProgramAdmin, TourVideoAdmin, TransportAdmin, TransportImageAdmin,
+                    TravelRequestAdmin, TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin)
 
 
 async def upload_image(request: Request):
@@ -39,6 +40,20 @@ async def upload_image(request: Request):
     return JSONResponse({'url': url}, status_code=201)
 
 
+async def upload_video(request: Request):
+    if not await AdminAuthBackend().authenticate(request):
+        return JSONResponse({'detail': 'authentication_required'}, status_code=401)
+    role = await run_in_threadpool(
+        AdminAuthBackend.active_admin_role, request.session.get('admin_id')
+    )
+    if role not in {'owner', 'catalog_editor'}:
+        return JSONResponse({'detail': 'forbidden'}, status_code=403)
+    try:
+        return JSONResponse(await save_video_upload(request), status_code=201)
+    except HTTPException as exc:
+        return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
+
+
 def setup_admin(auth_app: FastAPI):
     from mysite.admin.security_views import AdminSessionAdmin
 
@@ -52,11 +67,13 @@ def setup_admin(auth_app: FastAPI):
         '/ws/requests', admin_requests_websocket, name='request_notifications'
     )
     admin.admin.router.add_route('/media/upload', upload_image, methods=['POST'])
+    admin.admin.router.add_route('/media/video-upload', upload_video, methods=['POST'])
     admin.add_view(AdminAdmin)
     admin.add_view(AdminSessionAdmin)
     admin.add_view(AboutAdmin)
     admin.add_view(AboutSectionAdmin)
     admin.add_view(TourCategoryAdmin)
+    admin.add_view(TourVideoAdmin)
     admin.add_view(TourImageAdmin)
     admin.add_view(TourAdmin)
     admin.add_view(TourProgramAdmin)

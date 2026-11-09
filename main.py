@@ -27,6 +27,7 @@ from mysite.api.contact import contact_router
 from mysite.api.country import country_router
 from mysite.api.district import district_router
 from mysite.api.faq import faq_router
+from mysite.api.guest_ai import guest_ai_router
 from mysite.api.helicopter_image import helicopter_image_router
 from mysite.api.helicopter_tour import helicopter_tour_router
 from mysite.api.home_content import home_content_router
@@ -47,6 +48,7 @@ from mysite.api.tour_category import category_router
 from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
 from mysite.api.tour_reviews import tour_reviews_router
+from mysite.api.tour_video import tour_video_router
 from mysite.api.transport import transport_router
 from mysite.api.transport_image import transport_image_router
 from mysite.api.travel_request import travel_request_router
@@ -54,6 +56,7 @@ from mysite.api.travel_selection import selection_router
 from mysite.api.trekking import trekking_router
 from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
+from mysite.api.video_media import video_media_router
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +126,7 @@ app.add_middleware(
 # ADMIN ROUTER
 app.include_router(admin_router)
 app.include_router(media_router)
+app.include_router(video_media_router)
 
 
 # TOUR ROUTERS
@@ -160,6 +164,7 @@ app.include_router(booking_router)
 app.include_router(about_router)
 app.include_router(about_section_router)
 
+app.include_router(tour_video_router)
 app.include_router(tour_image_router)
 app.include_router(tour_program_router)
 
@@ -168,6 +173,7 @@ app.include_router(tour_program_router)
 app.include_router(client_auth_router, prefix='/auth')
 app.include_router(client_auth_router, prefix='/chat/auth', include_in_schema=False)
 app.include_router(chat_router)
+app.include_router(guest_ai_router)
 app.include_router(chat_images_router)
 app.include_router(chat_ws_router)
 app.include_router(selection_router)

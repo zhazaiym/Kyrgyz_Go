@@ -3,7 +3,6 @@ from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.deletion_guards import protect_selected_item
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
@@ -34,9 +33,7 @@ def create_transport(transport: TransportInputSchema, db: Session = Depends(get_
     return transport_db
 
 
-@transport_router.get(
-    '/{transport_id}/', response_model=TransportOutSchema, dependencies=[Depends(current_client)]
-)
+@transport_router.get('/{transport_id}/', response_model=TransportOutSchema)
 def detail_transport(transport_id: int, lang: Language = 'ru', db: Session = Depends(get_db)):
     transport_db = db.get(Transport, transport_id)
 

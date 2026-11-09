@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -33,14 +32,15 @@ def create_hotel_image(hotel_image: HotelImageInputSchema, db: Session = Depends
     return hotel_image_db
 
 
-@hotel_image_router.get(
-    '/', response_model=list[HotelImageOutSchema], dependencies=[Depends(current_client)]
-)
+@hotel_image_router.get('/', response_model=list[HotelImageOutSchema])
 def list_hotel_images(
     hotel_id: int | None = None, db: Session = Depends(get_db), pagination: Pagination = Depends()
 ):
     query = db.query(HotelImage).join(Hotel).filter(Hotel.is_active.is_(True))
     if hotel_id is not None:
+        parent = db.get(Hotel, hotel_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(HotelImage.hotel_id == hotel_id)
     return (
         query.order_by(HotelImage.order, HotelImage.id)
@@ -50,9 +50,7 @@ def list_hotel_images(
     )
 
 
-@hotel_image_router.get(
-    '/{image_id}/', response_model=HotelImageOutSchema, dependencies=[Depends(current_client)]
-)
+@hotel_image_router.get('/{image_id}/', response_model=HotelImageOutSchema)
 def detail_hotel_image(image_id: int, db: Session = Depends(get_db)):
     hotel_image_db = db.get(HotelImage, image_id)
 

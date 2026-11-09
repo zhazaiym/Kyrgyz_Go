@@ -55,7 +55,7 @@ def register_customer(client, username, prefix='/auth'):
     return {'Authorization': 'Bearer ' + response.json()['access_token']}
 
 
-def test_guest_sees_cards_but_needs_login_for_details(client, catalogue_entries):
+def test_guest_sees_cards_and_details(client, catalogue_entries):
     hidden = {
         'description',
         'included',
@@ -73,7 +73,7 @@ def test_guest_sees_cards_but_needs_login_for_details(client, catalogue_entries)
         card = next(item for item in response.json() if item['id'] == entry_id)
         assert not hidden.intersection(card)
         response = client.get(f'{path}{entry_id}/')
-        assert response.status_code == 401
+        assert response.status_code == 200
 
 
 @pytest.mark.parametrize('entrypoint', ['/auth', '/chat/auth'])
@@ -95,7 +95,7 @@ def test_one_registration_opens_chat_and_details(client, catalogue_entries, entr
     assert client.get('/auth/me', headers=headers).status_code == 401
     assert client.post('/chat/session', headers=headers).status_code == 401
     for path, entry_id in catalogue_entries:
-        assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 401
+        assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -110,8 +110,8 @@ def test_one_registration_opens_chat_and_details(client, catalogue_entries, entr
         '/helicopter-images/',
     ],
 )
-def test_guest_cannot_bypass_details_through_nested_resources(client, path):
-    assert client.get(path).status_code == 401
+def test_guest_can_read_nested_catalogue_resources(client, path):
+    assert client.get(path).status_code == 200
 
 
 def test_shared_auth_is_visible_and_legacy_chat_auth_hidden(client):
@@ -145,8 +145,8 @@ def test_legacy_and_shared_registration_use_the_same_account(client):
     assert client.get('/auth/me', headers=headers).status_code == 401
 
 
-def test_invalid_token_does_not_open_catalogue_details(client, catalogue_entries):
+def test_public_catalogue_does_not_depend_on_token_validity(client, catalogue_entries):
     headers = {'Authorization': 'Bearer invalid-token'}
     for path, entry_id in catalogue_entries:
-        assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 401
+        assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 200
         assert client.get(path, headers=headers).status_code == 200

@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.client_auth import current_client
 from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
@@ -35,9 +34,7 @@ def create_helicopter_image(
     return image_db
 
 
-@helicopter_image_router.get(
-    '/', response_model=list[HelicopterImageOutSchema], dependencies=[Depends(current_client)]
-)
+@helicopter_image_router.get('/', response_model=list[HelicopterImageOutSchema])
 def list_helicopter_images(
     helicopter_id: int | None = None,
     db: Session = Depends(get_db),
@@ -47,6 +44,9 @@ def list_helicopter_images(
         db.query(HelicopterImage).join(HelicopterTour).filter(HelicopterTour.is_active.is_(True))
     )
     if helicopter_id is not None:
+        parent = db.get(HelicopterTour, helicopter_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(404, detail=error_detail('not_found'))
         query = query.filter(HelicopterImage.helicopter_id == helicopter_id)
     return (
         query.order_by(HelicopterImage.order, HelicopterImage.id)
@@ -56,9 +56,7 @@ def list_helicopter_images(
     )
 
 
-@helicopter_image_router.get(
-    '/{image_id}/', response_model=HelicopterImageOutSchema, dependencies=[Depends(current_client)]
-)
+@helicopter_image_router.get('/{image_id}/', response_model=HelicopterImageOutSchema)
 def detail_helicopter_image(image_id: int, db: Session = Depends(get_db)):
     image_db = db.get(HelicopterImage, image_id)
 
