@@ -2,10 +2,12 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from sqladmin import Admin as SQLAdmin
+from sqladmin.authentication import login_required
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 
 from mysite.admin.authentication import AdminAuthBackend
+from mysite.admin.overview import DEFAULT_PERIOD, build_overview
 from mysite.admin.realtime import admin_requests_websocket
 from mysite.api.media import save_upload
 from mysite.api.video_media import save_video_upload
@@ -54,12 +56,31 @@ async def upload_video(request: Request):
         return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
 
 
+class KerbenAdmin(SQLAdmin):
+    @login_required
+    async def index(self, request: Request):
+        role = await run_in_threadpool(
+            AdminAuthBackend.active_admin_role, request.session.get('admin_id')
+        )
+        overview = await run_in_threadpool(
+            build_overview,
+            request.query_params.get('period', DEFAULT_PERIOD),
+            role in {'owner', 'manager'},
+        )
+        return await self.templates.TemplateResponse(
+            request,
+            'sqladmin/index.html',
+            {'overview': overview, 'catalog_links': role in {'owner', 'catalog_editor'}},
+        )
+
+
 def setup_admin(auth_app: FastAPI):
     from mysite.admin.security_views import AdminSessionAdmin
 
-    admin = SQLAdmin(
+    admin = KerbenAdmin(
         auth_app,
         engine,
+        title='Kerben Travel',
         authentication_backend=AdminAuthBackend(),
         templates_dir=str(Path(__file__).resolve().parent / 'templates'),
     )
@@ -68,27 +89,30 @@ def setup_admin(auth_app: FastAPI):
     )
     admin.admin.router.add_route('/media/upload', upload_image, methods=['POST'])
     admin.admin.router.add_route('/media/video-upload', upload_video, methods=['POST'])
-    admin.add_view(AdminAdmin)
-    admin.add_view(AdminSessionAdmin)
-    admin.add_view(AboutAdmin)
-    admin.add_view(AboutSectionAdmin)
-    admin.add_view(TourCategoryAdmin)
-    admin.add_view(TourVideoAdmin)
-    admin.add_view(TourImageAdmin)
-    admin.add_view(TourAdmin)
-    admin.add_view(TourProgramAdmin)
-    admin.add_view(RegionAdmin)
-    admin.add_view(DistrictAdmin)
-    admin.add_view(HotelAdmin)
-    admin.add_view(HotelImageAdmin)
-    admin.add_view(TransportAdmin)
-    admin.add_view(TransportImageAdmin)
-    admin.add_view(HelicopterTourAdmin)
-    admin.add_view(HelicopterImageAdmin)
-    admin.add_view(TrekkingAdmin)
-    admin.add_view(TrekkingImageAdmin)
-    admin.add_view(TrekkingProgramAdmin)
-    admin.add_view(ContactAdmin)
-    admin.add_view(FAQAdmin)
-    admin.add_view(TravelRequestAdmin)
+    for view in (
+        TravelRequestAdmin,
+        TourAdmin,
+        TourCategoryAdmin,
+        TourProgramAdmin,
+        TourImageAdmin,
+        TourVideoAdmin,
+        HotelAdmin,
+        HotelImageAdmin,
+        TransportAdmin,
+        TransportImageAdmin,
+        HelicopterTourAdmin,
+        HelicopterImageAdmin,
+        TrekkingAdmin,
+        TrekkingProgramAdmin,
+        TrekkingImageAdmin,
+        RegionAdmin,
+        DistrictAdmin,
+        AboutAdmin,
+        AboutSectionAdmin,
+        ContactAdmin,
+        FAQAdmin,
+        AdminAdmin,
+        AdminSessionAdmin,
+    ):
+        admin.add_view(view)
     return admin

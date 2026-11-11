@@ -5,6 +5,7 @@ from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
+from mysite.admin.labels import apply_labels
 from mysite.database.db import SessionLocal
 from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
@@ -110,6 +111,11 @@ class LocalizedAdminMixin:
 
 
 class AdminAdmin(ModelView, model=Admin):
+    name = 'Администратор'
+    name_plural = 'Администраторы'
+    icon = 'fa-solid fa-user-shield'
+    category = 'Доступ'
+    category_icon = 'fa-solid fa-lock'
     column_list = [Admin.username, Admin.role, Admin.is_active]
     can_create = False
     form_columns = [Admin.username, Admin.role, Admin.is_active]
@@ -117,6 +123,11 @@ class AdminAdmin(ModelView, model=Admin):
 
 
 class AboutAdmin(LocalizedAdminMixin, ModelView, model=About):
+    name = 'О компании'
+    name_plural = 'О компании'
+    icon = 'fa-solid fa-building'
+    category = 'Сайт'
+    category_icon = 'fa-solid fa-globe'
     column_list = [About.id, About.title]
 
     form_excluded_columns = [
@@ -131,16 +142,31 @@ class AboutAdmin(LocalizedAdminMixin, ModelView, model=About):
 
 
 class AboutSectionAdmin(LocalizedAdminMixin, ModelView, model=AboutSection):
+    name = 'Раздел «О нас»'
+    name_plural = 'Разделы «О нас»'
+    icon = 'fa-solid fa-layer-group'
+    category = 'Сайт'
+    category_icon = 'fa-solid fa-globe'
     column_list = [AboutSection.id, AboutSection.title, AboutSection.order]
     form_excluded_columns = [AboutSection.order]
     column_default_sort = (AboutSection.id, False)
 
 
 class TourCategoryAdmin(LocalizedAdminMixin, ModelView, model=TourCategory):
+    name = 'Категория тура'
+    name_plural = 'Категории туров'
+    icon = 'fa-solid fa-tags'
+    category = 'Туры'
+    category_icon = 'fa-solid fa-route'
     column_list = [TourCategory.id, TourCategory.name]
 
 
 class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
+    name = 'Тур'
+    name_plural = 'Туры'
+    icon = 'fa-solid fa-map-location-dot'
+    category = 'Туры'
+    category_icon = 'fa-solid fa-route'
     column_list = [Tour.id, Tour.title]
     form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
@@ -198,6 +224,11 @@ class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
 
 
 class TourVideoAdmin(ModelView, model=TourVideo):
+    name = 'Видео тура'
+    name_plural = 'Видео туров'
+    icon = 'fa-solid fa-film'
+    category = 'Туры'
+    category_icon = 'fa-solid fa-route'
     column_list = [
         TourVideo.id,
         TourVideo.tour_id,
@@ -210,62 +241,130 @@ class TourVideoAdmin(ModelView, model=TourVideo):
 
 
 class TourImageAdmin(ModelView, model=TourImage):
+    name = 'Фото тура'
+    name_plural = 'Фото туров'
+    icon = 'fa-solid fa-images'
+    category = 'Туры'
+    category_icon = 'fa-solid fa-route'
     column_list = [TourImage.id, TourImage.image]
 
 
 class TourProgramAdmin(LocalizedAdminMixin, ModelView, model=TourProgram):
+    name = 'Программа тура'
+    name_plural = 'Программы туров'
+    icon = 'fa-solid fa-list-check'
+    category = 'Туры'
+    category_icon = 'fa-solid fa-route'
     column_list = [TourProgram.id, TourProgram.title]
 
 
 class RegionAdmin(LocalizedAdminMixin, ModelView, model=Region):
+    name = 'Регион'
+    name_plural = 'Регионы'
+    icon = 'fa-solid fa-earth-asia'
+    category = 'География'
+    category_icon = 'fa-solid fa-map'
     column_list = [Region.id, Region.image]
 
 
 class DistrictAdmin(LocalizedAdminMixin, ModelView, model=District):
+    name = 'Район'
+    name_plural = 'Районы'
+    icon = 'fa-solid fa-location-dot'
+    category = 'География'
+    category_icon = 'fa-solid fa-map'
     column_list = [District.id, District.name]
 
 
 class HotelAdmin(SelectedItemGuard, LocalizedAdminMixin, ModelView, model=Hotel):
+    name = 'Отель'
+    name_plural = 'Отели'
+    icon = 'fa-solid fa-hotel'
+    category = 'Отели'
+    category_icon = 'fa-solid fa-bed'
     column_list = [Hotel.id, Hotel.name]
 
 
 class HotelImageAdmin(ModelView, model=HotelImage):
+    name = 'Фото отеля'
+    name_plural = 'Фото отелей'
+    icon = 'fa-solid fa-images'
+    category = 'Отели'
+    category_icon = 'fa-solid fa-bed'
     column_list = [HotelImage.id, HotelImage.image]
 
 
 class TransportAdmin(SelectedItemGuard, LocalizedAdminMixin, ModelView, model=Transport):
+    name = 'Транспорт'
+    name_plural = 'Транспорт'
+    icon = 'fa-solid fa-car-side'
+    category = 'Транспорт'
+    category_icon = 'fa-solid fa-car'
     column_list = [Transport.id, Transport.name]
 
     form_args = {'seats': {'render_kw': {'type': 'number', 'min': 1, 'step': 1}}}
 
 
 class TransportImageAdmin(ModelView, model=TransportImage):
+    name = 'Фото транспорта'
+    name_plural = 'Фото транспорта'
+    icon = 'fa-solid fa-images'
+    category = 'Транспорт'
+    category_icon = 'fa-solid fa-car'
     column_list = [TransportImage.id, TransportImage.image]
 
 
 class HelicopterTourAdmin(LocalizedAdminMixin, ModelView, model=HelicopterTour):
+    name = 'Вертолётный тур'
+    name_plural = 'Вертолётные туры'
+    icon = 'fa-solid fa-helicopter'
+    category = 'Вертолёты'
+    category_icon = 'fa-solid fa-helicopter'
     column_list = [HelicopterTour.id, HelicopterTour.title]
     form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
 
 class HelicopterImageAdmin(ModelView, model=HelicopterImage):
+    name = 'Фото вертолётного тура'
+    name_plural = 'Фото вертолётных туров'
+    icon = 'fa-solid fa-images'
+    category = 'Вертолёты'
+    category_icon = 'fa-solid fa-helicopter'
     column_list = [HelicopterImage.id, HelicopterImage.image]
 
 
 class TrekkingAdmin(LocalizedAdminMixin, ModelView, model=Trekking):
+    name = 'Треккинг'
+    name_plural = 'Треккинги'
+    icon = 'fa-solid fa-person-hiking'
+    category = 'Треккинг'
+    category_icon = 'fa-solid fa-mountain'
     column_list = [Trekking.id, Trekking.title]
     form_args = {'search_keywords': {'description': SEARCH_KEYWORDS_HINT}}
 
 
 class TrekkingImageAdmin(ModelView, model=TrekkingImage):
+    name = 'Фото треккинга'
+    name_plural = 'Фото треккингов'
+    icon = 'fa-solid fa-images'
+    category = 'Треккинг'
+    category_icon = 'fa-solid fa-mountain'
     column_list = [TrekkingImage.id, TrekkingImage.image]
 
 
 class TrekkingProgramAdmin(LocalizedAdminMixin, ModelView, model=TrekkingProgram):
+    name = 'Программа треккинга'
+    name_plural = 'Программы треккингов'
+    icon = 'fa-solid fa-list-check'
+    category = 'Треккинг'
+    category_icon = 'fa-solid fa-mountain'
     column_list = [TrekkingProgram.id, TrekkingProgram.title]
 
 
 class ContactAdmin(LocalizedAdminMixin, ModelView, model=Contact):
+    icon = 'fa-solid fa-address-book'
+    category = 'Сайт'
+    category_icon = 'fa-solid fa-globe'
     name = 'Контакт'
     name_plural = 'Контакты'
 
@@ -278,6 +377,11 @@ class ContactAdmin(LocalizedAdminMixin, ModelView, model=Contact):
 
 
 class FAQAdmin(LocalizedAdminMixin, ModelView, model=FAQ):
+    name = 'Вопрос и ответ'
+    name_plural = 'Вопросы и ответы'
+    icon = 'fa-solid fa-circle-question'
+    category = 'Сайт'
+    category_icon = 'fa-solid fa-globe'
     column_list = [FAQ.id, FAQ.question, FAQ.answer, FAQ.order, FAQ.is_active]
 
     form_excluded_columns = [FAQ.order]
@@ -285,6 +389,7 @@ class FAQAdmin(LocalizedAdminMixin, ModelView, model=FAQ):
 
 
 class TravelRequestAdmin(ModelView, model=TravelRequest):
+    icon = 'fa-solid fa-paper-plane'
     name = 'Заявка'
     name_plural = 'Все заявки'
     column_list = [
@@ -361,3 +466,4 @@ for _admin_view in (
     TravelRequestAdmin,
 ):
     _view_roles(_admin_view)
+    apply_labels(_admin_view)

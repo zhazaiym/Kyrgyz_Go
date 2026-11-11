@@ -1,5 +1,12 @@
 {% extends "sqladmin_original/base.html" %}
 
+{% block head_css %}
+{{ super() }}
+<style>
+{% include 'sqladmin/theme.css' %}
+</style>
+{% endblock %}
+
 {% block tail %}
 {{ super() }}
 {% if request.url.path.endswith('/travel-request/list') %}

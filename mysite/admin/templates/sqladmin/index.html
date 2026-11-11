@@ -1,0 +1,245 @@
+{% extends "sqladmin/layout.html" %}
+
+{% macro bar_chart(item, small=false) %}
+<div class="kt-chart{% if small %} is-small{% endif %}">
+  <div class="kt-chart-plot" role="img" aria-label="{{ item.title }}: всего {{ item.total }}">
+    <div class="kt-chart-grid" aria-hidden="true">
+      <span style="top: 0"><em>{{ item.ticks[0] }}</em></span>
+      <span style="top: 50%"><em>{{ item.ticks[1] }}</em></span>
+      <span style="top: 100%"><em>{{ item.ticks[2] }}</em></span>
+    </div>
+    <div class="kt-chart-bars">
+      {% for point in item.points %}
+      <div class="kt-col{% if not point.value %} is-zero{% endif %}" data-tip="{{ point.tip }}" tabindex="0">
+        <div class="kt-bar" style="height: {{ point.height }}%"></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if item.empty %}
+    <div class="kt-chart-empty">Пока нет данных за этот период</div>
+    {% endif %}
+  </div>
+  <div class="kt-chart-x" aria-hidden="true">
+    {% for point in item.points %}<span>{% if point.label %}<b>{{ point.label }}</b>{% endif %}</span>{% endfor %}
+  </div>
+</div>
+<details class="kt-table-toggle">
+  <summary>Показать таблицей</summary>
+  <div class="table-responsive">
+    <table class="table table-sm">
+      <thead><tr><th>{{ 'Неделя' if overview.weekly else 'День' }}</th><th class="text-end">Количество</th></tr></thead>
+      <tbody>
+        {% for point in item.points %}
+        <tr><td>{{ point.period }}</td><td class="text-end">{{ point.value }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endmacro %}
+
+{% block content_header %}
+<div class="row g-3 align-items-center">
+  <div class="col">
+    <h2 class="page-title">Обзор</h2>
+    <div class="page-pretitle">{{ overview.range }}{% if overview.weekly %}, по неделям{% endif %}</div>
+  </div>
+  <div class="col-auto">
+    <nav class="kt-segments" aria-label="Период">
+      {% for key, label in overview.periods.items() %}
+      <a href="?period={{ key }}"{% if key == overview.period %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% for kpi in overview.kpis %}
+<div class="col-sm-6 col-xl-3">
+  <div class="card kt-kpi" data-kpi="{{ kpi.key }}">
+    <div class="card-body">
+      <div class="kt-kpi-label"><span class="kt-kpi-icon"><i class="{{ kpi.icon }}"></i></span>{{ kpi.label }}</div>
+      <div class="kt-kpi-value">{{ kpi.value }}</div>
+      {% if kpi.change %}
+      <div class="kt-kpi-change">
+        {% if kpi.change.direction == 'up' %}<i class="fa-solid fa-arrow-trend-up me-1"></i>{% elif kpi.change.direction == 'down' %}<i class="fa-solid fa-arrow-trend-down me-1"></i>{% endif %}{{ kpi.change.text }}
+      </div>
+      {% endif %}
+      <div class="kt-kpi-note{% if kpi.alert %} is-alert{% endif %}">{{ kpi.note }}</div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="col-xl-8">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">{{ overview.charts[0].title }}</h3>
+      <div class="card-actions text-secondary">всего {{ overview.charts[0].total }}</div>
+    </div>
+    <div class="card-body">{{ bar_chart(overview.charts[0]) }}</div>
+  </div>
+</div>
+
+<div class="col-xl-4">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Путь клиента</h3>
+    </div>
+    <div class="card-body">
+      <p class="kt-footnote mb-3">Клиенты, которые зарегистрировались за период, и сколько из них дошли до каждого шага.</p>
+      <div class="kt-bars-list">
+        {% for step in overview.funnel %}
+        <div>
+          <div class="kt-bars-head"><span>{{ step.label }}</span><strong>{{ step.value }}<small>{{ step.share }}</small></strong></div>
+          <div class="kt-track"><div class="kt-fill" style="width: {{ step.width }}%"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% for item in overview.charts[1:] %}
+<div class="col-md-6 col-xl-4">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">{{ item.title }}</h3>
+      <div class="card-actions text-secondary">всего {{ item.total }}</div>
+    </div>
+    <div class="card-body">{{ bar_chart(item, small=true) }}</div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="col-xl-4">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Заявки по статусам</h3>
+    </div>
+    <div class="card-body">
+      <div class="kt-status-list">
+        {% for status in overview.statuses %}
+        <div class="kt-status-row">
+          <span class="badge bg-{{ status.color }}-lt">{{ status.label }}</span>
+          <strong>{{ status.value }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if overview.latest is not none %}
+<div class="col-xl-8">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Последние заявки</h3>
+      <div class="card-actions">
+        <a href="{{ url_for('admin:list', identity='travel-request') }}" class="btn btn-sm btn-outline-primary">Все заявки</a>
+      </div>
+    </div>
+    {% if overview.latest %}
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr><th>№</th><th>Клиент</th><th>Направление</th><th>Поездка</th><th>Откуда</th><th>Статус</th><th>Создана</th></tr>
+        </thead>
+        <tbody>
+          {% for row in overview.latest %}
+          <tr>
+            <td><a href="{{ url_for('admin:details', identity='travel-request', pk=row.id) }}">{{ row.id }}</a></td>
+            <td>{{ row.name }}</td>
+            <td class="text-secondary">{{ row.destination }}</td>
+            <td class="text-secondary">{{ row.travel_date }}</td>
+            <td class="text-secondary">{{ row.source }}</td>
+            <td><span class="badge bg-{{ row.color }}-lt">{{ row.status }}</span></td>
+            <td class="text-secondary text-nowrap">{{ row.created }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body kt-footnote">Заявок пока нет.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="{% if overview.latest is not none %}col-xl-4{% else %}col-xl-8{% endif %}">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Что выбирают в подборки</h3>
+    </div>
+    <div class="card-body">
+      {% if overview.interests %}
+      <div class="kt-bars-list">
+        {% for item in overview.interests %}
+        <div>
+          <div class="kt-bars-head"><span><span class="kt-kind">{{ item.kind }}</span>{{ item.name }}</span><strong>{{ item.value }}</strong></div>
+          <div class="kt-track"><div class="kt-fill" style="width: {{ item.width }}%"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="kt-footnote mb-0">За этот период подборок ещё не собирали.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Сейчас на сайте</h3>
+    </div>
+    <div class="card-body">
+      <div class="kt-catalog">
+        {% for item in overview.catalog %}
+        {% if catalog_links %}<a href="{{ url_for('admin:list', identity=item.identity) }}">{% else %}<div>{% endif %}
+          <span class="kt-catalog-label">{{ item.label }}</span>
+          <span class="kt-catalog-value">{{ item.active }}</span>
+          <span class="kt-catalog-note">{% if item.hidden %}скрыто: {{ item.hidden }}{% else %}все опубликованы{% endif %}</span>
+        {% if catalog_links %}</a>{% else %}</div>{% endif %}
+        {% endfor %}
+        <div>
+          <span class="kt-catalog-label">Отзывы о турах</span>
+          <span class="kt-catalog-value">{{ overview.reviews.count }}</span>
+          <span class="kt-catalog-note">{% if overview.reviews.average %}средняя оценка {{ overview.reviews.average }} из 5{% else %}оценок пока нет{% endif %}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="col-12">
+  <p class="kt-footnote mb-0">Время - по Бишкеку. Вопросы гостей сайта без регистрации и посещения страниц здесь пока не учитываются.</p>
+</div>
+{% endblock %}
+
+{% block tail %}
+{{ super() }}
+<script>
+(() => {
+  const tip = document.createElement('div');
+  tip.className = 'kt-tip';
+  tip.hidden = true;
+  document.body.append(tip);
+  const show = (target) => {
+    const box = target.getBoundingClientRect();
+    tip.textContent = target.dataset.tip;
+    tip.style.left = `${Math.min(Math.max(box.left + box.width / 2, 80), window.innerWidth - 80)}px`;
+    tip.style.top = `${box.top + box.height - Math.max(target.firstElementChild.offsetHeight, 0)}px`;
+    tip.hidden = false;
+  };
+  for (const column of document.querySelectorAll('.kt-col[data-tip]')) {
+    column.addEventListener('mouseenter', () => show(column));
+    column.addEventListener('focus', () => show(column));
+    column.addEventListener('mouseleave', () => { tip.hidden = true; });
+    column.addEventListener('blur', () => { tip.hidden = true; });
+  }
+})();
+</script>
+{% endblock %}
