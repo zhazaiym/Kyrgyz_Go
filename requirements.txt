@@ -11,6 +11,7 @@ psycopg2-binary==2.9.11
 pwdlib[argon2]==0.3.1
 python-dotenv==1.2.4
 PyJWT==2.15.1
+cryptography==50.0.2
 certifi>=2026.10.19,<2027
 python-multipart>=0.0.20,<1
 sqladmin==0.29.0

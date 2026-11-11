@@ -6,12 +6,14 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 from mysite.admin.labels import apply_labels
+from mysite.api.social_auth import valid_app_id
 from mysite.database.db import SessionLocal
 from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
                                     Tour, TourCategory, TourImage, TourProgram, TourVideo,
                                     Transport, TransportImage, TravelRequest, Trekking,
                                     TrekkingImage, TrekkingProgram)
+from mysite.database.social_models import AuthProvider
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
                                          manual_translation_changed,
                                          manual_translation_needs_refresh, mark_manual_translations,
@@ -388,6 +390,38 @@ class FAQAdmin(LocalizedAdminMixin, ModelView, model=FAQ):
     column_default_sort = (FAQ.id, False)
 
 
+APP_ID_HINT = (
+    'Google: Client ID вида 1234567890-abc123.apps.googleusercontent.com. '
+    'Facebook: App ID из цифр. Секретные ключи (Client Secret, App Secret) сюда не вставляйте.'
+)
+
+
+class AuthProviderAdmin(ModelView, model=AuthProvider):
+    name = 'Вход через соцсеть'
+    name_plural = 'Вход через соцсети'
+    icon = 'fa-solid fa-right-to-bracket'
+    category = 'Сайт'
+    category_icon = 'fa-solid fa-globe'
+    can_create = False
+    can_delete = False
+    column_list = [
+        AuthProvider.title,
+        AuthProvider.is_active,
+        AuthProvider.app_id,
+        AuthProvider.updated_at,
+    ]
+    form_columns = [AuthProvider.app_id, AuthProvider.is_active]
+    form_args = {'app_id': {'description': APP_ID_HINT}}
+
+    async def on_model_change(self, data, model, is_created, request):
+        app_id = (data.get('app_id') or '').strip() or None
+        data['app_id'] = app_id
+        if app_id is not None and not valid_app_id(model.provider, app_id):
+            raise ValueError(f'Это не похоже на ID приложения {model.title}. {APP_ID_HINT}')
+        if data.get('is_active') and app_id is None:
+            raise ValueError('Чтобы включить вход, сначала вставьте ID приложения')
+
+
 class TravelRequestAdmin(ModelView, model=TravelRequest):
     icon = 'fa-solid fa-paper-plane'
     name = 'Заявка'
@@ -422,7 +456,7 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
 
 
 def _view_roles(view):
-    if view is AdminAdmin:
+    if view in (AdminAdmin, AuthProviderAdmin):
         allowed = {'owner'}
     elif view is TravelRequestAdmin:
         allowed = {'owner', 'manager'}
@@ -463,6 +497,7 @@ for _admin_view in (
     TrekkingProgramAdmin,
     ContactAdmin,
     FAQAdmin,
+    AuthProviderAdmin,
     TravelRequestAdmin,
 ):
     _view_roles(_admin_view)

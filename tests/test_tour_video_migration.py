@@ -3,6 +3,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from mysite.database import db as database
 from mysite.database.models import Tour
 from tests.postgres_support import temporary_database
@@ -27,7 +28,7 @@ def test_upgrade_and_downgrade_preserve_existing_tours(monkeypatch):
             with engine.begin() as connection:
                 assert (
                     connection.scalar(text('SELECT version_num FROM alembic_version'))
-                    == '20261109_0031'
+                    == ScriptDirectory.from_config(config).get_current_head()
                 )
                 assert (
                     connection.scalar(

@@ -5,6 +5,7 @@ FIELD_LABELS = {
     'admin_id': 'Администратор',
     'amenities': 'Удобства',
     'answer': 'Ответ',
+    'app_id': 'ID приложения',
     'branches_count': 'Филиалов',
     'brand': 'Марка',
     'category': 'Категория',

@@ -13,8 +13,8 @@ from mysite.api.media import save_upload
 from mysite.api.video_media import save_video_upload
 from mysite.database.db import engine
 
-from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, ContactAdmin, DistrictAdmin,
-                    FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
+from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, AuthProviderAdmin, ContactAdmin,
+                    DistrictAdmin, FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
                     HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
                     TourProgramAdmin, TourVideoAdmin, TransportAdmin, TransportImageAdmin,
                     TravelRequestAdmin, TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin)
@@ -111,6 +111,7 @@ def setup_admin(auth_app: FastAPI):
         AboutSectionAdmin,
         ContactAdmin,
         FAQAdmin,
+        AuthProviderAdmin,
         AdminAdmin,
         AdminSessionAdmin,
     ):
