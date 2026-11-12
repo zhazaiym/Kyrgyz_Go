@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from mysite.chain import tools
+from ML import tools
 from mysite.database.db import Base
 from mysite.database.models import About, AboutSection, Contact, Tour, TourProgram
 from tests.postgres_support import temporary_database
@@ -236,7 +236,7 @@ def test_tour_list_is_brief_and_details_keep_the_existing_program(company_databa
 
 
 def test_demonstration_tours_do_not_consume_real_offer_limit(company_database, monkeypatch):
-    from mysite.chain import agent
+    from ML import agent
 
     sessions, _ = company_database
     with sessions() as db:

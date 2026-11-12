@@ -1,7 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -10,11 +10,14 @@ from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.api.selection_status import linked_request, processing_status, requests_for_selections
+from mysite.api.trip_options import (MAX_OPTIONS, active_tour, check_suitable, hotel_step,
+                                     transport_step)
 from mysite.database.catalogue_rules import is_demo_name
 from mysite.database.chat_models import ChatClient, ChatMessage, ChatSession
 from mysite.database.db import get_db
 from mysite.database.models import Hotel, Tour, Transport
 from mysite.database.selection_models import TravelSelection
+from mysite.translations.content import Language
 
 selection_router = APIRouter(prefix='/travel-selections', tags=['Travel Selections'])
 
@@ -55,6 +58,8 @@ def validate_items(db, tour_id, hotel_id, transport_id):
                 or is_demo_name(getattr(item, 'title' if model is Tour else 'name'))
             ):
                 raise HTTPException(status_code=404, detail=f'{name} не найден или недоступен')
+
+    check_suitable(db, tour_id, hotel_id, transport_id)
 
 
 def get_selection(db, selection_id, client_id, *, for_update=False):
@@ -205,6 +210,33 @@ def detail_selection(
     selection = get_selection(db, selection_id, client.id)
 
     return selection_data(db, selection)
+
+
+# STEP-BY-STEP OPTIONS
+
+
+@selection_router.get('/{selection_id}/next-step/')
+def selection_next_step(
+    selection_id: int,
+    travelers: int | None = Query(default=None, ge=1, le=500),
+    lang: Language = 'ru',
+    limit: int = Query(default=10, ge=1, le=MAX_OPTIONS),
+    client: ChatClient = Depends(current_client),
+    db: Session = Depends(get_db),
+):
+    """Tell the client what to choose next: tour -> hotel -> transport -> chat."""
+    selection = get_selection(db, selection_id, client.id)
+    if selection.tour_id is None:
+        return {'step': 'tour', 'selection_id': selection.id, 'items': []}
+    tour = active_tour(db, selection.tour_id)
+    if selection.hotel_id is None:
+        result = hotel_step(db, tour, lang, limit)
+    elif selection.transport_id is None:
+        result = transport_step(db, tour, travelers, lang, limit)
+    else:
+        result = {'step': 'confirm', 'tour_id': tour.id, 'items': []}
+    result['selection_id'] = selection.id
+    return result
 
 
 # UPDATE SELECTION

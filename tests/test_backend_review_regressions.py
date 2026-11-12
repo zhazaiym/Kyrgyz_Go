@@ -126,19 +126,14 @@ def test_unauthenticated_upload_does_not_consume_large_body():
         ('123456', False),
     ],
 )
-def test_phone_validation_agrees_at_all_three_entry_points(value, valid):
+def test_phone_validation_agrees_at_both_entry_points(value, valid):
     from pydantic import ValidationError
 
     from mysite.api.chat_service import build_preview
-    from mysite.api.registration import RegisterInput
     from mysite.api.travel_request import TravelRequestCreate
     from mysite.database.chat_models import ChatSession
 
     for schema, payload in (
-        (
-            RegisterInput,
-            {'name': 'Probe', 'email': 'probe@example.com', 'password': 'Password123!'},
-        ),
         (
             TravelRequestCreate,
             {'selection_id': 1, 'travel_date': '2099-01-01', 'travelers_count': 1},

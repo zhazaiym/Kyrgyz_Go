@@ -388,8 +388,8 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
 ):
     from langchain_core.messages import AIMessageChunk
 
+    from ML import agent
     from mysite.api import chat_service
-    from mysite.chain import agent
 
     token, identity, session_id = start_chat(client, 'incremental_collection')
     changes = iter(

@@ -43,7 +43,18 @@ def test_provider_errors_do_not_expose_secrets(guest_client, monkeypatch):
     assert 'secret-api-key' not in response.text
 
 
-@pytest.mark.parametrize('context', [{}, {'notes': 'x' * 8001}, {'nested': {'x': 1}}])
+@pytest.mark.parametrize(
+    'context',
+    [
+        {},
+        {'notes': 'x' * 8001},
+        {'nested': {'x': 1}},
+        # unsupported types are rejected, never coerced
+        {'people': 2.0},
+        {'hotel': None},
+        {'notes': ['ok', 1]},
+    ],
+)
 def test_invalid_context_rejected(guest_client, context):
     assert guest_client.post('/api/ask-ai', json={'context': context}).status_code == 422
 
@@ -57,11 +68,6 @@ def test_quota_rejection_skips_provider(guest_client, monkeypatch):
     monkeypatch.setattr(guest_ai, 'guest_quota', quota)
     monkeypatch.setattr(guest_ai, 'client', lambda kind: pytest.fail('Provider called'))
     assert guest_client.post('/api/ask-ai', json={'context': {'people': 2}}).status_code == 429
-
-
-@pytest.mark.parametrize('context', [{'people': 2.0}, {'hotel': None}, {'notes': ['ok', 1]}])
-def test_context_does_not_coerce_unsupported_types(guest_client, context):
-    assert guest_client.post('/api/ask-ai', json={'context': context}).status_code == 422
 
 
 def test_only_text_blocks_are_returned(guest_client, monkeypatch):

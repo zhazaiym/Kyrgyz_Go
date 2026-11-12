@@ -18,16 +18,17 @@ PASSWORD = 'RegressionPassword123!'
 
 
 def register(client, route='/auth', email=None):
+    """Register with login + password, then attach an email as a legacy
+    account would have, so email login and recovery stay covered."""
     identity = uuid4().hex[:16]
     email = email or f'{identity}@example.com'
-    body = {'email': email, 'password': PASSWORD}
-    if route == '/auth':
-        body['username'] = 'reg_' + identity
-    else:
-        body.update(name='Regression Guest', phone='+996700123456')
+    body = {'username': 'reg_' + identity, 'password': PASSWORD}
     response = client.post(route + '/register', json=body)
     assert response.status_code == 201, response.text
-    return response.json(), email
+    with SessionLocal() as db:
+        db.get(ChatClient, response.json()['client_id']).email = email
+        db.commit()
+    return {**response.json(), 'email': email}, email
 
 
 def headers(account):
@@ -37,12 +38,8 @@ def headers(account):
 @pytest.mark.parametrize('route', ['/auth', '/account'])
 def test_registration_login_profile_and_recovery_share_one_identity(client, monkeypatch, route):
     account, email = register(client, route)
-    duplicate_body = {'email': email.upper(), 'password': PASSWORD}
     other = '/account' if route == '/auth' else '/auth'
-    if other == '/auth':
-        duplicate_body['username'] = 'duplicate_' + uuid4().hex[:16]
-    else:
-        duplicate_body.update(name='Other Guest', phone='+996700123456')
+    duplicate_body = {'username': account['username'].upper(), 'password': PASSWORD}
     assert client.post(other + '/register', json=duplicate_body).status_code == 409
     for prefix in ('/auth', '/account', '/chat/auth'):
         login = client.post(prefix + '/login', json={'email': email.upper(), 'password': PASSWORD})
@@ -72,8 +69,8 @@ def test_registration_login_profile_and_recovery_share_one_identity(client, monk
         assert login.json()['client_id'] == account['client_id']
 
 
-def test_concurrent_registration_cannot_split_email_between_routes(client):
-    email = uuid4().hex + '@example.com'
+def test_concurrent_registration_cannot_split_login_between_routes(client):
+    login = 'race_' + uuid4().hex[:16]
     barrier = Barrier(2)
 
     def synchronize(connection, cursor, statement, parameters, context, executemany):
@@ -81,19 +78,8 @@ def test_concurrent_registration_cannot_split_email_between_routes(client):
             barrier.wait(timeout=10)
 
     bodies = [
-        (
-            '/auth/register',
-            {'username': 'race_' + uuid4().hex[:16], 'email': email, 'password': PASSWORD},
-        ),
-        (
-            '/account/register',
-            {
-                'name': 'Race Guest',
-                'phone': '+996700123456',
-                'email': email.upper(),
-                'password': PASSWORD,
-            },
-        ),
+        ('/auth/register', {'username': login, 'password': PASSWORD}),
+        ('/account/register', {'username': login.upper(), 'password': PASSWORD}),
     ]
     event.listen(engine, 'before_cursor_execute', synchronize)
     try:
@@ -105,7 +91,7 @@ def test_concurrent_registration_cannot_split_email_between_routes(client):
         event.remove(engine, 'before_cursor_execute', synchronize)
     assert sorted(statuses) == [201, 409]
     with SessionLocal() as db:
-        assert db.query(ChatClient).filter(ChatClient.email == email).count() == 1
+        assert db.query(ChatClient).filter(ChatClient.username == login).count() == 1
 
 
 @pytest.mark.parametrize('different_tokens', [False, True])

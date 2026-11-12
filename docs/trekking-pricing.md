@@ -102,7 +102,7 @@ ID 28 — водопад Ак-Сай на пути к хижине Рацека,
 ```powershell
 python -m scripts.trekking_prices
 python -X utf8 -m scripts.import_trekkings --expect-database kyrgyzgo.db --commercial-data data/trekking/estimated-prices.json --apply
-python -X utf8 -m scripts.import_trekkings --expect-database kyrgyzgo.db --commercial-data data/trekking/estimated-prices.json --apply --report docs/trekking-repeat-result.json
+python -X utf8 -m scripts.import_trekkings --expect-database kyrgyzgo.db --commercial-data data/trekking/estimated-prices.json --apply
 ```
 
 - Первый запуск: 13 `created_draft`, 2 `existing_untouched`; запись одной транзакцией.
@@ -124,8 +124,7 @@ python -X utf8 -m scripts.import_trekkings --expect-database kyrgyzgo.db --comme
   источники, переводы, чтение неактивного черновика админским загрузчиком,
   идемпотентность и сохранение пользовательских правок. Ruff и diff-check прошли.
 
-Машиночитаемые результаты: `docs/trekking-import-result.json`,
-`docs/trekking-repeat-result.json`. Цены, формулы и исходные наблюдения:
+Отчёт импорта по умолчанию записывается в `docs/trekking-import-result.json`. Цены, формулы и исходные наблюдения:
 `data/trekking/estimated-prices.json`, `data/trekking/price-sources.json`.
 
 В базе теперь 23 Trekking, 44 программы и 28 изображений; новые записи

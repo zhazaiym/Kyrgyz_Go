@@ -4,7 +4,7 @@ from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -36,14 +36,10 @@ def login_required(message: str) -> HTTPException:
 
 
 class RegistrationCredentials(BaseModel):
+    """Registration needs only a login and a password."""
+
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=128)
-    email: EmailStr | None = Field(default=None, max_length=254)
-
-    @field_validator('email', mode='after')
-    @classmethod
-    def normalize_email(cls, value):
-        return optional_email(value)
 
 
 class LoginCredentials(BaseModel):
@@ -94,24 +90,21 @@ def authenticate_client(
     # under the short token-issuance lock so a concurrent reset still wins.
     valid = passwords.verify(password, verified_hash)
     if client_id is None or not valid:
-        raise login_required('Неверный email или пароль')
+        raise login_required('Неверный логин или пароль')
     client = db.get(ChatClient, client_id, with_for_update=True, populate_existing=True)
     if client is None or client.password_hash != verified_hash:
-        raise login_required('Неверный email или пароль')
+        raise login_required('Неверный логин или пароль')
     return client
 
 
-@router.post('/register', status_code=201)
-def register(data: RegistrationCredentials, request: Request, db: Session = Depends(get_db)):
+def create_password_client(db: Session, request: Request, data: RegistrationCredentials):
     username = data.username.strip().lower()
     enforce_request_limits(
         'client-register', request, username, ip_limit=10, identity_limit=3, window_seconds=3600
     )
     if not re.fullmatch(r'[a-z0-9_]{3,50}', username):
         raise HTTPException(422, error_detail('validation_error'))
-    client = ChatClient(
-        username=username, email=data.email, password_hash=passwords.hash(data.password)
-    )
+    client = ChatClient(username=username, password_hash=passwords.hash(data.password))
     db.add(client)
     try:
         db.commit()
@@ -119,11 +112,15 @@ def register(data: RegistrationCredentials, request: Request, db: Session = Depe
         db.rollback()
         raise HTTPException(409, error_detail('conflict'))
     db.refresh(client)
-    return issue_token(db, client)
+    return client
 
 
-@router.post('/login')
-def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db)):
+@router.post('/register', status_code=201)
+def register(data: RegistrationCredentials, request: Request, db: Session = Depends(get_db)):
+    return issue_token(db, create_password_client(db, request, data))
+
+
+def login_client(db: Session, request: Request, data: LoginCredentials):
     identifier = (data.email if data.email is not None else data.username).strip().lower()
     if data.email is not None or '@' in identifier:
         try:
@@ -132,10 +129,14 @@ def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db
                 raise ValueError('Email is required')
         except ValueError as exc:
             raise HTTPException(422, error_detail('validation_error')) from exc
-    client = authenticate_client(
+    return authenticate_client(
         db, identifier, data.password, email_only=data.email is not None, request=request
     )
-    return issue_token(db, client)
+
+
+@router.post('/login')
+def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db)):
+    return issue_token(db, login_client(db, request, data))
 
 
 def client_by_token(db: Session, token: str):

@@ -286,6 +286,8 @@ class TransportInputSchema(StorageInput):
     price_unit: PriceUnitChoices = PriceUnitChoices.per_day
     has_driver: bool = True
     has_air_conditioner: bool = True
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool = True
 
@@ -302,6 +304,8 @@ class TransportUpdateSchema(StorageInput):
     price_unit: PriceUnitChoices | None = None
     has_driver: bool | None = None
     has_air_conditioner: bool | None = None
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     main_image: str | None = None
     is_active: bool | None = None
 
@@ -321,6 +325,8 @@ class TransportOutSchema(BaseModel):
     price_unit: PriceUnitChoices
     has_driver: bool
     has_air_conditioner: bool
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
     main_image: str | None
     is_active: bool
     created_at: datetime

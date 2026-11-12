@@ -465,7 +465,7 @@ def test_null_completed_status_is_rejected_by_schema_before_route_logic(
 def test_agent_import_preserves_process_proxy_configuration():
     code = """
 import os
-import mysite.chain.agent
+import ML.agent
 for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'):
     assert os.environ[key] == 'http://127.0.0.1:9', key
 """

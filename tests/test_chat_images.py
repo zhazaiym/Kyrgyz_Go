@@ -5,6 +5,7 @@ import pytest
 from PIL import Image
 
 from mysite.api import chat_images, chat_service
+from tests.test_chat_auth import bearer, register
 
 
 @pytest.fixture(autouse=True)
@@ -12,18 +13,6 @@ def empty_photo_store():
     chat_images._pending.clear()
     yield
     chat_images._pending.clear()
-
-
-def register(client, username):
-    response = client.post(
-        '/chat/auth/register', json={'username': username, 'password': 'StrongPassword123!'}
-    )
-    assert response.status_code == 201, response.text
-    return response.json()['access_token']
-
-
-def bearer(token):
-    return {'Authorization': f'Bearer {token}'}
 
 
 def jpeg_with_gps(size=(2000, 1000)):

@@ -56,6 +56,7 @@ from mysite.api.travel_selection import selection_router
 from mysite.api.trekking import trekking_router
 from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
+from mysite.api.trip_options import trip_options_router
 from mysite.api.video_media import video_media_router
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,7 @@ app.include_router(video_media_router)
 # TOUR ROUTERS
 app.include_router(category_router)
 app.include_router(tour_router)
+app.include_router(trip_options_router)
 app.include_router(tour_reviews_router)
 app.include_router(country_router)
 app.include_router(region_router)

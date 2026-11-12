@@ -2,7 +2,7 @@ import os
 
 
 def test_ai_clients_are_configured_for_required_invocation_modes():
-    from mysite.chain.agent import agent_llm, extractor, llm
+    from ML.agent import agent_llm, extractor, llm
     from mysite.translations.translator import model as translation_model
 
     assert callable(llm.ainvoke)

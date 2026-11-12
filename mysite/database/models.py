@@ -320,6 +320,9 @@ class Transport(LocalizedContent, Base):
     )
     has_driver: Mapped[bool] = mapped_column(Boolean, default=True)
     has_air_conditioner: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Where the vehicle is based; used to offer the nearest transport for a tour.
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
     main_image: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

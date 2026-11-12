@@ -7,14 +7,21 @@ import pytest
 PASSWORD = 'EmailPassword123!'
 
 
+def email_account(client, username, email):
+    """Simulate a legacy account that has an email address."""
+    from mysite.database.chat_models import ChatClient
+    from mysite.database.db import SessionLocal
+
+    response = client.post('/auth/register', json={'username': username, 'password': PASSWORD})
+    assert response.status_code == 201, response.text
+    with SessionLocal() as db:
+        db.get(ChatClient, response.json()['client_id']).email = email
+        db.commit()
+    return response.json()['client_id']
+
+
 def test_customer_can_login_by_email_and_username(client):
-    response = client.post(
-        '/auth/register',
-        json={'username': 'email_customer', 'email': ' Guest@Example.COM ', 'password': PASSWORD},
-    )
-    assert response.status_code == 201
-    assert response.json()['email'] == 'guest@example.com'
-    identity = response.json()['client_id']
+    identity = email_account(client, 'email_customer', 'guest@example.com')
     for credentials in (
         {'email': ' GUEST@example.com ', 'password': PASSWORD},
         {'username': 'EMAIL_CUSTOMER', 'password': PASSWORD},
@@ -28,49 +35,17 @@ def test_customer_can_login_by_email_and_username(client):
         assert client.post('/chat/session', headers=headers).status_code == 200
 
 
-def test_duplicate_email_is_rejected_case_insensitively(client):
-    first = client.post(
-        '/auth/register',
-        json={
-            'username': 'email_unique_first',
-            'email': 'unique@example.com',
-            'password': PASSWORD,
-        },
-    )
-    assert first.status_code == 201
-    duplicate = client.post(
-        '/chat/auth/register',
-        json={
-            'username': 'email_unique_second',
-            'email': 'UNIQUE@example.com',
-            'password': PASSWORD,
-        },
-    )
-    assert duplicate.status_code == 409
-
-
-@pytest.mark.parametrize(
-    'email', ['not-email', 'a@', '@example.com', 'a b@example.com', '', 'a@example..com']
-)
-def test_invalid_registration_email_is_rejected(client, email):
+def test_registration_does_not_store_email(client):
     response = client.post(
-        '/auth/register', json={'username': 'invalid_email', 'email': email, 'password': PASSWORD}
+        '/auth/register',
+        json={'username': 'email_ignored', 'email': 'ignored@example.com', 'password': PASSWORD},
     )
-    assert response.status_code == 422
+    assert response.status_code == 201
+    assert response.json()['email'] is None
 
 
 def test_unknown_account_and_wrong_password_have_identical_errors(client):
-    assert (
-        client.post(
-            '/auth/register',
-            json={
-                'username': 'email_bad_password',
-                'email': 'known@example.com',
-                'password': PASSWORD,
-            },
-        ).status_code
-        == 201
-    )
+    email_account(client, 'email_bad_password', 'known@example.com')
     responses = [
         client.post('/auth/login', json=credentials)
         for credentials in (
@@ -82,10 +57,10 @@ def test_unknown_account_and_wrong_password_have_identical_errors(client):
     ]
     assert all(response.status_code == 401 for response in responses)
     assert all(response.json() == responses[0].json() for response in responses)
-    assert responses[0].json()['detail']['message'] == 'Неверный email или пароль'
+    assert responses[0].json()['detail']['message'] == 'Неверный логин или пароль'
 
 
-def test_legacy_username_registration_remains_supported(client):
+def test_login_and_password_registration(client):
     credentials = {'username': 'legacy_without_email', 'password': PASSWORD}
     registered = client.post('/auth/register', json=credentials)
     assert registered.status_code == 201

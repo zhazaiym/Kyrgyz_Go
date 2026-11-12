@@ -11,7 +11,7 @@ import pytest
 from langchain_core.messages import (AIMessage, AIMessageChunk, HumanMessage, SystemMessage,
                                      ToolMessage)
 
-from mysite.chain import agent
+from ML import agent
 
 
 def fake_runtime(monkeypatch, replies, changes=None):
@@ -60,7 +60,7 @@ def test_extractor_receives_previous_question_for_short_answers(monkeypatch):
 
 
 def test_prompt_budgets_and_runtime_contracts():
-    from mysite.chain.prompts import EXTRACT_PROMPT, SYSTEM_PROMPT
+    from ML.prompts import EXTRACT_PROMPT, SYSTEM_PROMPT
 
     assert 3000 <= len(SYSTEM_PROMPT) <= 6000
     assert 2000 <= len(EXTRACT_PROMPT) <= 4000
@@ -81,7 +81,7 @@ def test_prompt_budgets_and_runtime_contracts():
 
 
 def test_prompt_distinguishes_catalogue_evidence_and_failures():
-    from mysite.chain.prompts import SYSTEM_PROMPT
+    from ML.prompts import SYSTEM_PROMPT
 
     assert 'Пожелания и цены со слов клиента не подтверждают каталог' in SYSTEM_PROMPT
     assert 'Ошибка Tools — сведения недоступны, не отсутствие услуг' in SYSTEM_PROMPT
@@ -358,7 +358,7 @@ def test_live_catalogue_grounding(
     case, question, tool, args, result, repeat, record_property, live_gemini_runner
 ):
     """Bounded regression signals, not a proof of factuality for arbitrary dialogue."""
-    from mysite.chain.prompts import SYSTEM_PROMPT
+    from ML.prompts import SYSTEM_PROMPT
 
     messages = [
         SystemMessage(content=SYSTEM_PROMPT.format(state='{}', today='2026-10-28')),
