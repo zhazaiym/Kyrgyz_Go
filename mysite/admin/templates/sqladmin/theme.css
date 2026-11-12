@@ -545,6 +545,11 @@ body {
   color: var(--kt-muted);
 }
 
+.kt-provider-hint {
+  max-width: 420px;
+  white-space: normal;
+}
+
 .kt-footnote {
   color: var(--kt-muted);
   font-size: .8rem;

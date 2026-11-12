@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from mysite.api.client_auth import issue_token, passwords
 from mysite.api.errors import error_detail
 from mysite.api.network_identity import request_network
+from mysite.api.provider_secrets import open_secret
 from mysite.api.rate_limit import enforce_rate_limit
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatClient
@@ -29,7 +30,18 @@ GRAPH_URL = 'https://graph.facebook.com'
 APP_ID_FORMATS = {
     'google': re.compile(r'[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com'),
     'facebook': re.compile(r'[0-9]{5,25}'),
+    'vk': re.compile(r'[0-9]{5,12}'),
+    'telegram': re.compile(r'[A-Za-z][A-Za-z0-9_]{1,28}[Bb][Oo][Tt]'),
+    'yandex': re.compile(r'[0-9a-f]{32}'),
+    'x': re.compile(r'[A-Za-z0-9_-]{10,100}'),
+    'github': re.compile(r'[A-Za-z0-9._-]{10,64}'),
+    'discord': re.compile(r'[0-9]{15,22}'),
+    'microsoft': re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
+    'tiktok': re.compile(r'[A-Za-z0-9]{10,40}'),
 }
+SECRET_FORMATS = {'telegram': re.compile(r'[0-9]{5,12}:[A-Za-z0-9_-]{30,64}')}
+ANY_SECRET = re.compile(r'\S{8,512}')
+WITHOUT_SECRET = {'google', 'facebook'}
 TIMEOUT_SECONDS = 5
 tls = ssl.create_default_context(cafile=certifi.where())
 google_keys = jwt.PyJWKClient(
@@ -60,14 +72,32 @@ class FacebookLogin(BaseModel):
 
 
 def valid_app_id(provider, value):
-    return bool(value) and APP_ID_FORMATS[provider].fullmatch(value) is not None
+    pattern = APP_ID_FORMATS.get(provider)
+    return bool(value) and pattern is not None and pattern.fullmatch(value) is not None
+
+
+def valid_secret(provider, value):
+    return bool(value) and SECRET_FORMATS.get(provider, ANY_SECRET).fullmatch(value) is not None
+
+
+def configured(row):
+    if row is None or not row.is_active or not valid_app_id(row.provider, row.app_id):
+        return None
+    if row.provider in WITHOUT_SECRET:
+        return row.app_id, None
+    secret = open_secret(row.client_secret)
+    return (row.app_id, secret) if valid_secret(row.provider, secret) else None
+
+
+def credentials(db, provider):
+    found = configured(db.get(AuthProvider, provider))
+    if found is None:
+        raise HTTPException(404, error_detail('not_found'))
+    return found
 
 
 def active_app_id(db, provider):
-    row = db.get(AuthProvider, provider)
-    if row is None or not row.is_active or not valid_app_id(provider, row.app_id):
-        raise HTTPException(404, error_detail('not_found'))
-    return row.app_id
+    return credentials(db, provider)[0]
 
 
 def clean_email(value):
@@ -184,24 +214,15 @@ def sign_in(request, db, provider, verify):
         identity = verify(app_id)
     except SocialLoginError as exc:
         raise HTTPException(exc.status_code, error_detail(exc.code)) from exc
+    return issue_token(db, client_for(db, provider, identity))
+
+
+def client_for(db, provider, identity):
     try:
-        client = linked_client(db, provider, identity)
+        return linked_client(db, provider, identity)
     except IntegrityError:
         db.rollback()
-        client = linked_client(db, provider, identity)
-    return issue_token(db, client)
-
-
-@router.get('/providers')
-def providers(db: Session = Depends(get_db)):
-    rows = {row.provider: row for row in db.scalars(select(AuthProvider))}
-
-    def public(provider, key):
-        row = rows.get(provider)
-        enabled = bool(row and row.is_active and valid_app_id(provider, row.app_id))
-        return {'enabled': enabled, key: row.app_id if enabled else None}
-
-    return {'google': public('google', 'client_id'), 'facebook': public('facebook', 'app_id')}
+        return linked_client(db, provider, identity)
 
 
 @router.post('/google')
