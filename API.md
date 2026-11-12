@@ -73,6 +73,52 @@ if (!response.ok) throw payload;
 const clientToken = payload.access_token;
 ```
 
+### Вход через соцсети
+
+Кнопки входа рисует фронтенд официальными SDK, а бэкенд проверяет полученный токен и выдаёт обычный клиентский токен - тот же ответ, что у `/auth/login`. Ключи вводит владелец в SQLAdmin, раздел «Вход через соцсети»; на фронтенде их хранить не нужно.
+
+1. `GET /auth/providers` - публичный, без токена: `{google: {enabled, client_id}, facebook: {enabled, app_id}, telegram: {enabled, bot}, redirect: [{provider, title, start_url}]}`. Показывайте кнопку только у включённых сервисов: у Google, Facebook и Telegram при `enabled: true`, остальные - по списку `redirect`. У выключенного входа ID равен null.
+2. **Google:** загрузите Google Identity Services (`https://accounts.google.com/gsi/client`), вызовите `google.accounts.id.initialize({client_id, callback})` и отрисуйте кнопку. В `callback` придёт `response.credential` (ID-токен). Отправьте его: `POST /auth/google` с `{credential}`.
+3. **Facebook:** загрузите JavaScript SDK, `FB.init({appId: app_id, version})` с актуальной версией Graph API из кабинета Meta, затем `FB.login(callback, {scope: 'public_profile,email'})`. Из `response.authResponse.accessToken` отправьте токен: `POST /auth/facebook` с `{access_token}`.
+4. Успех 200: `{access_token, token_type, client_id, client_code, username, email}`. Дальше всё как после обычного входа.
+
+**Telegram:** встройте Telegram Login Widget с `data-telegram-login` = значение `bot` из `/auth/providers`. Объект пользователя из виджета отправьте как есть: `POST /auth/telegram` с `{id, first_name, last_name?, username?, photo_url?, auth_date, hash}`. Бэкенд проверяет подпись токеном бота; данные старше суток не принимаются. Домен сайта нужно указать боту в @BotFather (`/setdomain`).
+
+**VK ID, Яндекс ID, Apple, Kakao, Naver, LINE, X, GitHub, Discord, Microsoft, TikTok** - вход через перенаправление, без SDK на фронтенде:
+
+1. Кнопка ведёт на `${API_URL}${start_url}?return_to=<адрес страницы возврата на сайте>`, например `https://site/auth/callback`. Адрес возврата должен начинаться с origin из `CORS_ALLOWED_ORIGINS`, иначе 400.
+2. Бэкенд отправляет пользователя на страницу соцсети, получает от неё код, сам обменивает его на токен по ID и секрету из админки и возвращает пользователя на `return_to`.
+3. На странице возврата в адресе будет либо `login_code`, либо `login_error`. Код одноразовый и живёт 60 секунд: сразу отправьте `POST /auth/oauth/exchange` с `{login_code}` и получите тот же ответ, что у `/auth/login`.
+4. `login_error`: `denied` - пользователь отказался; `invalid_credentials` - соцсеть не подтвердила вход; `service_unavailable` - соцсеть не ответила; `unavailable` - вход через сервис выключили, пока пользователь входил.
+
+VK ID пускает также аккаунты Mail.ru и Одноклассников. Apple возвращает пользователя POST-формой, для фронтенда это ничего не меняет. Адрес возврата для настроек каждой соцсети - `https://<адрес сервера>/auth/oauth/<provider>/callback`, он же показан в админке. Многие соцсети не принимают IP-адрес, для них серверу нужен домен.
+
+Ошибки: 401 `invalid_credentials` - токен просрочен, подделан или выдан для другого приложения; 404 - вход через этот сервис выключен; 503 `service_unavailable` - Google или Facebook не ответили, можно повторить; 429 - больше 20 попыток за 10 минут с одной сети.
+
+Как связываются аккаунты:
+
+- Повторный вход тем же аккаунтом Google или Facebook попадает в того же клиента.
+- Google, Apple, Kakao, GitHub и Discord: если сервис подтвердил почту и уже есть клиент с такой почтой, вход привязывается к нему. Неподтверждённая почта не сохраняется.
+- Facebook, VK ID, Яндекс, Naver и Microsoft по почте с существующим клиентом не объединяются: создаётся отдельный клиент без почты, потому что они не сообщают, подтверждена ли почта. Telegram, LINE, X и TikTok почту не передают.
+- У клиента, созданного через соцсеть, нет пароля для входа. Если почта сохранена, пароль можно задать через «Забыли пароль».
+
+```js
+const providers = await (await fetch(`${API_URL}/auth/providers`)).json();
+google.accounts.id.initialize({
+  client_id: providers.google.client_id,
+  callback: async ({ credential }) => {
+    const response = await fetch(`${API_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw payload;
+    const clientToken = payload.access_token;
+  },
+});
+```
+
 ## 4. Каталог, язык, фильтры и пагинация
 
 `lang=ru|en|de|zh`, по умолчанию `ru`, выбирает язык поддерживающего его GET. Если актуального непустого перевода нет, сервер возвращает исходный текст. Фронтенд не должен скрывать такое поле или самостоятельно подставлять устаревший перевод. Список и поиск используют язык отображения.
@@ -261,6 +307,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
 - `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
+- `/admin/` открывает «Обзор»: новые клиенты, общение с ИИ-помощником, вопросы, заявки и подборки за 7, 30 или 90 дней или за всё время (`?period=7|30|90|all`, по умолчанию 30), графики по дням и сравнение с прошлым периодом. Время - по Бишкеку. Последние заявки с именами клиентов видят только `owner` и `manager`. Вопросы гостей без регистрации и посещения страниц сайта в обзор не попадают.
 - Подсказка для SQLAdmin: чтобы очистить перевод и запросить автоматический перевод, задайте конкретному полю пустую строку. Отсутствующий ключ в JSON сохраняет текущее значение. Не редактируйте служебные `_source_hashes` и `_manual_fields`.
 
 ## 10. Все HTTP endpoint
@@ -1815,6 +1862,63 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 Тело: не требуется.
 
 Успех: **200**, {ok:true}.
+
+#### `GET /auth/providers`
+
+Какие кнопки входа через соцсети показывать. Доступ: **Публичный**.
+
+Тело: не требуется.
+
+Успех: **200**, {google: {enabled, client_id}, facebook: {enabled, app_id}}.
+
+#### `POST /auth/google`
+
+Войти или зарегистрироваться по ID-токену Google Identity Services. Доступ: **Публичный**.
+
+Тело: {credential} - строка 20-4096 символов.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
+
+#### `POST /auth/facebook`
+
+Войти или зарегистрироваться по access token из Facebook JavaScript SDK. Доступ: **Публичный**.
+
+Тело: {access_token} - строка 20-4096 символов.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
+
+#### `POST /auth/telegram`
+
+Войти или зарегистрироваться по данным Telegram Login Widget. Доступ: **Публичный**.
+
+Тело: {id, auth_date, hash, first_name?, last_name?, username?, photo_url?} - как пришло из виджета.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
+
+#### `GET /auth/oauth/{provider}/start`
+
+Начать вход через соцсеть с перенаправлением. Доступ: **Публичный**.
+
+| Параметр | Где | Обязателен | Тип | Правила |
+| --- | --- | --- | --- | --- |
+| `provider` | path | да | string | vk, yandex, apple, kakao, naver, line, x, github, discord, microsoft, tiktok |
+| `return_to` | query | да | string | адрес на сайте из `CORS_ALLOWED_ORIGINS` |
+
+Успех: **302** на страницу соцсети.
+
+#### `GET /auth/oauth/{provider}/callback`
+
+Сюда соцсеть возвращает пользователя: GET, у Apple - POST-форма. Фронтенд этот адрес не вызывает. Доступ: **Публичный**.
+
+Успех: **302** на `return_to` с `login_code` или `login_error`.
+
+#### `POST /auth/oauth/exchange`
+
+Обменять одноразовый `login_code` на клиентский токен. Доступ: **Публичный**.
+
+Тело: {login_code}.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
 ### Чаты
 

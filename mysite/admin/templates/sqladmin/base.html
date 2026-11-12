@@ -1,5 +1,17 @@
 {% extends "sqladmin_original/base.html" %}
 
+{% block head_css %}
+{{ super() }}
+<style>
+{% include 'sqladmin/theme.css' %}
+{% if request.url.path.endswith('/create') %}
+.form-group:has([name="translations"]) {
+  display: none;
+}
+{% endif %}
+</style>
+{% endblock %}
+
 {% block tail %}
 {{ super() }}
 {% if request.url.path.endswith('/travel-request/list') %}

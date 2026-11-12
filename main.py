@@ -42,6 +42,8 @@ from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
+from mysite.api.social_auth import router as social_auth_router
+from mysite.api.social_oauth import router as social_oauth_router
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
 from mysite.api.tour_category import category_router
@@ -174,6 +176,8 @@ app.include_router(tour_program_router)
 # NEW AI CHAT ROUTERS
 app.include_router(client_auth_router, prefix='/auth')
 app.include_router(client_auth_router, prefix='/chat/auth', include_in_schema=False)
+app.include_router(social_auth_router, prefix='/auth')
+app.include_router(social_oauth_router, prefix='/auth')
 app.include_router(chat_router)
 app.include_router(guest_ai_router)
 app.include_router(chat_images_router)
