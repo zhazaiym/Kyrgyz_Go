@@ -545,6 +545,10 @@ body {
   color: var(--kt-muted);
 }
 
+.chars-count-label {
+  display: none;
+}
+
 .kt-provider-hint {
   max-width: 420px;
   white-space: normal;

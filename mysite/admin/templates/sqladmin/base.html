@@ -4,6 +4,11 @@
 {{ super() }}
 <style>
 {% include 'sqladmin/theme.css' %}
+{% if request.url.path.endswith('/create') %}
+.form-group:has([name="translations"]) {
+  display: none;
+}
+{% endif %}
 </style>
 {% endblock %}
 

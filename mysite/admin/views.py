@@ -5,9 +5,9 @@ from sqladmin import ModelView
 from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from wtforms import PasswordField, validators
+from wtforms import PasswordField, SelectField, validators
 
-from mysite.admin.labels import apply_labels
+from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels
 from mysite.api.provider_secrets import open_secret, seal_secret
 from mysite.api.social_auth import WITHOUT_SECRET, valid_app_id, valid_secret
 from mysite.database.db import SessionLocal
@@ -124,6 +124,8 @@ class AdminAdmin(ModelView, model=Admin):
     column_list = [Admin.username, Admin.role, Admin.is_active]
     can_create = False
     form_columns = [Admin.username, Admin.role, Admin.is_active]
+    form_overrides = {'role': SelectField}
+    form_args = {'role': {'choices': list(CHOICE_LABELS['role'].items())}}
     column_details_exclude_list = [Admin.hashed_password]
 
 
@@ -581,3 +583,4 @@ for _admin_view in (
 ):
     _view_roles(_admin_view)
     apply_labels(_admin_view)
+    apply_form_rules(_admin_view)
