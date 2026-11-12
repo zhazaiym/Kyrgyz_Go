@@ -167,7 +167,15 @@ def user_message(message, image=None):
 
 
 async def _respond(message: str, state: dict, history: list, on_chunk=None, image=None):
-    """Extract preferences and consult with bounded read-only tool calls."""
+    """Extract preferences and consult with bounded read-only tool calls.
+
+    ``on_chunk`` receives the visible reply text. A listener with an async
+    ``reset()`` method gets each piece live, as the model produces it, and is
+    reset when that text will not be kept (the round turns into tool calls or a
+    compact retry); on an error the caller must reset it. A plain callback gets
+    only the final answer, once it is known to be kept.
+    """
+    live = callable(getattr(on_chunk, 'reset', None))
     current = dict(state or {})
     today = bishkek_today().isoformat()
     intent = False
@@ -285,6 +293,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
                     visible_parts.append(text)
                     if visible_characters > 65_536:
                         raise AIError('ai_invalid_response')
+                    if live:
+                        await on_chunk(text)
             if complete is None:
                 raise AIError('ai_invalid_response', 'Gemini returned empty stream')
             return complete
@@ -308,6 +318,8 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
             if compact_retry:
                 raise AIError('ai_invalid_response', 'Gemini response exceeded output budget')
             compact_retry = True
+            if live:
+                await on_chunk.reset()
             msgs.append(
                 SystemMessage(
                     content=(
@@ -327,10 +339,12 @@ async def _respond(message: str, state: dict, history: list, on_chunk=None, imag
             answer = ''.join(visible_parts).strip()
             if not answer:
                 raise AIError('ai_invalid_response', 'Gemini returned empty final response')
-            if on_chunk is not None:
+            if on_chunk is not None and not live:
                 for text in visible_parts:
                     await on_chunk(text)
             return answer, current, intent
+        if live:
+            await on_chunk.reset()  # text before a tool call is a preamble, not the answer
         tool_calls_used += len(calls)
         if tool_calls_used > 8:
             raise AIError('ai_invalid_response', 'Agent exceeded tool call budget')

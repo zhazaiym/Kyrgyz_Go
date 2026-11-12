@@ -33,6 +33,36 @@ _locks = {}
 _lock_users = {}
 
 
+class ReplyStream:
+    """Reply text sent to the client piece by piece while the model writes it.
+
+    ``reset()`` withdraws everything sent so far, for text that will not be
+    kept: a preamble before a tool call, a cut-off answer, or a reply the
+    server replaces with its own (booking summary, error).
+    """
+
+    def __init__(self, send, withdraw):
+        self._send = send
+        self._withdraw = withdraw
+        self.text = ''
+
+    async def __call__(self, text):
+        if text:
+            self.text += text
+            await self._send(text)
+
+    async def reset(self):
+        if self.text:
+            self.text = ''
+            await self._withdraw()
+
+    async def finish(self, final):
+        """Make the client show exactly ``final``, keeping what is already there."""
+        if self.text.strip() != final.strip():
+            await self.reset()
+            await self(final)
+
+
 async def _database_call(function, *args, on_cancel=None):
     task = asyncio.create_task(asyncio.to_thread(function, *args))
     try:
@@ -381,11 +411,12 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
         if on_chunk is not None:
             await on_chunk(final['answer'])
         return final
+    live = on_chunk if isinstance(on_chunk, ReplyStream) else None
     try:
         with ai_capacity():
             photo = {'image': image} if image is not None else {}
             answer, updated, intent = await respond(
-                message, original, previous, on_chunk=None, **photo
+                message, original, previous, on_chunk=live, **photo
             )
             if (
                 not isinstance(answer, str)
@@ -415,7 +446,9 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
     except (Exception, asyncio.CancelledError):
         await _database_call(_discard_failed_message, session_id, user_message_id)
         raise
-    if on_chunk is not None:
+    if live is not None:
+        await live.finish(summary or result['answer'])
+    elif on_chunk is not None:
         await on_chunk(summary or result['answer'])
     return result
 

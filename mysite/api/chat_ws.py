@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ML.errors import PROVIDER_ERRORS, AIError, classify_error
 from mysite.api.chat_images import take_image
-from mysite.api.chat_service import owned, process_message
+from mysite.api.chat_service import ReplyStream, owned, process_message
 from mysite.api.client_auth import client_by_token
 from mysite.api.network_identity import client_network
 from mysite.api.observability import record_chat_message
@@ -246,22 +246,21 @@ async def socket_session(websocket: WebSocket, session_id: str):
         message_outcome = 'internal_error'
 
         async def send_chunk(chunk: str, current_message_id=message_id):
-            if chunk:
-                await websocket.send_json(
-                    {'type': 'message_delta', 'message_id': current_message_id, 'delta': chunk}
-                )
+            await websocket.send_json(
+                {'type': 'message_delta', 'message_id': current_message_id, 'delta': chunk}
+            )
+
+        async def send_reset(current_message_id=message_id):
+            await websocket.send_json({'type': 'message_reset', 'message_id': current_message_id})
+
+        stream = ReplyStream(send_chunk, send_reset)
 
         try:
             result = await asyncio.wait_for(
                 process_connected(
                     websocket,
                     process_message(
-                        session_id,
-                        client_id,
-                        token,
-                        message.strip(),
-                        on_chunk=send_chunk,
-                        image=image,
+                        session_id, client_id, token, message.strip(), on_chunk=stream, image=image
                     ),
                     pending,
                 ),
@@ -289,10 +288,12 @@ async def socket_session(websocket: WebSocket, session_id: str):
         except AIError as exc:
             message_outcome = 'ai_error'
             log.warning('Chat provider error: %s', exc.code)
+            await stream.reset()
             await websocket.send_json({'type': 'error', 'code': exc.code, 'message': exc.message})
         except HTTPException as exc:
             message_outcome = 'conflict' if exc.status_code == 409 else 'internal_error'
             code, error_message, close = public_http_error(exc)
+            await stream.reset()
             await websocket.send_json({'type': 'error', 'code': code, 'message': error_message})
             if close:
                 await websocket.close(code=1008)
@@ -300,6 +301,7 @@ async def socket_session(websocket: WebSocket, session_id: str):
         except asyncio.TimeoutError:
             message_outcome = 'timeout'
             log.warning('AI timed out for session %s', session_id)
+            await stream.reset()
             await websocket.send_json(
                 {
                     'type': 'error',
@@ -319,6 +321,7 @@ async def socket_session(websocket: WebSocket, session_id: str):
             message_outcome = 'internal_error'
             failure = classify_error(exc)
             log.error('Chat processing failed: %s (%s)', failure.code, type(exc).__name__)
+            await stream.reset()
             await websocket.send_json(
                 {'type': 'error', 'code': failure.code, 'message': failure.message}
             )
