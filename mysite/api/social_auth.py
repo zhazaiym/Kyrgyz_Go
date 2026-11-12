@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import certifi
 import httpx
 import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -38,7 +40,15 @@ APP_ID_FORMATS = {
     'discord': re.compile(r'[0-9]{15,22}'),
     'microsoft': re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
     'tiktok': re.compile(r'[A-Za-z0-9]{10,40}'),
+    'apple': re.compile(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+'),
+    'kakao': re.compile(r'[0-9a-f]{32}'),
+    'naver': re.compile(r'[A-Za-z0-9_]{10,40}'),
+    'line': re.compile(r'[0-9]{8,12}'),
 }
+APPLE_SECRET = re.compile(
+    r'\s*([A-Z0-9]{10})\s+([A-Z0-9]{10})\s+'
+    r'-----BEGIN PRIVATE KEY-----([A-Za-z0-9+/=\s]+)-----END PRIVATE KEY-----\s*'
+)
 SECRET_FORMATS = {'telegram': re.compile(r'[0-9]{5,12}:[A-Za-z0-9_-]{30,64}')}
 ANY_SECRET = re.compile(r'\S{8,512}')
 WITHOUT_SECRET = {'google', 'facebook'}
@@ -76,7 +86,26 @@ def valid_app_id(provider, value):
     return bool(value) and pattern is not None and pattern.fullmatch(value) is not None
 
 
+def apple_parts(value):
+    match = APPLE_SECRET.fullmatch(value or '')
+    if match is None:
+        return None
+    team_id, key_id, body = match.groups()
+    body = re.sub(r'\s+', '', body)
+    lines = '\n'.join(body[start : start + 64] for start in range(0, len(body), 64))
+    pem = f'-----BEGIN PRIVATE KEY-----\n{lines}\n-----END PRIVATE KEY-----\n'
+    try:
+        key = serialization.load_pem_private_key(pem.encode(), password=None)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(key, ec.EllipticCurvePrivateKey):
+        return None
+    return team_id, key_id, key
+
+
 def valid_secret(provider, value):
+    if provider == 'apple':
+        return apple_parts(value) is not None
     return bool(value) and SECRET_FORMATS.get(provider, ANY_SECRET).fullmatch(value) is not None
 
 

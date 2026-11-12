@@ -2,15 +2,19 @@ import base64
 import hashlib
 import hmac
 import time
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import jwt
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from mysite.api import oauth_providers
 from mysite.api.admin import password_hash
 from mysite.api.provider_secrets import open_secret, seal_secret
-from mysite.api.social_auth import configured
+from mysite.api.social_auth import configured, valid_secret
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin
 from mysite.database.social_models import AuthProvider, ClientIdentity
@@ -26,6 +30,9 @@ APP_IDS = {
     'discord': '123456789012345678',
     'microsoft': '12345678-1234-1234-1234-123456789abc',
     'tiktok': 'awabcdef12345678',
+    'kakao': 'fedcba9876543210fedcba9876543210',
+    'naver': 'AbCdEfGhIj12345',
+    'line': '1654321987',
 }
 PROFILES = {
     'vk': ('https://id.vk.ru/oauth2/user_info', {'user': {'user_id': 501}}),
@@ -35,6 +42,15 @@ PROFILES = {
     'discord': ('https://discord.com/api/users/@me', {'id': '505', 'verified': True}),
     'microsoft': ('https://graph.microsoft.com/v1.0/me', {'id': 'ms-506'}),
     'tiktok': ('https://open.tiktokapis.com/v2/user/info/', {'data': {'user': {'open_id': 't7'}}}),
+    'kakao': (
+        'https://kapi.kakao.com/v2/user/me',
+        {'id': 508, 'kakao_account': {'is_email_verified': True, 'is_email_valid': True}},
+    ),
+    'naver': (
+        'https://openapi.naver.com/v1/nid/me',
+        {'resultcode': '00', 'response': {'id': 'n9'}},
+    ),
+    'line': ('https://api.line.me/v2/profile', {'userId': 'U510'}),
 }
 ADMIN_PASSWORD = 'OAuthAdminPassword123!'
 
@@ -54,7 +70,7 @@ def site(client, monkeypatch):
     client.cookies.clear()
     yield
     client.cookies.clear()
-    for provider in [*APP_IDS, 'telegram']:
+    for provider in [*APP_IDS, 'telegram', 'apple']:
         _configure(provider, active=False)
 
 
@@ -110,7 +126,7 @@ def test_redirect_sign_in_uses_each_provider_contract(client, site, monkeypatch,
     assert f'{target.scheme}://{target.netloc}{target.path}' == spec.authorize_url
     assert params[spec.client_id_param] == APP_IDS[provider]
     assert params['redirect_uri'].endswith(f'/auth/oauth/{provider}/callback')
-    assert params['scope'] == spec.scope
+    assert params.get('scope') == (spec.scope or None)
     assert ('code_challenge' in params) == spec.pkce
 
     result = _finish(client, provider, params, device_id='device-1')
@@ -296,3 +312,92 @@ def test_admin_stores_the_secret_without_showing_it(client, site):
     )
     assert google.status_code == 400
     assert 'секрет не нужен' in google.text
+
+
+def _apple_secret():
+    key = ec.generate_private_key(ec.SECP256R1())
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+    return key, 'ABCDE12345 KEY1234567 ' + ' '.join(pem.split())
+
+
+def test_apple_signs_its_client_secret_and_checks_the_id_token(client, site, monkeypatch):
+    services_id = 'com.kerben.travel.web'
+    key, secret = _apple_secret()
+    _configure('apple', services_id, secret)
+    signing = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setattr(
+        oauth_providers.apple_keys,
+        'get_signing_key_from_jwt',
+        lambda token: SimpleNamespace(key=signing.public_key()),
+    )
+    audience = {'value': services_id}
+
+    def handler(request):
+        assert str(request.url) == 'https://appleid.apple.com/auth/token'
+        form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+        client_secret = form['client_secret']
+        assert jwt.get_unverified_header(client_secret)['kid'] == 'KEY1234567'
+        claims = jwt.decode(
+            client_secret,
+            key.public_key(),
+            algorithms=['ES256'],
+            audience='https://appleid.apple.com',
+        )
+        assert (claims['iss'], claims['sub']) == ('ABCDE12345', services_id)
+        now = int(time.time())
+        id_token = jwt.encode(
+            {
+                'iss': 'https://appleid.apple.com',
+                'aud': audience['value'],
+                'sub': '001234.apple-user',
+                'email': 'traveller@privaterelay.appleid.com',
+                'email_verified': 'true',
+                'iat': now,
+                'exp': now + 600,
+            },
+            signing,
+            algorithm='RS256',
+        )
+        return httpx.Response(200, json={'access_token': 'apple-access', 'id_token': id_token})
+
+    _mock(monkeypatch, handler)
+    _, params = _start(client, 'apple')
+    assert params['response_mode'] == 'form_post'
+    assert params['scope'] == 'name email'
+    posted = client.post(
+        '/auth/oauth/apple/callback',
+        data={'code': 'apple-code', 'state': params['state'], 'user': '{"name": {}}'},
+        follow_redirects=False,
+    )
+    assert posted.status_code == 302, posted.text
+    code = parse_qs(urlsplit(posted.headers['location']).query)['login_code'][0]
+    signed_in = client.post('/auth/oauth/exchange', json={'login_code': code})
+    assert signed_in.json()['email'] == 'traveller@privaterelay.appleid.com'
+
+    audience['value'] = 'com.someone.else'
+    _, params = _start(client, 'apple')
+    rejected = client.post(
+        '/auth/oauth/apple/callback',
+        data={'code': 'apple-code', 'state': params['state']},
+        follow_redirects=False,
+    )
+    assert 'login_error=invalid_credentials' in rejected.headers['location']
+
+
+def test_apple_secret_needs_team_key_and_p8_key():
+    _, secret = _apple_secret()
+    assert valid_secret('apple', secret)
+    assert not valid_secret('apple', 'ABCDE12345 KEY1234567')
+    assert not valid_secret('apple', secret.replace('ABCDE12345', 'short'))
+    rsa_pem = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        .private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        .decode()
+    )
+    assert not valid_secret('apple', 'ABCDE12345 KEY1234567 ' + rsa_pem)

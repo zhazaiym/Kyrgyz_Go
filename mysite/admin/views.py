@@ -404,6 +404,13 @@ APP_ID_HINTS = {
     'discord': 'Client ID (цифры) и Client Secret из раздела OAuth2.',
     'microsoft': 'Application (client) ID и секрет приложения в Microsoft Entra.',
     'tiktok': 'Client key и Client secret из TikTok for Developers.',
+    'apple': (
+        'Services ID (например com.kerben.travel.web). Секрет: Team ID, пробел, Key ID, '
+        'пробел и содержимое файла .p8 целиком.'
+    ),
+    'kakao': 'REST API ключ и Client Secret (раздел «Безопасность», включить).',
+    'naver': 'Client ID и Client Secret из Naver Developers.',
+    'line': 'Channel ID (цифры) и Channel secret канала LINE Login.',
 }
 SECRET_HINT = (
     'Хранится в базе зашифрованным и здесь больше не показывается. '
@@ -457,6 +464,7 @@ class AuthProviderAdmin(ModelView, model=AuthProvider):
     }
     column_formatters_detail = column_formatters
     column_default_sort = (AuthProvider.title, False)
+    page_size = 50
     form_columns = [AuthProvider.app_id, AuthProvider.is_active]
 
     async def scaffold_form(self, rules=None):

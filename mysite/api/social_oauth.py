@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from mysite.api.client_auth import issue_token
 from mysite.api.errors import error_detail
@@ -137,7 +138,7 @@ def oauth_start(provider: str, return_to: str, request: Request, db: Session = D
         path='/auth/oauth',
         httponly=True,
         secure=request.url.scheme == 'https',
-        samesite='lax',
+        samesite='none' if request.url.scheme == 'https' else 'lax',
     )
     return response
 
@@ -155,41 +156,51 @@ def take_state(db, provider, state, cookie):
     return flow
 
 
-@router.get('/oauth/{provider}/callback', name='oauth_callback')
-def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+def finish_sign_in(provider, request, db, params):
     limit('oauth-callback', request)
     spec = oauth_provider(provider)
-    query = request.query_params
-    flow = take_state(db, provider, query.get('state'), request.cookies.get(STATE_COOKIE))
+    flow = take_state(db, provider, params.get('state'), request.cookies.get(STATE_COOKIE))
     if flow is None:
         raise HTTPException(400, error_detail('invalid_request'))
 
-    def back(**params):
-        response = RedirectResponse(with_query(flow.return_to, **params), status_code=302)
+    def back(**query):
+        response = RedirectResponse(with_query(flow.return_to, **query), status_code=302)
         response.delete_cookie(STATE_COOKIE, path='/auth/oauth')
         return response
 
-    code = query.get('code')
-    if query.get('error') or not code or len(code) > 2048:
+    code = params.get('code')
+    if params.get('error') or not code or len(code) > 2048:
         return back(login_error='denied')
     try:
         app_id, secret = credentials(db, provider)
         db.rollback()
-        token = exchange_code(
+        payload = exchange_code(
             spec,
             app_id,
             secret,
             code,
             callback_url(request, provider),
             flow.code_verifier,
-            {name: query.get(name) for name in spec.callback_params},
+            {name: params.get(name) for name in spec.callback_params},
         )
-        identity = spec.profile(token, app_id)
+        identity = spec.profile(payload, app_id)
     except HTTPException:
         return back(login_error='unavailable')
     except SocialLoginError as exc:
         return back(login_error=exc.code)
     return back(login_code=login_code_for(db, client_for(db, provider, identity)))
+
+
+@router.get('/oauth/{provider}/callback', name='oauth_callback')
+def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+    return finish_sign_in(provider, request, db, request.query_params)
+
+
+@router.post('/oauth/{provider}/callback')
+async def oauth_form_callback(provider: str, request: Request, db: Session = Depends(get_db)):
+    async with request.form(max_files=0, max_fields=10) as form:
+        params = {key: value for key, value in form.items() if isinstance(value, str)}
+    return await run_in_threadpool(finish_sign_in, provider, request, db, params)
 
 
 @router.post('/oauth/exchange')

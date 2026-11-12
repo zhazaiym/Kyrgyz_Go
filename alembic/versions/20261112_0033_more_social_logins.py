@@ -18,6 +18,10 @@ PROVIDERS = (
     ('discord', 'Discord'),
     ('microsoft', 'Microsoft'),
     ('tiktok', 'TikTok'),
+    ('apple', 'Apple'),
+    ('kakao', 'Kakao'),
+    ('naver', 'Naver'),
+    ('line', 'LINE'),
 )
 
 
