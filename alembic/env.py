@@ -6,6 +6,7 @@ from alembic import context
 from mysite.database import models  # noqa: F401
 from mysite.database import rate_limit_models  # noqa: F401
 from mysite.database import selection_models  # noqa: F401
+from mysite.database import social_models  # noqa: F401
 from mysite.database import tour_review_models  # noqa: F401
 from mysite.database import chat_models, client_profile, password_reset_models  # noqa: F401
 from mysite.database.db import DATABASE_URL, Base

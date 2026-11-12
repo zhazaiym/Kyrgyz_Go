@@ -1,9 +1,15 @@
 {% extends "sqladmin/base.html" %}
 {% block body %}
-<div class="d-flex align-items-center justify-content-center vh-100">
-  <form class="col-lg-6 col-md-6 card card-md" action="{{ url_for('admin:login') }}" method="POST" autocomplete="off">
+<div class="kt-login">
+  <form class="card card-md" action="{{ url_for('admin:login') }}" method="POST" autocomplete="off">
     <div class="card-body">
-      <h2 class="card-title text-center mb-4">Вход в админку Kerben Travel</h2>
+      <div class="kt-brand">
+        <span class="kt-brand-mark"><i class="fa-solid fa-mountain-sun"></i></span>
+        <span class="kt-brand-text">
+          <span class="kt-brand-name">Kerben Travel</span>
+          <span class="kt-brand-sub">Вход в панель управления</span>
+        </span>
+      </div>
       {% for field, label, kind in [('username', 'Логин', 'text'), ('password', 'Пароль', 'password')] %}
       <div class="mb-3">
         <label class="form-label" for="{{ field }}">{{ label }}</label>

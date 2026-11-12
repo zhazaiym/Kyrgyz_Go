@@ -71,6 +71,41 @@ if (!response.ok) throw payload;
 const clientToken = payload.access_token;
 ```
 
+### Вход через Google и Facebook
+
+Кнопки входа рисует фронтенд официальными SDK, а бэкенд проверяет полученный токен и выдаёт обычный клиентский токен - тот же ответ, что у `/auth/login`. Ключи вводит владелец в SQLAdmin, раздел «Вход через соцсети»; на фронтенде их хранить не нужно.
+
+1. `GET /auth/providers` - публичный, без токена: `{google: {enabled, client_id}, facebook: {enabled, app_id}}`. Показывайте кнопку только при `enabled: true`. У выключенного входа ID равен null.
+2. **Google:** загрузите Google Identity Services (`https://accounts.google.com/gsi/client`), вызовите `google.accounts.id.initialize({client_id, callback})` и отрисуйте кнопку. В `callback` придёт `response.credential` (ID-токен). Отправьте его: `POST /auth/google` с `{credential}`.
+3. **Facebook:** загрузите JavaScript SDK, `FB.init({appId: app_id, version})` с актуальной версией Graph API из кабинета Meta, затем `FB.login(callback, {scope: 'public_profile,email'})`. Из `response.authResponse.accessToken` отправьте токен: `POST /auth/facebook` с `{access_token}`.
+4. Успех 200: `{access_token, token_type, client_id, client_code, username, email}`. Дальше всё как после обычного входа.
+
+Ошибки: 401 `invalid_credentials` - токен просрочен, подделан или выдан для другого приложения; 404 - вход через этот сервис выключен; 503 `service_unavailable` - Google или Facebook не ответили, можно повторить; 429 - больше 20 попыток за 10 минут с одной сети.
+
+Как связываются аккаунты:
+
+- Повторный вход тем же аккаунтом Google или Facebook попадает в того же клиента.
+- Google: если почта подтверждена Google и уже есть клиент с такой почтой, вход привязывается к нему. Неподтверждённая почта не сохраняется.
+- Facebook по почте с существующим клиентом не объединяется: создаётся отдельный клиент без почты. Facebook не сообщает, подтверждена ли почта.
+- У клиента, созданного через соцсеть, нет пароля для входа. Если почта сохранена, пароль можно задать через «Забыли пароль».
+
+```js
+const providers = await (await fetch(`${API_URL}/auth/providers`)).json();
+google.accounts.id.initialize({
+  client_id: providers.google.client_id,
+  callback: async ({ credential }) => {
+    const response = await fetch(`${API_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw payload;
+    const clientToken = payload.access_token;
+  },
+});
+```
+
 ## 4. Каталог, язык, фильтры и пагинация
 
 `lang=ru|en|de|zh`, по умолчанию `ru`, выбирает язык поддерживающего его GET. Если актуального непустого перевода нет, сервер возвращает исходный текст. Фронтенд не должен скрывать такое поле или самостоятельно подставлять устаревший перевод. Список и поиск используют язык отображения.
@@ -243,6 +278,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 - `GET /docs`, `GET /redoc` и `GET /openapi.json` предоставляют интерактивную и машиночитаемую документацию.
 - `/chat/auth/register`, `/chat/auth/login`, `/chat/auth/me`, `/chat/auth/logout` - совместимые алиасы соответствующих `/auth/*` с теми же методами. Для новой интеграции используйте `/auth/*`.
 - `/admin/`, `GET /admin/login`, `POST /admin/login` (form-urlencoded username/password), `GET /admin/logout`, а также страницы SQLAdmin — HTML-интерфейс с cookie-сессией. Ограничения доступа по IP нет. Не путайте форму `/admin/login` с JSON API `POST /admin/login/`.
+- `/admin/` открывает «Обзор»: новые клиенты, общение с ИИ-помощником, вопросы, заявки и подборки за 7, 30 или 90 дней или за всё время (`?period=7|30|90|all`, по умолчанию 30), графики по дням и сравнение с прошлым периодом. Время - по Бишкеку. Последние заявки с именами клиентов видят только `owner` и `manager`. Вопросы гостей без регистрации и посещения страниц сайта в обзор не попадают.
 - Подсказка для SQLAdmin: чтобы очистить перевод и запросить автоматический перевод, задайте конкретному полю пустую строку. Отсутствующий ключ в JSON сохраняет текущее значение. Не редактируйте служебные `_source_hashes` и `_manual_fields`.
 
 ## 10. Все HTTP endpoint
@@ -1797,6 +1833,30 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 Тело: не требуется.
 
 Успех: **200**, {ok:true}.
+
+#### `GET /auth/providers`
+
+Какие кнопки входа через соцсети показывать. Доступ: **Публичный**.
+
+Тело: не требуется.
+
+Успех: **200**, {google: {enabled, client_id}, facebook: {enabled, app_id}}.
+
+#### `POST /auth/google`
+
+Войти или зарегистрироваться по ID-токену Google Identity Services. Доступ: **Публичный**.
+
+Тело: {credential} - строка 20-4096 символов.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
+
+#### `POST /auth/facebook`
+
+Войти или зарегистрироваться по access token из Facebook JavaScript SDK. Доступ: **Публичный**.
+
+Тело: {access_token} - строка 20-4096 символов.
+
+Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
 ### Чаты
 

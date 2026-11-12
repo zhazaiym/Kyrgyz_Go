@@ -7,6 +7,7 @@ from sqladmin import ModelView, action
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse
 
+from mysite.admin.labels import apply_labels
 from mysite.api.admin_sessions import sql_session_admin
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
@@ -54,7 +55,11 @@ class RevocableAdminAccess:
 
 
 class AdminSessionAdmin(RevocableAdminAccess, ModelView, model=AdminSession):
+    name = 'Сессия администратора'
     name_plural = 'Сессии администраторов'
+    icon = 'fa-solid fa-key'
+    category = 'Доступ'
+    category_icon = 'fa-solid fa-lock'
     column_list = [
         AdminSession.id,
         AdminSession.admin_id,
@@ -66,3 +71,6 @@ class AdminSessionAdmin(RevocableAdminAccess, ModelView, model=AdminSession):
     ]
     column_details_list = column_list
     column_default_sort = (AdminSession.created_at, True)
+
+
+apply_labels(AdminSessionAdmin)

@@ -1,0 +1,87 @@
+{% extends "sqladmin/base.html" %}
+{% macro nav_link(url, icon, label, active) %}
+<li class="nav-item">
+  <a class="nav-link{% if active %} active{% endif %}" href="{{ url }}"{% if active %} aria-current="page"{% endif %}>
+    <span class="nav-link-icon"><i class="{{ icon or 'fa-solid fa-circle' }}"></i></span>
+    <span class="nav-link-title">{{ label }}</span>
+  </a>
+</li>
+{% endmacro %}
+{% block body %}
+{% set index_url = url_for('admin:index') %}
+<div class="wrapper kt-shell">
+  <aside class="navbar navbar-vertical navbar-expand-lg navbar-dark kt-sidebar" data-bs-theme="dark">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#kt-menu"
+        aria-controls="kt-menu" aria-expanded="false" aria-label="Меню">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <a class="navbar-brand kt-brand" href="{{ index_url }}">
+        <span class="kt-brand-mark"><i class="fa-solid fa-mountain-sun"></i></span>
+        <span class="kt-brand-text">
+          <span class="kt-brand-name">{{ admin.title }}</span>
+          <span class="kt-brand-sub">Панель управления</span>
+        </span>
+      </a>
+      <div class="collapse navbar-collapse" id="kt-menu">
+        <ul class="navbar-nav kt-nav">
+          {{ nav_link(index_url, 'fa-solid fa-chart-simple', 'Обзор', request.url.path.rstrip('/') == index_url.path.rstrip('/')) }}
+          {% for item in admin._menu.items %}
+          {% if item.type_ == 'View' %}
+          {% if item.is_visible(request) and item.is_accessible(request) %}
+          {{ nav_link(item.url(request), item.icon, item.display_name, item.is_active(request)) }}
+          {% endif %}
+          {% else %}
+          {% set visible = [] %}
+          {% for child in item.children %}
+          {% if child.is_visible(request) and child.is_accessible(request) %}{% set _ = visible.append(child) %}{% endif %}
+          {% endfor %}
+          {% if visible %}
+          <li class="kt-nav-heading">{{ item.display_name }}</li>
+          {% for child in visible %}
+          {{ nav_link(child.url(request), child.icon, child.display_name, child.is_active(request)) }}
+          {% endfor %}
+          {% endif %}
+          {% endif %}
+          {% endfor %}
+        </ul>
+        {% if admin.authentication_backend %}
+        <a href="{{ request.url_for('admin:logout') }}" class="kt-logout">
+          <i class="fa-solid fa-right-from-bracket"></i>
+          <span>Выйти</span>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </aside>
+  <div class="page-wrapper">
+    <div class="container-fluid">
+      <div class="page-header d-print-none">
+        {% block content_header %}
+        {% if title or subtitle %}
+        <div class="row align-items-center">
+          <div class="col">
+            <h2 class="page-title">{{ title }}</h2>
+            <div class="page-pretitle">{{ subtitle }}</div>
+          </div>
+        </div>
+        {% endif %}
+        {% endblock %}
+      </div>
+    </div>
+    <div class="page-body flex-grow-1">
+      <div class="container-fluid">
+        <div class="row row-deck row-cards">
+          {% block content %} {% endblock %}
+          {% block flash %}
+          {% include 'sqladmin/flash.html' %}
+          {% endblock %}
+          {% block secret_modal %}
+          {% include 'sqladmin/secret_modal.html' %}
+          {% endblock %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -36,7 +36,27 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
-    pass
+    def __str__(self):
+        title = next(
+            (
+                str(value)
+                for value in (
+                    getattr(self, field, None)
+                    for field in ('title', 'name', 'question', 'username')
+                )
+                if value
+            ),
+            None,
+        )
+        day = getattr(self, 'day_number', None)
+        if title and day is not None:
+            return f'День {day}. {title}'
+        if title:
+            return title
+        language = getattr(self, 'lang', None)
+        if language:
+            return str(language).upper()
+        return f'№{getattr(self, "id", "")}'
 
 
 def get_db():
