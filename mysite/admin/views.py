@@ -1,12 +1,15 @@
 from copy import deepcopy
 
+from markupsafe import Markup
 from sqladmin import ModelView
 from sqlalchemy.orm import object_session
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
+from wtforms import PasswordField, SelectField, validators
 
-from mysite.admin.labels import apply_labels
-from mysite.api.social_auth import valid_app_id
+from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels
+from mysite.api.provider_secrets import open_secret, seal_secret
+from mysite.api.social_auth import WITHOUT_SECRET, valid_app_id, valid_secret
 from mysite.database.db import SessionLocal
 from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
@@ -121,6 +124,8 @@ class AdminAdmin(ModelView, model=Admin):
     column_list = [Admin.username, Admin.role, Admin.is_active]
     can_create = False
     form_columns = [Admin.username, Admin.role, Admin.is_active]
+    form_overrides = {'role': SelectField}
+    form_args = {'role': {'choices': list(CHOICE_LABELS['role'].items())}}
     column_details_exclude_list = [Admin.hashed_password]
 
 
@@ -390,10 +395,50 @@ class FAQAdmin(LocalizedAdminMixin, ModelView, model=FAQ):
     column_default_sort = (FAQ.id, False)
 
 
-APP_ID_HINT = (
-    'Google: Client ID вида 1234567890-abc123.apps.googleusercontent.com. '
-    'Facebook: App ID из цифр. Секретные ключи (Client Secret, App Secret) сюда не вставляйте.'
+APP_ID_HINTS = {
+    'google': 'Client ID вида 1234567890-abc123.apps.googleusercontent.com. Секрет не нужен.',
+    'facebook': 'App ID из цифр. Секрет не нужен.',
+    'vk': 'ID приложения VK ID (цифры) и защищённый ключ. VK ID пускает и аккаунты Mail.ru и Одноклассников.',
+    'telegram': 'Имя бота без @ (оканчивается на bot) и токен бота от @BotFather.',
+    'yandex': 'ClientID (32 символа) и Client secret с oauth.yandex.ru.',
+    'x': 'OAuth 2.0 Client ID и Client Secret с developer.x.com.',
+    'github': 'Client ID и Client secret OAuth-приложения GitHub.',
+    'discord': 'Client ID (цифры) и Client Secret из раздела OAuth2.',
+    'microsoft': 'Application (client) ID и секрет приложения в Microsoft Entra.',
+    'tiktok': 'Client key и Client secret из TikTok for Developers.',
+    'apple': (
+        'Services ID (например com.kerben.travel.web). Секрет: Team ID, пробел, Key ID, '
+        'пробел и содержимое файла .p8 целиком.'
+    ),
+    'kakao': 'REST API ключ и Client Secret (раздел «Безопасность», включить).',
+    'naver': 'Client ID и Client Secret из Naver Developers.',
+    'line': 'Channel ID (цифры) и Channel secret канала LINE Login.',
+}
+SECRET_HINT = (
+    'Хранится в базе зашифрованным и здесь больше не показывается. '
+    'Оставьте пустым, чтобы не менять. Для Google и Facebook не нужен.'
 )
+
+
+def provider_title(model, attribute):
+    hint = APP_ID_HINTS.get(model.provider, '')
+    return Markup(
+        '<strong>{}</strong><div class="kt-provider-hint text-secondary small">{}</div>'
+    ).format(model.title, hint)
+
+
+def provider_callback(model, attribute):
+    if model.provider in WITHOUT_SECRET:
+        return 'не нужен'
+    if model.provider == 'telegram':
+        return 'домен сайта в @BotFather (/setdomain)'
+    return f'/auth/oauth/{model.provider}/callback'
+
+
+def provider_secret(model, attribute):
+    if model.provider in WITHOUT_SECRET:
+        return 'не нужен'
+    return 'сохранён' if open_secret(model.client_secret) else 'нет'
 
 
 class AuthProviderAdmin(ModelView, model=AuthProvider):
@@ -408,18 +453,54 @@ class AuthProviderAdmin(ModelView, model=AuthProvider):
         AuthProvider.title,
         AuthProvider.is_active,
         AuthProvider.app_id,
+        AuthProvider.client_secret,
+        AuthProvider.provider,
         AuthProvider.updated_at,
     ]
+    column_details_list = column_list
+    column_labels = {AuthProvider.client_secret: 'Секрет', AuthProvider.provider: 'Адрес возврата'}
+    column_formatters = {
+        AuthProvider.title: provider_title,
+        AuthProvider.client_secret: provider_secret,
+        AuthProvider.provider: provider_callback,
+    }
+    column_formatters_detail = column_formatters
+    column_default_sort = (AuthProvider.title, False)
+    page_size = 50
     form_columns = [AuthProvider.app_id, AuthProvider.is_active]
-    form_args = {'app_id': {'description': APP_ID_HINT}}
+
+    async def scaffold_form(self, rules=None):
+        form = await super().scaffold_form(rules)
+        form.secret = PasswordField(
+            'Секретный ключ',
+            validators=[validators.Optional()],
+            description=SECRET_HINT,
+            render_kw={'class': 'form-control', 'autocomplete': 'new-password'},
+        )
+        return form
 
     async def on_model_change(self, data, model, is_created, request):
+        hint = APP_ID_HINTS.get(model.provider, '')
         app_id = (data.get('app_id') or '').strip() or None
+        secret = (data.pop('secret', None) or '').strip() or None
         data['app_id'] = app_id
         if app_id is not None and not valid_app_id(model.provider, app_id):
-            raise ValueError(f'Это не похоже на ID приложения {model.title}. {APP_ID_HINT}')
-        if data.get('is_active') and app_id is None:
+            raise ValueError(f'Это не похоже на ID приложения {model.title}. {hint}')
+        if secret is not None:
+            if model.provider in WITHOUT_SECRET:
+                raise ValueError(f'Для {model.title} секрет не нужен, не вставляйте его сюда.')
+            if not valid_secret(model.provider, secret):
+                raise ValueError(f'Это не похоже на секретный ключ {model.title}. {hint}')
+            data['client_secret'] = seal_secret(secret)
+        if not data.get('is_active'):
+            return
+        if app_id is None:
             raise ValueError('Чтобы включить вход, сначала вставьте ID приложения')
+        stored = data.get('client_secret', model.client_secret)
+        if model.provider not in WITHOUT_SECRET and not valid_secret(
+            model.provider, open_secret(stored)
+        ):
+            raise ValueError(f'Чтобы включить вход через {model.title}, вставьте секретный ключ')
 
 
 class TravelRequestAdmin(ModelView, model=TravelRequest):
@@ -502,3 +583,4 @@ for _admin_view in (
 ):
     _view_roles(_admin_view)
     apply_labels(_admin_view)
+    apply_form_rules(_admin_view)

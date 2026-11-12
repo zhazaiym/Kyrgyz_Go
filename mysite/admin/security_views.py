@@ -7,7 +7,7 @@ from sqladmin import ModelView, action
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse
 
-from mysite.admin.labels import apply_labels
+from mysite.admin.labels import apply_form_rules, apply_labels
 from mysite.api.admin_sessions import sql_session_admin
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
@@ -74,3 +74,4 @@ class AdminSessionAdmin(RevocableAdminAccess, ModelView, model=AdminSession):
 
 
 apply_labels(AdminSessionAdmin)
+apply_form_rules(AdminSessionAdmin)

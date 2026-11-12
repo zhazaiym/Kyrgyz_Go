@@ -79,12 +79,16 @@ def test_providers_are_hidden_until_the_owner_enables_them(client, providers):
     assert client.get('/auth/providers').json() == {
         'google': {'enabled': True, 'client_id': GOOGLE_ID},
         'facebook': {'enabled': True, 'app_id': FACEBOOK_ID},
+        'telegram': {'enabled': False, 'bot': None},
+        'redirect': [],
     }
     _configure('facebook', FACEBOOK_ID, active=False)
     _configure('google', 'not-a-client-id', active=True)
     assert client.get('/auth/providers').json() == {
         'google': {'enabled': False, 'client_id': None},
         'facebook': {'enabled': False, 'app_id': None},
+        'telegram': {'enabled': False, 'bot': None},
+        'redirect': [],
     }
     response = client.post('/auth/facebook', json={'access_token': 'x' * 40})
     assert response.status_code == 404

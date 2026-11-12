@@ -1,4 +1,6 @@
-from sqlalchemy import inspect
+from datetime import UTC, timedelta, timezone
+
+from sqlalchemy import DateTime, inspect
 
 FIELD_LABELS = {
     'address': 'Адрес',
@@ -26,9 +28,9 @@ FIELD_LABELS = {
     'district': 'Район',
     'district_id': 'Район',
     'districts': 'Районы',
-    'duration_days': 'Дней',
-    'duration_hours': 'Часов',
-    'duration_minutes': 'Минут',
+    'duration_days': 'Длительность, дней',
+    'duration_hours': 'Длительность, часов',
+    'duration_minutes': 'Длительность, мин',
     'duration_nights': 'Ночей',
     'email': 'Email',
     'end_time': 'Конец',
@@ -116,3 +118,86 @@ def apply_labels(view):
     labels.update(MODEL_LABELS.get(view.model.__name__, {}))
     labels.update(view.column_labels)
     view.column_labels = labels
+
+
+CHOICE_LABELS = {
+    'price_unit': {
+        'per_person': 'за человека',
+        'per_day': 'за день',
+        'per_night': 'за ночь',
+        'per_hour': 'за час',
+        'per_trip': 'за поездку',
+    },
+    'tour_type': {
+        'classic': 'Классический',
+        'adventure': 'Приключения',
+        'cultural': 'Культурный',
+        'winter': 'Зимний',
+        'individual': 'Индивидуальный',
+        'combined': 'Комбинированный',
+    },
+    'status': {
+        'new': 'Новая',
+        'in_progress': 'В работе',
+        'completed': 'Завершена',
+        'cancelled': 'Отменена',
+    },
+    'role': {
+        'owner': 'Владелец',
+        'manager': 'Менеджер заявок',
+        'catalog_editor': 'Редактор каталога',
+    },
+}
+AUTOMATIC_FIELDS = ('created_at', 'updated_at')
+BISHKEK = timezone(timedelta(hours=6))
+
+
+def choice_text(name):
+    labels = CHOICE_LABELS[name]
+
+    def formatter(model, attribute):
+        value = getattr(model, name)
+        value = getattr(value, 'value', value)
+        return labels.get(value, value)
+
+    return formatter
+
+
+def local_time(name):
+    def formatter(model, attribute):
+        value = getattr(model, name)
+        if value is None:
+            return ''
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(BISHKEK).strftime('%d.%m.%Y %H:%M')
+
+    return formatter
+
+
+def apply_form_rules(view):
+    mapper = inspect(view.model)
+    if not view.form_columns:
+        hidden = [relation.key for relation in mapper.relationships if relation.uselist]
+        hidden += [name for name in AUTOMATIC_FIELDS if name in mapper.attrs]
+        view.form_excluded_columns = [*view.form_excluded_columns, *hidden]
+    formatters = {name: choice_text(name) for name in CHOICE_LABELS if name in mapper.attrs}
+    for attribute in mapper.column_attrs:
+        if isinstance(attribute.columns[0].type, DateTime):
+            formatters[attribute.key] = local_time(attribute.key)
+    view.column_formatters = {**formatters, **view.column_formatters}
+    view.column_formatters_detail = {**formatters, **view.column_formatters_detail}
+    original = view.scaffold_form
+
+    async def scaffold_form(self, rules=None):
+        form = await original(self, rules)
+        for name, labels in CHOICE_LABELS.items():
+            field = getattr(form, name, None)
+            choices = getattr(field, 'kwargs', {}).get('choices')
+            if choices:
+                field.kwargs['choices'] = [
+                    (value, labels.get(value, value)) for value, _ in choices
+                ]
+        return form
+
+    view.scaffold_form = scaffold_form
