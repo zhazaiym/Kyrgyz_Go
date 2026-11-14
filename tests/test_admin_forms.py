@@ -73,3 +73,15 @@ def test_edit_form_keeps_manual_translation_and_lists_show_local_time(client):
         assert '+00:00' not in sessions
     finally:
         client.get('/admin/logout')
+
+
+def test_list_rows_have_labelled_actions(client):
+    _owner(client)
+    try:
+        page = client.get('/admin/faq/list').text
+        assert "content: 'Изменить'" in page
+        assert "content: 'Удалить'" in page
+        assert "Edit: 'Изменить запись'" in page
+        assert "Edit: 'Изменить запись'" not in client.get('/admin/faq/create').text
+    finally:
+        client.get('/admin/logout')

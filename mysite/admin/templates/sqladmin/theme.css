@@ -206,6 +206,77 @@ body {
   background: #f8fafc;
 }
 
+.card-table tbody td.text-end {
+  text-align: left !important;
+  white-space: nowrap;
+  width: 1%;
+}
+
+.card-table tbody td.text-end > a {
+  align-items: center;
+  border: 1px solid var(--kt-line);
+  border-radius: 8px;
+  color: var(--kt-ink);
+  display: inline-flex;
+  font-size: .8rem;
+  font-weight: 500;
+  gap: .4rem;
+  line-height: 1;
+  margin-right: .35rem;
+  min-height: 32px;
+  padding: .35rem .65rem;
+  text-decoration: none;
+}
+
+.card-table tbody td.text-end > a > span {
+  color: var(--kt-muted);
+  margin: 0 !important;
+}
+
+.card-table tbody td.text-end > a[href*="/details/"]::after {
+  content: 'Открыть';
+}
+
+.card-table tbody td.text-end > a[href*="/edit/"]::after {
+  content: 'Изменить';
+}
+
+.card-table tbody td.text-end > a[href*="/edit/"] {
+  border-color: #f3c9ae;
+  color: var(--kt-orange-dark);
+}
+
+.card-table tbody td.text-end > a[href*="/edit/"] > span {
+  color: var(--kt-orange);
+}
+
+.card-table tbody td.text-end > a[data-bs-target="#modal-delete"]::after {
+  content: 'Удалить';
+}
+
+.card-table tbody td.text-end > a[data-bs-target="#modal-delete"],
+.card-table tbody td.text-end > a[data-bs-target="#modal-delete"] > span {
+  color: #b42318;
+}
+
+.card-table tbody td.text-end > a[data-bs-target="#modal-delete"] {
+  border-color: #f4c7c3;
+  margin-left: .6rem;
+}
+
+.card-table tbody td.text-end > a:hover,
+.card-table tbody td.text-end > a:focus-visible {
+  background: #fff;
+  border-color: currentColor;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .08);
+}
+
+.card-table .select-box,
+.card-table #select-all {
+  height: 1.15rem;
+  width: 1.15rem;
+}
+
 .form-control,
 .form-select,
 .select2-container--default .select2-selection--single,
