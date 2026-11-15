@@ -176,10 +176,10 @@ requires an external PostgreSQL database.
 
 Alternatively, use the included Caddy proxy with automatic HTTPS:
 
-1. Use your public IP (currently `13.49.104.87`), or point a domain's DNS A/AAAA
+1. Use your server's public IP, or point a domain's DNS A/AAAA
    records to the server. Allow inbound TCP ports 80 and 443. Stop any other
    service using these ports after checking how the current API is hosted.
-2. Set `API_DOMAIN=13.49.104.87` (or your domain) and keep
+2. Set `API_DOMAIN=<server IP>` (or your domain) and keep
    `FORWARDED_ALLOW_IPS=172.30.240.2` in `.env`, along with the real HTTPS frontend origins in `CORS_ALLOWED_ORIGINS`
    and `CHAT_ALLOWED_ORIGINS`. Keep `API_BIND_HOST=127.0.0.1` so the API port
    remains accessible only locally and through the proxy.
@@ -189,7 +189,7 @@ Alternatively, use the included Caddy proxy with automatic HTTPS:
    merely to make forwarded headers work.
 3. Run `docker compose --profile https config --quiet`, then
    `docker compose --profile https up --build -d`.
-4. Verify `https://13.49.104.87/` and `/contacts/` without authorization, using your
+4. Verify `https://<server IP>/` and `/contacts/` without authorization, using your
    domain instead if configured. Check the certificate without bypassing TLS verification.
 
 The single `docker-compose.yml` includes an optional `https` profile. Without
@@ -281,7 +281,7 @@ and restrict access with your firewall. Change `API_PORT` if port 8000 is busy.
 
 ## Как обновляется прод
 
-Прод — `13.49.104.87` (проект в `~/Kyrgyz_Go`, контейнеры `kyrgyz_go-api-1`,
+Прод — сервер из `API_DOMAIN` в `.env` (проект в `~/Kyrgyz_Go`, контейнеры `kyrgyz_go-api-1`,
 `kyrgyz_go-postgres-1`, `kyrgyz_go-https-1`). Сервер обновляет себя сам; GitHub
 Actions только проверяет код и не имеет доступа к серверу (секретов в GitHub нет,
 это проверяет `tests/test_second_review.py::test_no_github_actions_job_can_deploy_to_production`).
