@@ -121,7 +121,7 @@ def create_password_client(db: Session, request: Request, data: RegistrationCred
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, error_detail('conflict'))
+        raise HTTPException(409, error_detail('conflict')) from None
     db.refresh(client)
     return client
 

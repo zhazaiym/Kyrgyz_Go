@@ -92,7 +92,7 @@ def main():
         if mode == 'stub':
             import mysite.api.chat_service as chat_service
 
-            async def deterministic_respond(message, state, history, on_chunk=None):
+            async def deterministic_respond(_message, state, _history, _on_chunk=None):
                 return 'Local deterministic answer.', dict(state or {}), False
 
             chat_service.respond = deterministic_respond
@@ -124,7 +124,7 @@ def main():
         generator_errors = []
         started = time.perf_counter()
 
-        def virtual_user(index, client):
+        def virtual_user(_index, client):
             username = f'load_{secrets.token_hex(6)}'
             registered = client.post(
                 '/auth/register', json={'username': username, 'password': secrets.token_urlsafe(18)}

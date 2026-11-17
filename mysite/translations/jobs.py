@@ -2,6 +2,7 @@
 
 import logging
 from datetime import timedelta
+from functools import partial
 from queue import Queue
 from threading import BoundedSemaphore, Event, Lock, Thread
 
@@ -456,12 +457,7 @@ def _save_tour_translations(db, identity, translated, source):
         hashes = dict(row.source_hashes) if isinstance(row.source_hashes, dict) else {}
         manual_fields = set(active_manual_fields(row.manual_fields or [], hashes, source))
         _merge_language(
-            lambda field: getattr(row, field),
-            lambda field, value: setattr(row, field, value),
-            hashes,
-            manual_fields,
-            values,
-            source,
+            partial(getattr, row), partial(setattr, row), hashes, manual_fields, values, source
         )
         row.manual_fields = sorted(manual_fields)
         row.source_hashes = hashes

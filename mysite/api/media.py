@@ -71,7 +71,7 @@ async def check_upload_size(upload: UploadFile):
         raise HTTPException(status_code=413, detail=error_detail('file_too_large'))
 
 
-async def save_upload(request: Request, upload: UploadFile) -> str:
+async def save_upload(upload: UploadFile) -> str:
     await check_upload_size(upload)
     name = await run_in_threadpool(store_image, upload.file)
     return f'{MEDIA_URL}/{name}'
@@ -85,4 +85,4 @@ async def upload_media(request: Request):
         upload = form.get('file')
         if not isinstance(upload, UploadFile) and not hasattr(upload, 'file'):
             raise HTTPException(400, detail=error_detail('invalid_request'))
-        return {'url': await save_upload(request, upload)}
+        return {'url': await save_upload(upload)}

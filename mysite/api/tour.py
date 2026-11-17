@@ -32,7 +32,7 @@ TRANSLATED_FIELDS = TOUR_TRANSLATION_FIELDS
 
 
 def get_localized_tour(
-    tour_db: Tour, db: Session, lang: str, detail: bool = False, include_description: bool = False
+    tour_db: Tour, lang: str, detail: bool = False, include_description: bool = False
 ):
     schema = (
         TourDetailSchema if detail else TourOutSchema if include_description else TourCardSchema
@@ -78,7 +78,7 @@ def localized_tour_cards_with_reviews(tours, db: Session, lang: str):
 
     results = []
     for tour in tours:
-        result = get_localized_tour(tour, db, lang)
+        result = get_localized_tour(tour, lang)
         result['average_rating'], result['review_count'] = aggregates.get(tour.id, (None, 0))
         results.append(result)
     return results
@@ -109,11 +109,11 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
 
         return tour_db
 
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception('Could not save the tour')
 
-        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
+        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
 
 
 @tour_router.get('/', response_model=list[TourCardSchema])
@@ -147,7 +147,7 @@ def detail_tour(
     if tour_db is None or not tour_db.is_active:
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
-    return get_localized_tour(tour_db, db, lang, detail=True)
+    return get_localized_tour(tour_db, lang, detail=True)
 
 
 @tour_router.put(
@@ -205,11 +205,11 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
 
         return tour_db
 
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception('Could not update the tour')
 
-        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
+        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
 
 
 @tour_router.post(
@@ -241,11 +241,11 @@ def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
 
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception('Could not save the tour translation')
 
-        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
+        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
 
 
 @tour_router.delete('/{tour_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))])
@@ -267,11 +267,11 @@ def delete_tour(tour_id: int, db: Session = Depends(get_db)):
 
         return success_detail('deleted')
 
-    except SQLAlchemyError:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception('Could not delete the tour')
 
-        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
+        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
 
 
 @tour_router.get('/home/slides/')
@@ -292,7 +292,7 @@ def home_tour_slides(
     slides = []
 
     for tour in tours:
-        data = get_localized_tour(tour, db, lang, include_description=True)
+        data = get_localized_tour(tour, lang, include_description=True)
 
         slides.append(
             {

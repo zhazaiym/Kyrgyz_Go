@@ -44,7 +44,7 @@ class SelectedItemGuard:
         except IntegrityError:
             raise ValueError(ERROR_MESSAGES['selected_item_in_use']) from None
 
-    async def on_model_delete(self, model, request):
+    async def on_model_delete(self, model, _request):
         from mysite.api.deletion_guards import protect_selected_item
 
         def check():
@@ -65,10 +65,10 @@ class RequestSourceFilter:
     has_operator = False
     template = 'sqladmin/filters/lookup_filter.html'
 
-    async def lookups(self, request, model, run_query):
+    async def lookups(self, _request, _model, _run_query):
         return [('__all', 'Все'), ('chat', 'Чат'), ('site', 'Сайт')]
 
-    async def get_filtered_query(self, query, value, model):
+    async def get_filtered_query(self, query, value, _model):
         return query.where(TravelRequest.source == value) if value in {'chat', 'site'} else query
 
 
@@ -110,7 +110,7 @@ class LocalizedAdminMixin:
             )
             request.state.catalogue_source = source
 
-    async def after_model_change(self, data, model, is_created, request):
+    async def after_model_change(self, _data, model, _is_created, request):
         source = getattr(request.state, 'catalogue_source', None)
         if source is not None:
             enqueue_translation(type(model), model.id, source, generate_translations)
@@ -217,7 +217,7 @@ class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
                     and hashes.get(field) == source_field_hash(source.get(field))
                 ]
 
-    async def after_model_change(self, data, model, is_created, request):
+    async def after_model_change(self, _data, model, _is_created, request):
         if request.state.tour_source_changed:
             await run_in_threadpool(self._refresh_translations, model.id)
 
@@ -421,14 +421,14 @@ SECRET_HINT = (
 )
 
 
-def provider_title(model, attribute):
+def provider_title(model, _attribute):
     hint = APP_ID_HINTS.get(model.provider, '')
     return Markup(
         '<strong>{}</strong><div class="kt-provider-hint text-secondary small">{}</div>'
     ).format(model.title, hint)
 
 
-def provider_callback(model, attribute):
+def provider_callback(model, _attribute):
     if model.provider in WITHOUT_SECRET:
         return 'не нужен'
     if model.provider == 'telegram':
@@ -436,7 +436,7 @@ def provider_callback(model, attribute):
     return f'/auth/oauth/{model.provider}/callback/'
 
 
-def provider_secret(model, attribute):
+def provider_secret(model, _attribute):
     if model.provider in WITHOUT_SECRET:
         return 'не нужен'
     return 'сохранён' if open_secret(model.client_secret) else 'нет'
@@ -480,7 +480,7 @@ class AuthProviderAdmin(ModelView, model=AuthProvider):
         )
         return form
 
-    async def on_model_change(self, data, model, is_created, request):
+    async def on_model_change(self, data, model, _is_created, _request):
         hint = APP_ID_HINTS.get(model.provider, '')
         app_id = (data.get('app_id') or '').strip() or None
         secret = (data.pop('secret', None) or '').strip() or None
@@ -563,7 +563,7 @@ class TourReviewAdmin(ModelView, model=TourReview):
     }
     column_default_sort = [(TourReview.created_at, True)]
     column_formatters = {
-        'status': lambda model, attribute: REVIEW_STATUSES.get(model.status, model.status),
+        'status': lambda model, _attribute: REVIEW_STATUSES.get(model.status, model.status),
         'created_at': local_time('created_at'),
     }
     column_formatters_detail = column_formatters
@@ -580,7 +580,7 @@ def _view_roles(view):
     else:
         allowed = {'owner', 'catalog_editor'}
 
-    def can_access(self, request: Request):
+    def can_access(_view, request: Request):
         admin_id = request.session.get('admin_id')
         if admin_id is None:
             return False

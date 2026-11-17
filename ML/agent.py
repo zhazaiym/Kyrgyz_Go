@@ -8,6 +8,7 @@ import re
 import time
 from contextvars import ContextVar
 from datetime import date
+from functools import partial
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -553,7 +554,7 @@ async def _consult(message, known, history, on_chunk, image, today):
                 if release is not None:
                     await release.feed(text)
 
-        reply = await _measured_call('generation', lambda: _stream_round(msgs, emit), timeout=60)
+        reply = await _measured_call('generation', partial(_stream_round, msgs, emit), timeout=60)
         if _reply_truncated(reply):
             if compact_retry:
                 raise AIError('ai_invalid_response', 'Gemini response exceeded output budget')

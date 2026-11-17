@@ -99,13 +99,13 @@ def yandex_profile(payload, app_id):
     )
 
 
-def x_profile(payload, app_id):
+def x_profile(payload, _app_id):
     token = payload['access_token']
     data = call('GET', 'https://api.x.com/2/users/me', headers=bearer(token)).get('data') or {}
     return Identity(subject=subject_of(data.get('id')), email=None, email_trusted=False)
 
 
-def github_profile(payload, app_id):
+def github_profile(payload, _app_id):
     token = payload['access_token']
     headers = {**bearer(token), 'Accept': 'application/vnd.github+json'}
     user = call('GET', 'https://api.github.com/user', headers=headers)
@@ -122,7 +122,7 @@ def github_profile(payload, app_id):
     return Identity(subject=subject_of(user.get('id')), email=email, email_trusted=bool(email))
 
 
-def discord_profile(payload, app_id):
+def discord_profile(payload, _app_id):
     token = payload['access_token']
     user = call('GET', 'https://discord.com/api/users/@me', headers=bearer(token))
     verified = user.get('verified') is True
@@ -133,7 +133,7 @@ def discord_profile(payload, app_id):
     )
 
 
-def microsoft_profile(payload, app_id):
+def microsoft_profile(payload, _app_id):
     token = payload['access_token']
     user = call(
         'GET',
@@ -146,7 +146,7 @@ def microsoft_profile(payload, app_id):
     )
 
 
-def tiktok_profile(payload, app_id):
+def tiktok_profile(payload, _app_id):
     token = payload['access_token']
     data = call(
         'GET',
@@ -158,7 +158,7 @@ def tiktok_profile(payload, app_id):
     return Identity(subject=subject_of(user.get('open_id')), email=None, email_trusted=False)
 
 
-def kakao_profile(payload, app_id):
+def kakao_profile(payload, _app_id):
     user = call('GET', 'https://kapi.kakao.com/v2/user/me', headers=bearer(payload['access_token']))
     account = user.get('kakao_account') or {}
     trusted = account.get('is_email_verified') is True and account.get('is_email_valid') is True
@@ -169,7 +169,7 @@ def kakao_profile(payload, app_id):
     )
 
 
-def naver_profile(payload, app_id):
+def naver_profile(payload, _app_id):
     data = call(
         'GET', 'https://openapi.naver.com/v1/nid/me', headers=bearer(payload['access_token'])
     )
@@ -181,7 +181,7 @@ def naver_profile(payload, app_id):
     )
 
 
-def line_profile(payload, app_id):
+def line_profile(payload, _app_id):
     user = call('GET', 'https://api.line.me/v2/profile', headers=bearer(payload['access_token']))
     return Identity(subject=subject_of(user.get('userId')), email=None, email_trusted=False)
 

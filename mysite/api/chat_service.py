@@ -647,7 +647,7 @@ def _open_selection(db, s):
         'completed',
     ):
         record_booking_conflict()
-        raise HTTPException(409, error_detail('conflict'))
+        raise HTTPException(409, error_detail('conflict')) from None
     return selection
 
 
@@ -703,7 +703,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
     if revision != s.revision:
         record_booking_conflict()
-        raise HTTPException(409, error_detail('conflict'))
+        raise HTTPException(409, error_detail('conflict')) from None
     if preview['missing_fields']:
         return recover_confirmation(db, s, message)
 
@@ -744,7 +744,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         if existing:
             return already_submitted(existing.request_id, client_id)
         record_booking_conflict()
-        raise HTTPException(409, error_detail('conflict'))
+        raise HTTPException(409, error_detail('conflict')) from None
     return {'status': 'submitted', 'request_id': obj.id, 'client_code': f'KG-{client_id:06d}'}
 
 

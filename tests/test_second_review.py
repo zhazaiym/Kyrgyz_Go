@@ -477,7 +477,7 @@ def test_chats_silent_for_a_year_are_removed_unless_a_request_needs_them(client)
     recent = datetime.now(timezone.utc) - timedelta(days=10)
     sessions = {name: str(uuid4()) for name in ('silent', 'answered', 'booked')}
     with SessionLocal() as db:
-        for name, identity in sessions.items():
+        for identity in sessions.values():
             db.add(ChatSession(id=identity, client_id=client_id, state={}, created_at=old))
         db.flush()
         for name, identity in sessions.items():

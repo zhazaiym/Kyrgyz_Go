@@ -150,7 +150,7 @@ def test_video_detail_query_count_is_constant(client):
 
         def record(connection, cursor, statement, parameters, context, executemany):
             if statement.lstrip().upper().startswith('SELECT'):
-                statements.append(statement)
+                statements.append(statement)  # noqa: B023 - removed in this iteration
 
         event.listen(engine, 'before_cursor_execute', record)
         try:

@@ -37,7 +37,7 @@ async def upload_image(request: Request):
     if not hasattr(upload, 'read'):
         return JSONResponse({'detail': 'Сүрөт тандалган жок'}, status_code=400)
     try:
-        url = await save_upload(request, upload)
+        url = await save_upload(upload)
     except HTTPException as exc:
         return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
     return JSONResponse({'url': url}, status_code=201)

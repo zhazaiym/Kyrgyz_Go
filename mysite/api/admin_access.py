@@ -41,7 +41,7 @@ def upload_admin_allowed(scope) -> bool:
 
         with SessionLocal() as db:
             try:
-                admin = get_current_admin(request=request, credentials=credentials, db=db)
+                admin = get_current_admin(credentials=credentials, db=db)
                 require_admin_roles('catalog_editor')(admin)
             except HTTPException:
                 return False

@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 # FASTAPI
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(_app):
     cleanup = asyncio.create_task(token_cleanup_loop())
     from mysite.translations.jobs import recover_missing_translations
 

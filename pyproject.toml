@@ -4,7 +4,18 @@ line-length = 100
 extend-exclude = ["backups", "docs", ".ml-test-tmp"]
 
 [tool.ruff.lint]
-select = ["F", "E4", "E7", "E9"]
+select = ["F", "E4", "E7", "E9", "B", "ARG"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Body", "fastapi.Cookie", "fastapi.Depends", "fastapi.File", "fastapi.Form",
+    "fastapi.Header", "fastapi.Path", "fastapi.Query", "fastapi.Security",
+    "fastapi_filter.FilterDepends", "mysite.api.admin.require_admin_roles",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Pytest fixtures are requested by name for their side effects.
+"tests/**" = ["ARG"]
 
 [tool.ruff.format]
 quote-style = "single"

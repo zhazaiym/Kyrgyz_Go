@@ -339,7 +339,7 @@ def test_tour_display_and_search_fall_back_for_whitespace_translation(client, bl
         tour_id = tour.id
         db.commit()
         tour = db.get(models.Tour, tour_id)
-        assert get_localized_tour(tour, db, 'en')['title'] == marker
+        assert get_localized_tour(tour, 'en')['title'] == marker
         from mysite.api.filter_utils import _display_field
 
         assert (

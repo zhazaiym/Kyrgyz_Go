@@ -44,11 +44,7 @@ def validate_items(db, tour_id, hotel_id, transport_id):
     if all(value is None for value in (tour_id, hotel_id, transport_id)):
         raise HTTPException(status_code=422, detail=error_detail('validation_error'))
 
-    for model, item_id, name in [
-        (Tour, tour_id, 'Тур'),
-        (Hotel, hotel_id, 'Отель'),
-        (Transport, transport_id, 'Транспорт'),
-    ]:
+    for model, item_id in [(Tour, tour_id), (Hotel, hotel_id), (Transport, transport_id)]:
         if item_id is not None:
             item = db.get(model, item_id)
 

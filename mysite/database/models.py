@@ -465,7 +465,7 @@ class Contact(LocalizedContent, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     @validates('whatsapp')
-    def validate_whatsapp(self, key, value):
+    def validate_whatsapp(self, _key, value):
         return validate_whatsapp_link(value)
 
 
@@ -528,7 +528,7 @@ class TravelRequest(Base):
 
 @event.listens_for(AboutSection, 'after_insert')
 @event.listens_for(FAQ, 'after_insert')
-def assign_content_order(mapper, connection, target):
+def assign_content_order(_mapper, connection, target):
     connection.execute(
         target.__table__.update().where(target.__table__.c.id == target.id).values(order=target.id)
     )
@@ -537,7 +537,7 @@ def assign_content_order(mapper, connection, target):
 
 
 @event.listens_for(TravelRequest, 'before_update')
-def protect_completed_request(mapper, connection, target):
+def protect_completed_request(_mapper, connection, target):
     status = inspect(target).attrs.status
     if not status.history.has_changes():
         return
@@ -554,7 +554,7 @@ def protect_completed_request(mapper, connection, target):
 
 @event.listens_for(Base, 'before_insert', propagate=True)
 @event.listens_for(Base, 'before_update', propagate=True)
-def validate_catalogue_write(mapper, connection, target):
+def validate_catalogue_write(_mapper, _connection, target):
     if type(target).__module__ != __name__:
         return
     from mysite.database.storage_validation import validate_storage_values

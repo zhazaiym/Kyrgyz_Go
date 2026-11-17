@@ -45,7 +45,7 @@ def error_detail(code):
     return {'code': code, 'message': ERROR_MESSAGES[code]}
 
 
-async def database_busy_response(request, exc):
+async def database_busy_response(_request, _exc):
     """Every pooled database connection is taken: ask the client to retry instead of a 500."""
     from starlette.responses import JSONResponse
 
@@ -56,7 +56,7 @@ async def database_busy_response(request, exc):
     )
 
 
-async def http_error_response(request, exc):
+async def http_error_response(_request, exc):
     from starlette.responses import JSONResponse
 
     detail = exc.detail
