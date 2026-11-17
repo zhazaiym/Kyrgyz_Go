@@ -201,6 +201,10 @@ def test_verified_offer_is_still_answered_when_model_repeats_invented_currency(m
         'Сон-Куль лежит на высоте 3016 м, туда стоит ехать с июня.',
         'Тур на 1 день, группа от 2 до 8 человек.',
         'Выезд в 8:00, возвращение к 19:30.',
+        'Цена зависит от 3 факторов.',
+        'Стоимость включает: 2 ночи в отеле.',
+        'Цена тура на 2 человека ниже.',
+        'С 10 до 15 июня цены ниже.',
     ],
 )
 def test_numbers_that_are_not_prices_are_accepted(answer):
@@ -217,6 +221,15 @@ def test_numbers_that_are_not_prices_are_accepted(answer):
         'Стоимость тура «Бурана» — 95.',
         '95 за человека.',
         'Price: 95.',
+        'Стоимость тура составляет 95.',
+        'Цена за тур 95.',
+        'Тур стоит 95 в сутки.',
+        'Тур стоит примерно 95.',
+        'Цена за тур на 4 дня: 95.',
+        'Цена от 95 до 120 сом.',
+        'Цена: от 95 до 120.',
+        'Тур обойдётся в 95-120 сом.',
+        'Тур обойдётся в KGS 120-95.',
     ],
 )
 def test_bare_price_claims_need_catalogue_evidence(answer):
@@ -224,6 +237,7 @@ def test_bare_price_claims_need_catalogue_evidence(answer):
 
     evidence = PriceEvidence()
     evidence.add({'title': 'Бурана', 'price': '80.00', 'currency': None})
+    evidence.add({'title': 'Сон-Куль', 'price': '120', 'currency': 'KGS'})
     assert not evidence.accepts(answer)
     assert evidence.accepts(answer.replace('95', '80'))
 
