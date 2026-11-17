@@ -113,11 +113,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from sqlalchemy.exc import TimeoutError as DatabasePoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from mysite.api.errors import http_error_response
+from mysite.api.errors import database_busy_response, http_error_response
 
 app.add_exception_handler(StarletteHTTPException, http_error_response)
+app.add_exception_handler(DatabasePoolTimeout, database_busy_response)
 
 
 # CORS

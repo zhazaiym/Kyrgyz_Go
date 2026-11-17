@@ -33,6 +33,7 @@ RESOURCE_LIMITS = {
     'MAX_IMAGE_UPLOAD_BYTES': (10_485_760, 33_554_432),
     'MAX_VIDEO_UPLOAD_BYTES': (104_857_600, 1_073_741_824),
     'REQUEST_BODY_TIMEOUT': (10, 60),
+    'UPLOAD_MAX_SECONDS': (900, 3600),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
     'WS_MAX_PER_CLIENT': (8, 64),
@@ -266,13 +267,16 @@ class ResourceLimitsMiddleware:
                 and scope.get('path') in IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
             ):
                 size = 0
-                deadline = asyncio.get_running_loop().time() + setting('REQUEST_BODY_TIMEOUT')
+                # A large file on a slow line may take minutes; what is refused is a
+                # sender that stops sending (REQUEST_BODY_TIMEOUT between pieces).
+                deadline = asyncio.get_running_loop().time() + setting('UPLOAD_MAX_SECONDS')
 
                 async def bounded_upload_receive():
                     nonlocal size
+                    left = deadline - asyncio.get_running_loop().time()
                     try:
                         message = await asyncio.wait_for(
-                            receive(), timeout=max(0, deadline - asyncio.get_running_loop().time())
+                            receive(), timeout=max(0, min(setting('REQUEST_BODY_TIMEOUT'), left))
                         )
                     except TimeoutError:
                         raise HTTPException(408, 'Request body timed out') from None
