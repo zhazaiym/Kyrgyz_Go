@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
+from mysite.database.models import Transport
+
 
 def image_bytes(image_format='PNG', size=(64, 48), mode='RGB', color='teal'):
     output = BytesIO()
@@ -13,14 +15,12 @@ def image_bytes(image_format='PNG', size=(64, 48), mode='RGB', color='teal'):
     return output.getvalue()
 
 
-def upload(client, headers, content, name='photo.png', content_type='image/png'):
-    return client.post(
-        '/admin/media/', files={'file': (name, content, content_type)}, headers=headers
-    )
+def upload(client, content, name='photo.png', content_type='image/png'):
+    return client.post('/admin/media/upload', files={'file': (name, content, content_type)})
 
 
-def test_uploaded_image_reaches_frontend_as_url(client, admin_headers):
-    response = upload(client, admin_headers, image_bytes())
+def test_uploaded_image_reaches_frontend_as_url(client, panel, seed):
+    response = upload(client, image_bytes())
 
     assert response.status_code == 201, response.text
     url = response.json()['url']
@@ -32,52 +32,44 @@ def test_uploaded_image_reaches_frontend_as_url(client, admin_headers):
     assert served.headers['content-type'] == 'image/webp'
     assert Image.open(BytesIO(served.content)).size == (64, 48)
 
-    transport = client.post(
-        '/transports/',
-        json={'name': 'Toyota RAV4', 'seats': 5, 'price': '140.00', 'main_image': url},
-        headers=admin_headers,
-    )
-    assert transport.status_code == 200, transport.text
+    seed(Transport, name='Toyota RAV4', seats=5, price=140, main_image=url)
     listed = client.get('/transports/').json()
     assert any(item['main_image'] == url for item in listed)
 
 
-def test_upload_requires_admin_token(client, customer_headers):
-    assert upload(client, {}, image_bytes()).status_code == 401
-    assert upload(client, customer_headers, image_bytes()).status_code == 401
+def test_upload_requires_panel_login(client):
+    client.get('/admin/logout')
+    assert upload(client, image_bytes()).status_code == 401
 
 
-def test_upload_rejects_files_that_are_not_images(client, admin_headers):
-    text = upload(client, admin_headers, b'not an image', 'notes.txt', 'text/plain')
+def test_upload_rejects_files_that_are_not_images(client, panel):
+    text = upload(client, b'not an image', 'notes.txt', 'text/plain')
     svg = upload(
         client,
-        admin_headers,
         b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
         'logo.svg',
         'image/svg+xml',
     )
-    gif = upload(client, admin_headers, image_bytes('GIF'), 'photo.gif', 'image/gif')
+    gif = upload(client, image_bytes('GIF'), 'photo.gif', 'image/gif')
 
     assert text.status_code == 400
     assert svg.status_code == 400
     assert gif.status_code == 400
 
 
-def test_upload_rejects_images_over_the_size_limit(client, admin_headers, monkeypatch):
+def test_upload_rejects_images_over_the_size_limit(client, panel, monkeypatch):
     from mysite.api.resource_limits import setting
 
     monkeypatch.setenv('MAX_IMAGE_UPLOAD_BYTES', '1024')
     setting.cache_clear()
 
-    response = upload(client, admin_headers, image_bytes('BMP', (200, 200)), 'big.png')
+    response = upload(client, image_bytes('BMP', (200, 200)), 'big.png')
 
     assert response.status_code == 413
 
 
-def test_large_images_are_resized_and_transparency_is_kept(client, admin_headers):
-    response = upload(
-        client, admin_headers, image_bytes('PNG', (3000, 1500), 'RGBA', (0, 128, 128, 120))
-    )
+def test_large_images_are_resized_and_transparency_is_kept(client, panel):
+    response = upload(client, image_bytes('PNG', (3000, 1500), 'RGBA', (0, 128, 128, 120)))
 
     assert response.status_code == 201, response.text
     served = client.get(urlsplit(response.json()['url']).path)
@@ -86,7 +78,7 @@ def test_large_images_are_resized_and_transparency_is_kept(client, admin_headers
     assert image.mode == 'RGBA'
 
 
-def test_admin_panel_uploads_with_session_and_shows_picker(client, admin_headers):
+def test_admin_panel_uploads_with_session_and_shows_picker(client, panel):
     files = {'file': ('photo.jpg', image_bytes('JPEG'), 'image/jpeg')}
     client.get('/admin/logout')
     assert client.post('/admin/media/upload', files=files).status_code == 401

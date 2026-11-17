@@ -24,15 +24,10 @@ GET списков и деталей туров, отелей, транспор�
 
 Маршруты:
 
-* `POST /admin/media/videos/` — multipart поле `file`, роль owner/catalog_editor.
 * `GET /tour-videos/?tour_id=42`, `GET /tour-videos/7/` — публично для активных туров.
-* `POST /tour-videos/`, `PUT /tour-videos/7/`, `DELETE /tour-videos/7/` — owner/catalog_editor.
 * SQLAdmin: представление `TourVideoAdmin`, создание/изменение/удаление связей.
-* `POST /admin/media/video-upload` — загрузка с сессионной cookie SQLAdmin,
-  те же роли, ответ как у API-загрузки. Можно загрузить файл этим серверным
-  маршрутом и вставить полученный URL в поле `video_url` формы SQLAdmin.
-
-Контракт `POST /admin/media/` для изображений не менялся.
+* `POST /admin/media/video-upload` — загрузка с сессионной cookie SQLAdmin, роль
+  owner/catalog_editor. Полученный URL вставляется в поле `video_url` формы SQLAdmin.
 
 Файл разбирается `ffprobe` с ограниченными протоколами и демультиплексорами,
 проверяется наличие видеопотока и контейнер MP4/WebM. Для WebM проверяются
@@ -109,44 +104,13 @@ python -m alembic upgrade head
 предыдущего head, повторный upgrade. Downgrade удаляет новую таблицу видео;
 для рабочей базы его без необходимости выполнять не следует.
 
-## Примеры API
-
-Загрузка (HTTP 201):
-
-```sh
-curl -X POST "$API/admin/media/videos/" \
-  -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
-  -F "file=@tour.mp4"
-```
-
-```json
-{"url":"/media/videos/2026/11/0123456789abcdef0123456789abcdef.mp4","content_type":"video/mp4","size":1234567}
-```
-
-Привязка (HTTP 200, требуется существующий tour_id):
-
-```sh
-curl -X POST "$API/tour-videos/" \
-  -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"tour_id":42,"video_url":"/media/videos/2026/11/0123456789abcdef0123456789abcdef.mp4","poster_url":null,"order":0}'
-```
-
-```json
-{"id":7,"tour_id":42,"video_url":"/media/videos/2026/11/0123456789abcdef0123456789abcdef.mp4","poster_url":null,"order":0}
-```
+## Пример ответа
 
 Гость: `GET /tours/42/` содержит прежние поля и
 `"videos":[{"id":7,"tour_id":42,"video_url":"/media/videos/2026/11/0123456789abcdef0123456789abcdef.mp4","poster_url":null,"order":0}]`.
 Для активного тура без видео — `"videos":[]`.
 
-```sh
-curl -X PUT "$API/tour-videos/7/" -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" -d '{"order":1}'
-curl -X DELETE "$API/tour-videos/7/" -H "Authorization: Bearer $ADMIN_ACCESS_TOKEN"
-```
-
-Удаление связи через API/SQLAdmin не удаляет общий медиафайл с диска:
+Удаление связи в SQLAdmin не удаляет общий медиафайл с диска:
 тот же URL может использоваться другими записями.
 
 ## Проверки

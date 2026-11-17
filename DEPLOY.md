@@ -107,8 +107,7 @@ multiple replicas without moving migrations to a separate deployment step.
 
 ### Uploaded photos
 
-Admins upload JPEG, PNG or WEBP photos from the SQLAdmin forms or through
-`POST /admin/media/`. The API stores them as WEBP in the `media` Compose volume
+Admins upload JPEG, PNG or WEBP photos from the SQLAdmin forms. The API stores them as WEBP in the `media` Compose volume
 (`/app/media`, override with `MEDIA_ROOT`); `MAX_IMAGE_UPLOAD_BYTES` limits one
 upload (default 10 MB). Back up the `media` volume together with PostgreSQL: a
 database restore without it leaves broken photo links.
@@ -329,20 +328,21 @@ Reusing an older issued refresh outside that window revokes its session.
 
 SQLAdmin sessions expire after seven idle days, renew on active HTTP use every
 ten minutes and require login after 30 days. Logout revokes the session. The owner-only
-SQLAdmin section lists all sessions and allows revocation; API endpoints list and
-revoke only the caller's own sessions. Password changes and deactivation revoke
-all sessions of that administrator.
+SQLAdmin section lists all sessions and allows revocation. The owner sets passwords
+in the Administrators section; a password change or deactivation revokes all
+sessions of that administrator. The API has no administrator routes.
 
 | Setting | Backend rollout default |
 | --- | --- |
-| `ADMIN_ACCESS_TOKEN_MINUTES` | `60` until the admin frontend supports refresh |
-| `ADMIN_REFRESH_DAYS` | `30` |
 | `ADMIN_SESSION_HOURS` | `168` |
 | `GEMINI_REQUESTS_PER_MINUTE` | `10` shared translation calls |
 
-Set `ADMIN_ACCESS_TOKEN_MINUTES=15` after the new Vercel frontend ships. Keep 60
-during this backend-only rollout. Notify the reviewer of these settings before
-merging. This change does not edit the production `.env` or operate the server.
+### Admin panel on its own host
+
+Set `ADMIN_DOMAIN=admin.example.kg` and point its DNS `A` record at the server.
+Caddy then serves both hosts and obtains a certificate for each; the panel answers
+only on `ADMIN_DOMAIN` (its root redirects to `/admin/`), and `/admin` on
+`API_DOMAIN` returns 404. Leave it empty to keep the panel at `API_DOMAIN/admin`.
 
 ## Translation recovery
 

@@ -5,8 +5,7 @@ import inspect
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import (HelicopterImage, HelicopterTour, Hotel, HotelImage, Tour,
@@ -14,25 +13,15 @@ from mysite.database.models import (HelicopterImage, HelicopterTour, Hotel, Hote
 from mysite.database.schemas import catalogue
 
 
-def found(db: Session, model, identity):
-    record = db.get(model, identity)
-    if record is None:
-        raise HTTPException(404, detail=error_detail('not_found'))
-    return record
-
-
 def image_router(*, key: str, parent, image, schema: str) -> APIRouter:
-    """CRUD routes for the photos of one kind of catalogue record.
+    """Read routes for the photos of one kind of catalogue record.
 
     ``key`` is the record kind: the photo links to it by ``f'{key}_id'`` and
     reaches it through the ``key`` relationship. ``schema`` is the common
-    prefix of the input, update and output schemas in ``catalogue``.
+    prefix of the output schema in ``catalogue``.
     """
     parent_id = f'{key}_id'
-    input_schema = getattr(catalogue, f'{schema}InputSchema')
-    update_schema = getattr(catalogue, f'{schema}UpdateSchema')
     out_schema = getattr(catalogue, f'{schema}OutSchema')
-    editor = [Depends(require_admin_roles('catalog_editor'))]
     router = APIRouter(prefix=f'/{key}-images', tags=[f'{key.capitalize()} Images'])
 
     def owner(**query):
@@ -45,15 +34,6 @@ def image_router(*, key: str, parent, image, schema: str) -> APIRouter:
             )
         ]
     )
-
-    @router.post('/', response_model=out_schema, dependencies=editor, name=f'create_{key}_image')
-    def create(data: input_schema, db: Session = Depends(get_db)):
-        found(db, parent, getattr(data, parent_id))
-        record = image(**data.model_dump())
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        return record
 
     @router.get('/', response_model=list[out_schema], name=f'list_{key}_images')
     def listing(
@@ -80,28 +60,6 @@ def image_router(*, key: str, parent, image, schema: str) -> APIRouter:
         if record is None or not getattr(record, key).is_active:
             raise HTTPException(404, detail=error_detail('not_found'))
         return record
-
-    @router.put(
-        '/{image_id}/', response_model=out_schema, dependencies=editor, name=f'update_{key}_image'
-    )
-    def update(image_id: int, data: update_schema, db: Session = Depends(get_db)):
-        record = found(db, image, image_id)
-        values = data.model_dump(exclude_unset=True)
-        if parent_id in values:
-            if values[parent_id] is None:
-                raise HTTPException(400, detail=error_detail('invalid_request'))
-            found(db, parent, values[parent_id])
-        for name, value in values.items():
-            setattr(record, name, value)
-        db.commit()
-        db.refresh(record)
-        return record
-
-    @router.delete('/{image_id}/', dependencies=editor, name=f'delete_{key}_image')
-    def delete(image_id: int, db: Session = Depends(get_db)):
-        db.delete(found(db, image, image_id))
-        db.commit()
-        return success_detail('deleted')
 
     return router
 

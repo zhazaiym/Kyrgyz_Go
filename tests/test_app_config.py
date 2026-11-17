@@ -95,9 +95,27 @@ def test_flags_read_every_usual_spelling(monkeypatch, raw, expected):
 
 @pytest.mark.parametrize(
     ('name', 'raw'),
-    [('API_DOCS', 'maybe'), ('GEMINI_REQUESTS_PER_MINUTE', 'ten'), ('TRIP_OPTION_RADIUS_KM', '0')],
+    [
+        ('API_DOCS', 'maybe'),
+        ('GEMINI_REQUESTS_PER_MINUTE', 'ten'),
+        ('TRIP_OPTION_RADIUS_KM', '0'),
+        ('ADMIN_DOMAIN', 'https://admin.example.kg'),
+    ],
 )
 def test_wrong_setting_stops_the_start(monkeypatch, name, raw):
     monkeypatch.setenv(name, raw)
     with pytest.raises(RuntimeError, match=name):
         validate_settings()
+
+
+def test_admin_panel_moves_to_its_own_host(client, monkeypatch):
+    monkeypatch.setenv('ADMIN_DOMAIN', 'admin.example.kg')
+    panel = {'host': 'admin.example.kg'}
+    assert client.get('/admin/login', headers=panel).status_code == 200
+    root = client.get('/', headers=panel, follow_redirects=False)
+    assert root.status_code == 307 and root.headers['location'] == '/admin/'
+    assert client.get('/tours/', headers=panel).status_code == 404
+    assert client.get('/admin/login').status_code == 404
+    assert client.get('/tours/').status_code == 200
+    monkeypatch.delenv('ADMIN_DOMAIN')
+    assert client.get('/admin/login').status_code == 200

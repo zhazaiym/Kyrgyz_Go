@@ -1,34 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import TourCategory
-from mysite.database.schemas.catalogue import (TourCategoryInputSchema, TourCategoryOutSchema,
-                                               TourCategoryUpdateSchema)
-from mysite.translations.content import Language, localized, update_translations
+from mysite.database.schemas.catalogue import TourCategoryOutSchema
+from mysite.translations.content import Language, localized
 
 category_router = APIRouter(prefix='/tour-categories', tags=['Tour Categories'])
-
-
-@category_router.post(
-    '/',
-    response_model=TourCategoryOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def create_category(category: TourCategoryInputSchema, db: Session = Depends(get_db)):
-    category_db = TourCategory()
-    category_db.name = category.name
-    category_db.image = category.image
-
-    db.add(category_db)
-    update_translations(category_db)
-    db.commit()
-    db.refresh(category_db)
-
-    return category_db
 
 
 @category_router.get('/', response_model=list[TourCategoryOutSchema])
@@ -49,74 +29,3 @@ def detail_category(category_id: int, lang: Language = 'ru', db: Session = Depen
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(category_db, lang)
-
-
-@category_router.put(
-    '/{category_id}/',
-    response_model=TourCategoryOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def update_category(
-    category_id: int, category: TourCategoryUpdateSchema, db: Session = Depends(get_db)
-):
-    category_db = db.get(TourCategory, category_id)
-
-    if category_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    for key, value in category.model_dump(exclude_unset=True).items():
-        setattr(category_db, key, value)
-
-    update_translations(category_db)
-    db.commit()
-    db.refresh(category_db)
-
-    return category_db
-
-
-@category_router.delete(
-    '/{category_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def delete_category(category_id: int, db: Session = Depends(get_db)):
-    category_db = db.get(TourCategory, category_id)
-
-    if category_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    if category_db.tours:
-        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
-
-    db.delete(category_db)
-    db.commit()
-
-    return success_detail('deleted')
-
-
-@category_router.post(
-    '/setup-directions/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def setup_directions(db: Session = Depends(get_db)):
-    directions = [
-        'Высокие горы',
-        'Бирюзовые озёра',
-        'Кочевая культура',
-        'Шёлковый путь',
-        'Бескрайние долины',
-    ]
-
-    for name in directions:
-        category_db = db.query(TourCategory).filter(TourCategory.name == name).first()
-
-        if category_db is None:
-            category_db = TourCategory()
-            category_db.name = name
-            db.add(category_db)
-
-    db.commit()
-
-    categories = db.query(TourCategory).filter(TourCategory.name.in_(directions)).all()
-
-    return {
-        **success_detail('directions_ready'),
-        'categories': [{'id': category.id, 'name': category.name} for category in categories],
-    }

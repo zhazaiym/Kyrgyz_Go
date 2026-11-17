@@ -1,33 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Tour, TourProgram
-from mysite.database.schemas.catalogue import (TourProgramInputSchema, TourProgramOutSchema,
-                                               TourProgramUpdateSchema)
-from mysite.translations.content import Language, localized, update_translations
+from mysite.database.schemas.catalogue import TourProgramOutSchema
+from mysite.translations.content import Language, localized
 
 tour_program_router = APIRouter(prefix='/tour-programs', tags=['Tour Programs'])
-
-
-@tour_program_router.post(
-    '/',
-    response_model=TourProgramOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def create_tour_program(data: TourProgramInputSchema, db: Session = Depends(get_db)):
-    if not db.get(Tour, data.tour_id):
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    program_db = TourProgram(**data.model_dump())
-    db.add(program_db)
-    update_translations(program_db)
-    db.commit()
-    db.refresh(program_db)
-    return program_db
 
 
 @tour_program_router.get('/', response_model=list[TourProgramOutSchema])
@@ -58,42 +39,3 @@ def detail_tour_program(program_id: int, lang: Language = 'ru', db: Session = De
     if not program_db or not program_db.tour.is_active:
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
     return localized(program_db, lang)
-
-
-@tour_program_router.put(
-    '/{program_id}/',
-    response_model=TourProgramOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def update_tour_program(
-    program_id: int, data: TourProgramUpdateSchema, db: Session = Depends(get_db)
-):
-    program_db = db.get(TourProgram, program_id)
-    if not program_db:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    values = data.model_dump(exclude_unset=True)
-    if 'tour_id' in values:
-        if values['tour_id'] is None or not db.get(Tour, values['tour_id']):
-            raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    for key, value in values.items():
-        setattr(program_db, key, value)
-
-    update_translations(program_db)
-    db.commit()
-    db.refresh(program_db)
-    return program_db
-
-
-@tour_program_router.delete(
-    '/{program_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def delete_tour_program(program_id: int, db: Session = Depends(get_db)):
-    program_db = db.get(TourProgram, program_id)
-    if not program_db:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    db.delete(program_db)
-    db.commit()
-    return success_detail('deleted')

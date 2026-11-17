@@ -7,15 +7,20 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from wtforms import PasswordField, SelectField, validators
 
+from mysite.admin.credentials import password_hash
 from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels, local_time
 from mysite.api.provider_secrets import open_secret, seal_secret
+from mysite.api.selection_status import linked_request, processing_status
 from mysite.api.social_auth import WITHOUT_SECRET, valid_app_id, valid_secret
 from mysite.database.db import SessionLocal
-from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, District,
+from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, Country, District,
                                     HelicopterImage, HelicopterTour, Hotel, HotelImage, Region,
                                     Tour, TourCategory, TourImage, TourProgram, TourVideo,
                                     Transport, TransportImage, TravelRequest, Trekking,
                                     TrekkingImage, TrekkingProgram)
+from mysite.database.request_status import validate_status_transition
+from mysite.database.selection_models import TravelSelection
+from mysite.database.selection_statuses import SELECTION_TO_REQUEST_STATUS, SelectionStatus
 from mysite.database.social_models import AuthProvider
 from mysite.database.tour_review_models import TourReview
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
@@ -123,11 +128,27 @@ class AdminAdmin(ModelView, model=Admin):
     category = 'Доступ'
     category_icon = 'fa-solid fa-lock'
     column_list = [Admin.username, Admin.role, Admin.is_active]
-    can_create = False
     form_columns = [Admin.username, Admin.role, Admin.is_active]
     form_overrides = {'role': SelectField}
     form_args = {'role': {'choices': list(CHOICE_LABELS['role'].items())}}
     column_details_exclude_list = [Admin.hashed_password]
+
+    async def scaffold_form(self, rules=None):
+        form = await super().scaffold_form(rules)
+        form.password = PasswordField(
+            'Новый пароль',
+            validators=[validators.Optional(), validators.Length(min=8, max=128)],
+            description='Новому администратору обязателен. Смена пароля завершает все его сессии.',
+            render_kw={'class': 'form-control', 'autocomplete': 'new-password'},
+        )
+        return form
+
+    async def on_model_change(self, data, _model, is_created, _request):
+        password = data.pop('password', None)
+        if password:
+            data['hashed_password'] = await run_in_threadpool(password_hash.hash, password)
+        elif is_created:
+            raise ValueError('Задайте пароль новому администратору')
 
 
 class AboutAdmin(LocalizedAdminMixin, ModelView, model=About):
@@ -264,6 +285,26 @@ class TourProgramAdmin(LocalizedAdminMixin, ModelView, model=TourProgram):
     category = 'Туры'
     category_icon = 'fa-solid fa-route'
     column_list = [TourProgram.id, TourProgram.title]
+
+
+class CountryAdmin(LocalizedAdminMixin, ModelView, model=Country):
+    name = 'Страна'
+    name_plural = 'Страны'
+    icon = 'fa-solid fa-flag'
+    category = 'География'
+    category_icon = 'fa-solid fa-map'
+    column_list = [Country.id, Country.name]
+
+    async def on_model_delete(self, model, _request):
+        def used():
+            with SessionLocal() as db:
+                return bool(
+                    db.query(Region.id).filter(Region.country_id == model.id).first()
+                    or db.query(Tour.id).filter(Tour.country_id == model.id).first()
+                )
+
+        if await run_in_threadpool(used):
+            raise ValueError('Страна указана у регионов или туров: сначала уберите её оттуда')
 
 
 class RegionAdmin(LocalizedAdminMixin, ModelView, model=Region):
@@ -537,6 +578,50 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     form_columns = [TravelRequest.status]
 
 
+SELECTION_STATUSES = {
+    'draft': 'Черновик',
+    'in_progress': 'В работе',
+    'completed': 'Завершена',
+    'cancelled': 'Отменена',
+}
+
+
+class TravelSelectionAdmin(ModelView, model=TravelSelection):
+    icon = 'fa-solid fa-list-check'
+    name = 'Подборка'
+    name_plural = 'Подборки'
+    column_list = [
+        TravelSelection.id,
+        TravelSelection.client_id,
+        TravelSelection.tour_id,
+        TravelSelection.hotel_id,
+        TravelSelection.transport_id,
+        TravelSelection.status,
+        TravelSelection.created_at,
+    ]
+    column_default_sort = [(TravelSelection.created_at, True), (TravelSelection.id, True)]
+    column_formatters = {
+        'status': lambda model, _attribute: SELECTION_STATUSES.get(model.status, model.status),
+        'created_at': local_time('created_at'),
+    }
+    can_view_details = True
+    can_create = False
+    can_delete = False
+    form_columns = [TravelSelection.status]
+    form_overrides = {'status': SelectField}
+    form_args = {'status': {'choices': list(SELECTION_STATUSES.items())}}
+
+    async def on_model_change(self, data, model, _is_created, _request):
+        db = object_session(model)
+        travel_request = linked_request(db, model, for_update=True)
+        proposed = data.get('status', model.status)
+        if proposed == 'draft' and (model.session_id is not None or travel_request is not None):
+            raise ValueError('Отправленную подборку нельзя вернуть в черновик')
+        validate_status_transition(processing_status(model, travel_request), proposed)
+        if travel_request is not None and proposed != 'draft':
+            travel_request.status = SELECTION_TO_REQUEST_STATUS[SelectionStatus(proposed)]
+
+
 REVIEW_STATUSES = {'pending': 'Ждёт проверки', 'published': 'Опубликован', 'rejected': 'Отклонён'}
 
 
@@ -575,7 +660,7 @@ class TourReviewAdmin(ModelView, model=TourReview):
 def _view_roles(view):
     if view in (AdminAdmin, AuthProviderAdmin):
         allowed = {'owner'}
-    elif view in (TravelRequestAdmin, TourReviewAdmin):
+    elif view in (TravelRequestAdmin, TravelSelectionAdmin, TourReviewAdmin):
         allowed = {'owner', 'manager'}
     else:
         allowed = {'owner', 'catalog_editor'}

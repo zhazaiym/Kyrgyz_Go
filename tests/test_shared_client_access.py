@@ -142,7 +142,7 @@ def test_legacy_and_shared_registration_use_the_same_account(client):
         client.post(
             '/tours/', headers=headers, json={'title': 'Unauthorized creation', 'price': 100}
         ).status_code
-        == 401
+        == 405
     )
     assert client.post('/account/logout', headers=headers).status_code == 200
     assert client.get('/account/me', headers=headers).status_code == 401
@@ -160,3 +160,17 @@ def test_path_with_or_without_slash_is_served_without_redirect(client, path):
     body = {'username': f'slash_{secrets.token_hex(6)}', 'password': 'StrongSlashPassword1!'}
     response = client.post(path, json=body, follow_redirects=False)
     assert response.status_code == 201, response.text
+
+
+def test_photo_lists_filter_by_their_record(client, seed):
+    from mysite.database.models import District, Hotel, HotelImage, Region
+
+    location = {'region_id': seed(Region, name='Gallery region')}
+    location['district_id'] = seed(District, name='Gallery district', **location)
+    hotel_id = seed(Hotel, name='Gallery hotel', price=10, **location)
+    other_id = seed(Hotel, name='Other hotel', price=10, **location)
+    image_id = seed(HotelImage, hotel_id=hotel_id, image='https://example.com/a.jpg')
+    seed(HotelImage, hotel_id=other_id, image='https://example.com/b.jpg')
+    listed = client.get('/hotel-images/', params={'hotel_id': hotel_id}).json()
+    assert [row['id'] for row in listed] == [image_id]
+    assert client.get('/hotel-images/', params={'hotel_id': 2147483647}).status_code == 404

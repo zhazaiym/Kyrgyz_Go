@@ -77,13 +77,6 @@ def offline_catalogue_translations(monkeypatch):
             translate_record(entity, identity, source, translator) == 'translated'
         ),
     )
-    monkeypatch.setattr(
-        'mysite.api.tour.translate_tour',
-        lambda source: {
-            lang: {key: f'{value} {lang}' if value else value for key, value in source.items()}
-            for lang in ('en', 'de', 'zh')
-        },
-    )
     yield
     setting.cache_clear()
     validate_resource_settings.cache_clear()
@@ -112,21 +105,49 @@ def customer_headers(client):
     return {'Authorization': 'Bearer ' + response.json()['access_token']}
 
 
+ADMIN_PASSWORD = 'StrongAdminPassword123!'
+
+
+def _seed(model, **fields):
+    with SessionLocal() as db:
+        record = model(**fields)
+        db.add(record)
+        db.commit()
+        return record.id
+
+
+@pytest.fixture
+def seed():
+    """Store a record directly, as the admin panel does, and return its id."""
+    return _seed
+
+
 @pytest.fixture(scope='session')
-def admin_headers(client):
-    password = 'StrongAdminPassword123!'
+def panel_admin(client):
+    """The owner account of the admin panel; its password is ADMIN_PASSWORD."""
     with SessionLocal() as db:
         admin = db.query(Admin).filter(Admin.username == 'test-admin').first()
         if admin is None:
             admin = Admin(
                 username='test-admin',
-                hashed_password=PasswordHash.recommended().hash(password),
+                hashed_password=PasswordHash.recommended().hash(ADMIN_PASSWORD),
                 is_active=True,
             )
             db.add(admin)
         admin.role = 'owner'
         db.commit()
+    return 'test-admin'
 
-    response = client.post('/admin/login/', json={'username': 'test-admin', 'password': password})
-    assert response.status_code == 200, response.text
-    return {'Authorization': f'Bearer {response.json()["access_token"]}'}
+
+@pytest.fixture
+def panel(client, panel_admin):
+    """The shared client signed in to the admin panel as the owner."""
+    client.get('/admin/logout')
+    response = client.post(
+        '/admin/login',
+        data={'username': panel_admin, 'password': ADMIN_PASSWORD},
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 303), response.text
+    yield client
+    client.get('/admin/logout')

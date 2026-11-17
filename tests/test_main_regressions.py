@@ -151,7 +151,7 @@ def test_stale_selection_cannot_be_edited_after_start(client, selection):
 
 
 def test_selected_services_survive_confirmation_and_catalogue_edits(
-    client, admin_headers, monkeypatch, selection
+    client, panel_admin, monkeypatch, selection
 ):
     account, identity, services = selection
     started = client.post(
@@ -189,9 +189,6 @@ def test_selected_services_survive_confirmation_and_catalogue_edits(
         assert db.get(TravelSelection, identity).status == 'in_progress'
         db.get(Hotel, services[1]['id']).name = 'Renamed hotel'
         db.commit()
-    stored = client.get(f'/travel-requests/{request_id}/', headers=admin_headers)
-    assert stored.status_code == 200
-    assert stored.json()['selected_services'] == services
     repeated = client.post('/booking/confirm', headers=headers(account), json=payload)
     assert repeated.status_code == 200 and repeated.json()['request_id'] == request_id
 

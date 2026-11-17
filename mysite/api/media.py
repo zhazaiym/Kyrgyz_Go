@@ -6,11 +6,10 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
-from mysite.api.admin import require_admin_roles
 from mysite.api.errors import error_detail
 from mysite.api.resource_limits import setting
 
@@ -75,14 +74,3 @@ async def save_upload(upload: UploadFile) -> str:
     await check_upload_size(upload)
     name = await run_in_threadpool(store_image, upload.file)
     return f'{MEDIA_URL}/{name}'
-
-
-@media_router.post(
-    '/', status_code=201, dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-async def upload_media(request: Request):
-    async with request.form(max_files=1, max_fields=1) as form:
-        upload = form.get('file')
-        if not isinstance(upload, UploadFile) and not hasattr(upload, 'file'):
-            raise HTTPException(400, detail=error_detail('invalid_request'))
-        return {'url': await save_upload(upload)}

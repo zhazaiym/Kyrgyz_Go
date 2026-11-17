@@ -3,20 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from mysite.database.input_validation import StorageInput
 from mysite.database.models import RequestStatusChoices
-
-
-class TravelRequestUpdateSchema(StorageInput):
-    name: str | None = None
-    phone: str | None = None
-    email: str | None = None
-    travel_date: date | None = None
-    duration_days: int | None = None
-    travelers_count: int | None = None
-    destination: str | None = None
-    message: str | None = None
-    status: RequestStatusChoices | None = None
 
 
 class SelectedServiceSchema(BaseModel):

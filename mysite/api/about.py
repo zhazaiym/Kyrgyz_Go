@@ -1,29 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import About
-from mysite.database.schemas.content import AboutInputSchema, AboutOutSchema, AboutUpdateSchema
-from mysite.translations.content import Language, localized, update_translations
+from mysite.database.schemas.content import AboutOutSchema
+from mysite.translations.content import Language, localized
 
 about_router = APIRouter(prefix='/abouts', tags=['About'])
-
-
-@about_router.post(
-    '/',
-    response_model=AboutOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def create_about(data: AboutInputSchema, db: Session = Depends(get_db)):
-    about_db = About(**data.model_dump())
-    db.add(about_db)
-    update_translations(about_db)
-    db.commit()
-    db.refresh(about_db)
-    return about_db
 
 
 @about_router.get('/', response_model=list[AboutOutSchema])
@@ -46,33 +31,3 @@ def detail_about(about_id: int, lang: Language = 'ru', db: Session = Depends(get
     if not about_db or not about_db.is_active:
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
     return localized(about_db, lang)
-
-
-@about_router.put(
-    '/{about_id}/',
-    response_model=AboutOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def update_about(about_id: int, data: AboutUpdateSchema, db: Session = Depends(get_db)):
-    about_db = db.get(About, about_id)
-    if not about_db:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(about_db, key, value)
-
-    update_translations(about_db)
-    db.commit()
-    db.refresh(about_db)
-    return about_db
-
-
-@about_router.delete('/{about_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))])
-def delete_about(about_id: int, db: Session = Depends(get_db)):
-    about_db = db.get(About, about_id)
-    if not about_db:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    db.delete(about_db)
-    db.commit()
-    return success_detail('deleted')

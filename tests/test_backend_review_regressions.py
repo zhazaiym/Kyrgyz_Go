@@ -20,7 +20,7 @@ def sql_login(client):
     )
 
 
-def test_single_admin_request_section_includes_site_requests(client, admin_headers):
+def test_single_admin_request_section_includes_site_requests(client, panel_admin):
     with SessionLocal() as db:
         record = TravelRequest(name='Site request ' + uuid4().hex, phone='+996700123456')
         db.add(record)
@@ -35,11 +35,9 @@ def test_single_admin_request_section_includes_site_requests(client, admin_heade
 
 
 def test_sqladmin_selected_tour_deletion_is_rejected_without_500(
-    client, admin_headers, customer_headers
+    client, panel_admin, seed, customer_headers
 ):
-    tour = client.post(
-        '/tours/', json={'title': 'Selected deletion probe', 'price': '100'}, headers=admin_headers
-    ).json()
+    tour = {'id': seed(Tour, title='Selected deletion probe', price=100)}
     selection = client.post(
         '/travel-selections/', json={'tour_id': tour['id']}, headers=customer_headers
     )
@@ -59,13 +57,13 @@ def test_documented_runtime_commands_are_in_docker_image():
         assert f'scripts/{name}.py' in dockerfile or 'scripts/ ./scripts/' in dockerfile
 
 
-def test_upload_returns_host_independent_relative_path(client, admin_headers):
+def test_upload_returns_host_independent_relative_path(client, panel):
     image = BytesIO()
     Image.new('RGB', (32, 32), 'teal').save(image, 'JPEG')
     response = client.post(
-        '/admin/media/',
+        '/admin/media/upload',
         files={'file': ('photo.jpg', image.getvalue(), 'image/jpeg')},
-        headers={**admin_headers, 'Host': 'untrusted.example'},
+        headers={'Host': 'untrusted.example'},
     )
     assert response.status_code == 201, response.text
     assert response.json()['url'].startswith('/media/')
@@ -103,8 +101,8 @@ def test_unauthenticated_upload_does_not_consume_large_body():
         'asgi': {'version': '3.0'},
         'http_version': '1.1',
         'method': 'POST',
-        'path': '/admin/media/',
-        'raw_path': b'/admin/media/',
+        'path': '/admin/media/upload',
+        'raw_path': b'/admin/media/upload',
         'query_string': b'',
         'headers': [(b'content-type', b'multipart/form-data; boundary=x')],
         'scheme': 'http',
@@ -187,13 +185,9 @@ def test_direct_request_rejects_yesterday_in_bishkek_before_utc_midnight(
 
 @pytest.mark.parametrize('count', [40, 3_000_000_000])
 def test_direct_request_respects_tour_and_storage_people_limits(
-    client, admin_headers, customer_headers, count
+    client, seed, customer_headers, count
 ):
-    tour = client.post(
-        '/tours/',
-        headers=admin_headers,
-        json={'title': 'Capacity probe', 'price': '100', 'min_people': 1, 'max_people': 6},
-    ).json()
+    tour = {'id': seed(Tour, title='Capacity probe', price=100, min_people=1, max_people=6)}
     selection = client.post(
         '/travel-selections/', headers=customer_headers, json={'tour_id': tour['id']}
     ).json()

@@ -54,30 +54,3 @@ def active_manual_fields(fields, hashes, source):
             and hashes.get(field) == source_field_hash(source[field])
         }
     )
-
-
-def attach_source_hashes(translations, source):
-    """Attach current source hashes to supplied nonempty translations."""
-    if not isinstance(translations, dict):
-        return {}
-
-    result = dict(translations)
-
-    for language in ('en', 'de', 'zh'):
-        values = result.get(language)
-        if not isinstance(values, dict):
-            continue
-
-        values = dict(values)
-
-        hashes = values.get('_source_hashes', {})
-        hashes = dict(hashes) if isinstance(hashes, dict) else {}
-
-        for field, translated in values.items():
-            if field in source and isinstance(translated, str) and translated.strip():
-                hashes[field] = source_field_hash(source[field])
-
-        values['_source_hashes'] = hashes
-        result[language] = values
-
-    return result

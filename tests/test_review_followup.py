@@ -157,39 +157,17 @@ def test_login_hash_work_holds_no_row_lock_and_rejects_a_concurrent_reset(
     assert response.status_code == (401 if reset_during_verify else 200)
 
 
-@pytest.mark.parametrize('route', ['put', 'patch', 'sqladmin'])
-def test_completed_request_cannot_be_reopened_through_any_admin_path(
-    client, admin_headers, selection, route
-):
-    _, request_id = submit(client, selection)
+def test_completed_request_cannot_be_reopened_in_the_panel(panel, selection):
+    _, request_id = submit(panel, selection)
     with SessionLocal() as db:
         db.get(m.TravelRequest, request_id).status = m.RequestStatusChoices.completed
         db.commit()
-    if route == 'put':
-        response = client.put(
-            f'/travel-requests/{request_id}/', headers=admin_headers, json={'status': 'in_progress'}
-        )
-        assert response.status_code == 409
-    elif route == 'patch':
-        response = client.patch(
-            f'/admin/requests/{request_id}/status/',
-            headers=admin_headers,
-            json={'status': 'in_progress'},
-        )
-        assert response.status_code == 409
-    else:
-        client.post(
-            '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
-        )
-        try:
-            response = client.post(
-                f'/admin/travel-request/edit/{request_id}',
-                data={'status': 'in_progress'},
-                headers={'origin': 'http://testserver'},
-            )
-            assert response.status_code == 400
-        finally:
-            client.get('/admin/logout')
+    response = panel.post(
+        f'/admin/travel-request/edit/{request_id}',
+        data={'status': 'in_progress'},
+        headers={'origin': 'http://testserver'},
+    )
+    assert response.status_code == 400
     with SessionLocal() as db:
         assert db.get(m.TravelRequest, request_id).status == m.RequestStatusChoices.completed
 

@@ -14,11 +14,11 @@ from mysite.api.video_media import save_video_upload
 from mysite.database.db import engine
 
 from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, AuthProviderAdmin, ContactAdmin,
-                    DistrictAdmin, FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
-                    HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
-                    TourProgramAdmin, TourReviewAdmin, TourVideoAdmin, TransportAdmin,
-                    TransportImageAdmin, TravelRequestAdmin, TrekkingAdmin, TrekkingImageAdmin,
-                    TrekkingProgramAdmin)
+                    CountryAdmin, DistrictAdmin, FAQAdmin, HelicopterImageAdmin,
+                    HelicopterTourAdmin, HotelAdmin, HotelImageAdmin, RegionAdmin, TourAdmin,
+                    TourCategoryAdmin, TourImageAdmin, TourProgramAdmin, TourReviewAdmin,
+                    TourVideoAdmin, TransportAdmin, TransportImageAdmin, TravelRequestAdmin,
+                    TravelSelectionAdmin, TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin)
 
 
 async def upload_image(request: Request):
@@ -92,6 +92,7 @@ def setup_admin(auth_app: FastAPI):
     admin.admin.router.add_route('/media/video-upload', upload_video, methods=['POST'])
     for view in (
         TravelRequestAdmin,
+        TravelSelectionAdmin,
         TourAdmin,
         TourReviewAdmin,
         TourCategoryAdmin,
@@ -107,6 +108,7 @@ def setup_admin(auth_app: FastAPI):
         TrekkingAdmin,
         TrekkingProgramAdmin,
         TrekkingImageAdmin,
+        CountryAdmin,
         RegionAdmin,
         DistrictAdmin,
         AboutAdmin,

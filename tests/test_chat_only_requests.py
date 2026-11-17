@@ -39,7 +39,7 @@ def test_travel_request_creation_requires_selection_payload(client, customer_hea
     assert response.status_code == 422
 
 
-def test_admin_has_one_unified_request_view(client, admin_headers):
+def test_admin_has_one_unified_request_view(client, panel_admin):
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )

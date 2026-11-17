@@ -6,8 +6,8 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from mysite.admin.credentials import password_hash
 from mysite.api import social_auth
-from mysite.api.admin import password_hash
 from mysite.database.chat_models import ChatClient
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin

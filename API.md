@@ -19,12 +19,10 @@
 | --- | --- |
 | Публичный | Токен не нужен |
 | Клиент | Клиентский Bearer-токен |
-| Администратор | Административный Bearer-токен |
 
-Роли ограничивают доступ: `owner` управляет всем, `manager` — заявками и подборками,
-`catalog_editor` — каталогом и публичным контентом. Права задаются явно на API-маршрутах.
-Для SQLAdmin вход через HTML-форму создаёт отдельную cookie-сессию; Bearer-токен
-автоматически её не создаёт. И API, и SQLAdmin проверяют серверные записи сессий.
+Администраторы работают только в админке `/admin` (или на отдельном адресе `ADMIN_DOMAIN`),
+у API нет адресов для администраторов. Роли в админке: `owner` управляет всем, `manager` -
+заявками, подборками и отзывами, `catalog_editor` - каталогом и публичным контентом.
 
 ## 2. Основной путь пользователя
 
@@ -161,7 +159,7 @@ google.accounts.id.initialize({
 
 `POST /travel-selections/{selection_id}/start-chat/` возвращает `{selection_id, session_id, existing:false, selection_message, welcome}`. Повтор возвращает тот же session_id с `existing:true` и `stage`, без создания новой беседы. Поля selection_message/welcome могут отсутствовать в повторном ответе.
 
-Менеджер читает подборки через `/manager/travel-selections/` и меняет статус через `/{selection_id}/status/`. Ответ дополнен `client_code` и `username` при чтении менеджерского списка/деталей. Не делайте вывод о правах по username.
+Менеджер видит подборки и меняет их статус в админке, раздел «Подборки».
 
 Статусы подборки: `draft`, `in_progress`, `completed`, `cancelled`. Статусы заявки: `new`, `in_progress`, `completed`, `cancelled`. Завершённый объект нельзя вернуть в другой статус; попытка даёт 409. Подборку со связанным чатом нельзя вернуть в draft. При подтверждении заявки подборка становится in_progress.
 
@@ -311,36 +309,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Здесь перечислены все JSON-маршруты из OpenAPI. Схемы входа и ответа расшифрованы в разделе 11. Схема `Тип[]` означает массив, `null` - допустимое пустое значение. У каждого endpoint приведены его собственные параметры; отсутствие параметра в списке означает, что на него не нужно рассчитывать.
 
-### Вход администратора и заявки
-
-#### `POST /admin/login/`
-
-Получить административный токен. Доступ: **Публичный endpoint входа**; попытки ограничиваются по IP и по паре аккаунт/IP.
-
-Тело: `AdminLoginSchema` (см. раздел 11).
-
-Успех: **200**, TokenSchema.
-
-#### `GET /admin/me/`
-
-Проверить административный токен. Доступ: **Администратор**.
-
-Тело: не требуется.
-
-Успех: **200**, AdminOutSchema.
-
-#### `GET /admin/requests/`
-
-Получить страницу заявок. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
-| `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
-
-Тело: не требуется.
-
-Успех: **200**, TravelRequestOutSchema[].
+### Заявки клиента
 
 #### `POST /travel-requests/`
 
@@ -356,49 +325,8 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 После фиксации новой заявки администраторы, подключённые к `/admin/ws/requests` в SQLAdmin, получают событие `{type:"new_request", request_id}`. WebSocket требует активную сессию администратора и доступен с origin панели.
 
-#### `GET /admin/requests/{request_id}/`
-
-Открыть заявку менеджеру. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `request_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, TravelRequestOutSchema.
-
-#### `PATCH /admin/requests/{request_id}/status/`
-
-Обновить только статус заявки. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `request_id` | path | да | integer | - |
-
-Тело: `RequestStatusUpdate` (см. раздел 11).
-
-Успех: **200**, TravelRequestOutSchema.
-
-### Загрузка фото
-
-#### `POST /admin/media/`
-
-Загрузить фото и получить ссылку на него. Доступ: **Администратор**.
-
-Тело: `multipart/form-data` с полем `file`. Принимаются JPEG, PNG и WEBP до 10 МБ (`MAX_IMAGE_UPLOAD_BYTES`). Сервер поворачивает фото по EXIF, убирает метаданные, уменьшает до 2560 px по большей стороне и сохраняет в WEBP.
-
-Успех: **201**, `{url}`. Ссылку передавайте в поле `image` или `main_image` при создании или изменении записи. Не картинка - **400**, больше лимита - **413**.
 
 ### Категории туров
-
-#### `POST /tour-categories/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TourCategoryInputSchema` (см. раздел 11).
-
-Успех: **200**, TourCategoryOutSchema.
 
 #### `GET /tour-categories/`
 
@@ -427,49 +355,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TourCategoryOutSchema.
 
-#### `PUT /tour-categories/{category_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `category_id` | path | да | integer | - |
-
-Тело: `TourCategoryUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TourCategoryOutSchema.
-
-#### `DELETE /tour-categories/{category_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `category_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
-#### `POST /tour-categories/setup-directions/`
-
-Создать пять отсутствующих категорий направлений: горы, озёра, культура, Шёлковый путь, долины. Доступ: **Администратор**.
-
-Тело: не требуется.
-
-Успех: **200**, {message, categories:[{id, name}]}.
-
 ### Туры
-
-#### `POST /tours/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TourInputSchema` (см. раздел 11).
-
-Успех: **200**, TourOutSchema.
 
 #### `GET /tours/`
 
@@ -521,46 +407,6 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TourDetailSchema.
 
-#### `PUT /tours/{tour_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `tour_id` | path | да | integer | - |
-
-Тело: `TourUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TourOutSchema.
-
-#### `DELETE /tours/{tour_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `tour_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
-#### `POST /tours/{tour_id}/translate/`
-
-Повторно перевести поля тура на en/de/zh. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `tour_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message, languages}.
-
-Ошибки операции: 404 - тур отсутствует; 409 - исходник изменился; 503 - переводчик занят; 502 - перевод не удался.
-
 #### `GET /tours/home/slides/`
 
 Получить слайды активных туров с изображениями. Доступ: **Публичный**.
@@ -594,14 +440,6 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Страны
 
-#### `POST /countries/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `CountryInputSchema` (см. раздел 11).
-
-Успех: **200**, CountryOutSchema.
-
 #### `GET /countries/`
 
 Получить страницу записей. Доступ: **Публичный**.
@@ -629,41 +467,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, CountryOutSchema.
 
-#### `PUT /countries/{country_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `country_id` | path | да | integer | - |
-
-Тело: `CountryUpdateSchema` (см. раздел 11).
-
-Успех: **200**, CountryOutSchema.
-
-#### `DELETE /countries/{country_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `country_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Регионы
-
-#### `POST /regions/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `RegionInputSchema` (см. раздел 11).
-
-Успех: **200**, RegionOutSchema.
 
 #### `GET /regions/`
 
@@ -695,41 +499,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, RegionOutSchema.
 
-#### `PUT /regions/{region_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `region_id` | path | да | integer | - |
-
-Тело: `RegionUpdateSchema` (см. раздел 11).
-
-Успех: **200**, RegionOutSchema.
-
-#### `DELETE /regions/{region_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `region_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Районы
-
-#### `POST /districts/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `DistrictInputSchema` (см. раздел 11).
-
-Успех: **200**, DistrictOutSchema.
 
 #### `GET /districts/`
 
@@ -761,41 +531,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, DistrictOutSchema.
 
-#### `PUT /districts/{district_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `district_id` | path | да | integer | - |
-
-Тело: `DistrictUpdateSchema` (см. раздел 11).
-
-Успех: **200**, DistrictOutSchema.
-
-#### `DELETE /districts/{district_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `district_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Отели
-
-#### `POST /hotels/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `HotelInputSchema` (см. раздел 11).
-
-Успех: **200**, HotelOutSchema.
 
 #### `GET /hotels/`
 
@@ -834,41 +570,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, HotelOutSchema.
 
-#### `PUT /hotels/{hotel_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `hotel_id` | path | да | integer | - |
-
-Тело: `HotelUpdateSchema` (см. раздел 11).
-
-Успех: **200**, HotelOutSchema.
-
-#### `DELETE /hotels/{hotel_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `hotel_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Фотографии отелей
-
-#### `POST /hotel-images/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `HotelImageInputSchema` (см. раздел 11).
-
-Успех: **200**, HotelImageOutSchema.
 
 #### `GET /hotel-images/`
 
@@ -896,41 +598,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, HotelImageOutSchema.
 
-#### `PUT /hotel-images/{image_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: `HotelImageUpdateSchema` (см. раздел 11).
-
-Успех: **200**, HotelImageOutSchema.
-
-#### `DELETE /hotel-images/{image_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Транспорт
-
-#### `POST /transports/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TransportInputSchema` (см. раздел 11).
-
-Успех: **200**, TransportOutSchema.
 
 #### `GET /transports/`
 
@@ -970,41 +638,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TransportOutSchema.
 
-#### `PUT /transports/{transport_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `transport_id` | path | да | integer | - |
-
-Тело: `TransportUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TransportOutSchema.
-
-#### `DELETE /transports/{transport_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `transport_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Фотографии транспорта
-
-#### `POST /transport-images/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TransportImageInputSchema` (см. раздел 11).
-
-Успех: **200**, TransportImageOutSchema.
 
 #### `GET /transport-images/`
 
@@ -1032,41 +666,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TransportImageOutSchema.
 
-#### `PUT /transport-images/{image_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: `TransportImageUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TransportImageOutSchema.
-
-#### `DELETE /transport-images/{image_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Вертолётные туры
-
-#### `POST /helicopter-tours/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `HelicopterTourInputSchema` (см. раздел 11).
-
-Успех: **200**, HelicopterTourOutSchema.
 
 #### `GET /helicopter-tours/`
 
@@ -1105,41 +705,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, HelicopterCatalogueDetailSchema.
 
-#### `PUT /helicopter-tours/{helicopter_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `helicopter_id` | path | да | integer | - |
-
-Тело: `HelicopterTourUpdateSchema` (см. раздел 11).
-
-Успех: **200**, HelicopterTourOutSchema.
-
-#### `DELETE /helicopter-tours/{helicopter_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `helicopter_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Фотографии вертолётных туров
-
-#### `POST /helicopter-images/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `HelicopterImageInputSchema` (см. раздел 11).
-
-Успех: **200**, HelicopterImageOutSchema.
 
 #### `GET /helicopter-images/`
 
@@ -1167,41 +733,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, HelicopterImageOutSchema.
 
-#### `PUT /helicopter-images/{image_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: `HelicopterImageUpdateSchema` (см. раздел 11).
-
-Успех: **200**, HelicopterImageOutSchema.
-
-#### `DELETE /helicopter-images/{image_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Трекинги
-
-#### `POST /trekkings/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TrekkingInputSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingOutSchema.
 
 #### `GET /trekkings/`
 
@@ -1240,41 +772,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TrekkingCatalogueDetailSchema.
 
-#### `PUT /trekkings/{trekking_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `trekking_id` | path | да | integer | - |
-
-Тело: `TrekkingUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingOutSchema.
-
-#### `DELETE /trekkings/{trekking_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `trekking_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Фотографии трекингов
-
-#### `POST /trekking-images/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TrekkingImageInputSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingImageOutSchema.
 
 #### `GET /trekking-images/`
 
@@ -1302,41 +800,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TrekkingImageOutSchema.
 
-#### `PUT /trekking-images/{image_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: `TrekkingImageUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingImageOutSchema.
-
-#### `DELETE /trekking-images/{image_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Программы трекингов
-
-#### `POST /trekking-programs/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TrekkingProgramInputSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingProgramOutSchema.
 
 #### `GET /trekking-programs/`
 
@@ -1365,41 +829,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TrekkingProgramOutSchema.
 
-#### `PUT /trekking-programs/{program_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `program_id` | path | да | integer | - |
-
-Тело: `TrekkingProgramUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TrekkingProgramOutSchema.
-
-#### `DELETE /trekking-programs/{program_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `program_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Контакты компании
-
-#### `POST /contacts/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `ContactInputSchema` (см. раздел 11).
-
-Успех: **200**, ContactOutSchema.
 
 #### `GET /contacts/`
 
@@ -1428,41 +858,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, ContactOutSchema.
 
-#### `PUT /contacts/{contact_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `contact_id` | path | да | integer | - |
-
-Тело: `ContactUpdateSchema` (см. раздел 11).
-
-Успех: **200**, ContactOutSchema.
-
-#### `DELETE /contacts/{contact_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `contact_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### FAQ
-
-#### `POST /faqs/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `FAQInputSchema` (см. раздел 11).
-
-Успех: **200**, FAQOutSchema.
 
 #### `GET /faqs/`
 
@@ -1491,94 +887,8 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, FAQOutSchema.
 
-#### `PUT /faqs/{faq_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `faq_id` | path | да | integer | - |
-
-Тело: `FAQUpdateSchema` (см. раздел 11).
-
-Успех: **200**, FAQOutSchema.
-
-#### `DELETE /faqs/{faq_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `faq_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
-### Заявки менеджеру
-
-#### `GET /travel-requests/`
-
-Получить страницу записей. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
-| `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
-
-Тело: не требуется.
-
-Успех: **200**, TravelRequestOutSchema[].
-
-#### `GET /travel-requests/{request_id}/`
-
-Получить одну запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `request_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, TravelRequestOutSchema.
-
-#### `PUT /travel-requests/{request_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `request_id` | path | да | integer | - |
-
-Тело: `TravelRequestUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TravelRequestOutSchema.
-
-#### `DELETE /travel-requests/{request_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `request_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
 
 ### О компании
-
-#### `POST /abouts/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `AboutInputSchema` (см. раздел 11).
-
-Успех: **200**, AboutOutSchema.
 
 #### `GET /abouts/`
 
@@ -1607,41 +917,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, AboutOutSchema.
 
-#### `PUT /abouts/{about_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `about_id` | path | да | integer | - |
-
-Тело: `AboutUpdateSchema` (см. раздел 11).
-
-Успех: **200**, AboutOutSchema.
-
-#### `DELETE /abouts/{about_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `about_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Разделы о компании
-
-#### `POST /about-sections/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `AboutSectionInputSchema` (см. раздел 11).
-
-Успех: **200**, AboutSectionOutSchema.
 
 #### `GET /about-sections/`
 
@@ -1670,41 +946,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, AboutSectionOutSchema.
 
-#### `PUT /about-sections/{section_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `section_id` | path | да | integer | - |
-
-Тело: `AboutSectionUpdateSchema` (см. раздел 11).
-
-Успех: **200**, AboutSectionOutSchema.
-
-#### `DELETE /about-sections/{section_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `section_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Фотографии туров
-
-#### `POST /tour-images/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TourImageInputSchema` (см. раздел 11).
-
-Успех: **200**, TourImageOutSchema.
 
 #### `GET /tour-images/`
 
@@ -1732,41 +974,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, TourImageOutSchema.
 
-#### `PUT /tour-images/{image_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: `TourImageUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TourImageOutSchema.
-
-#### `DELETE /tour-images/{image_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `image_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
-
 ### Программы туров
-
-#### `POST /tour-programs/`
-
-Создать запись. Доступ: **Администратор**.
-
-Тело: `TourProgramInputSchema` (см. раздел 11).
-
-Успех: **200**, TourProgramOutSchema.
 
 #### `GET /tour-programs/`
 
@@ -1795,32 +1003,6 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 Тело: не требуется.
 
 Успех: **200**, TourProgramOutSchema.
-
-#### `PUT /tour-programs/{program_id}/`
-
-Обновить переданные поля записи. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `program_id` | path | да | integer | - |
-
-Тело: `TourProgramUpdateSchema` (см. раздел 11).
-
-Успех: **200**, TourProgramOutSchema.
-
-#### `DELETE /tour-programs/{program_id}/`
-
-Удалить запись. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `program_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, {message}.
-
-Удаление связанного или уже отправленного объекта может вернуть 400/409. Не убирайте его из интерфейса до успешного ответа.
 
 ### Единый вход клиента
 
@@ -2044,44 +1226,6 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {selection_id, session_id, existing, welcome?, selection_message?, stage?}.
 
-### Кабинет менеджера
-
-#### `GET /manager/travel-selections/`
-
-Получить подборки всех клиентов. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `limit` | query | нет | integer | минимум: 1; максимум: 100; по умолчанию: 100 |
-| `offset` | query | нет | integer | минимум: 0; максимум: 1000000; по умолчанию: 0 |
-
-Тело: не требуется.
-
-Успех: **200**, Объект подборки из раздела 5[].
-
-#### `GET /manager/travel-selections/{selection_id}/`
-
-Открыть подборку клиента. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `selection_id` | path | да | integer | - |
-
-Тело: не требуется.
-
-Успех: **200**, Объект подборки из раздела 5.
-
-#### `PATCH /manager/travel-selections/{selection_id}/status/`
-
-Изменить статус подборки и связанной заявки. Доступ: **Администратор**.
-
-| Параметр | Где | Обязателен | Тип | Правила |
-| --- | --- | --- | --- | --- |
-| `selection_id` | path | да | integer | - |
-
-Тело: `SelectionStatusUpdate` (см. раздел 11).
-
-Успех: **200**, Объект подборки из раздела 5.
 
 ### Профиль и восстановление пароля
 
@@ -3131,36 +2275,14 @@ the route is hidden with a 404 response.
 
 ## Administrator authentication
 
-`POST /admin/login/` requires `username` and `password`; there is no second factor.
-
-A successful response includes `access_token`, `token_type`, `expires_in`,
-`refresh_token` and `refresh_expires_at`. Credential errors all return exactly
-`401 {"code":"invalid_credentials"}`; the existing 429 limiter remains unchanged.
-
-`POST /admin/token/refresh/` accepts `{ "refresh_token": "..." }` and returns a new
-token pair. A previous refresh is accepted for 30 seconds and reproduces the same
-pair across workers. Later reuse revokes the session and returns
-`401 {"code":"session_expired"}`. `POST /admin/logout/` accepts the same body,
-revokes its session and returns 204. Access tokens include a server-checked `sid`.
-
-`POST /admin/password/` changes the caller's own password, for every administrator
-role. Body: `{ "current_password": "...", "new_password": "..." }`; the new password
-has 8-128 characters and must differ from the current one (otherwise 422). A wrong
-current password returns `401 {"code":"invalid_credentials"}` and counts towards the
-login limiter. Success returns 204 and revokes all of the caller's sessions,
-including the current one, so every device must sign in again.
-
-`GET /admin/sessions/` and `DELETE /admin/sessions/{id}/` manage the caller's own
-sessions, for every administrator role. Responses omit token hashes. Other admins'
-records are not accessible through these endpoints; owners manage them in SQLAdmin.
-
-The backend rollout keeps access-token lifetime at 60 minutes. Set
-`ADMIN_ACCESS_TOKEN_MINUTES=15` after the Vercel frontend supports refresh. Refresh
-expires after 30 unused days and at most 90 days after login; browser trust lasts
-30 days. SQLAdmin uses the same revocable session/device storage.
+Administrators sign in only through the admin panel form (`GET`/`POST /admin/login`);
+the API has no administrator routes or tokens. A panel session expires after
+`ADMIN_SESSION_HOURS` idle hours and at most 30 days after login; logout, a password
+change or deactivation revokes it. With `ADMIN_DOMAIN` set, the panel answers only on
+that host and `/admin` on the API host returns 404.
 
 Uploaded images return relative `/media/...` paths; resolve them against the API
 base URL. Standard HTTP errors use `detail.code` and a Russian `detail.message`
 from `mysite/api/errors.py`. Structured chat/auth errors retain their existing codes.
 
-Roles are enforced by the API and SQLAdmin: `owner` can manage all data and administrator roles; `manager` can manage travel requests and selections; `catalog_editor` can manage catalogue and public content.
+Roles are enforced in the admin panel: `owner` can manage all data and administrator roles; `manager` can manage travel requests, selections and reviews; `catalog_editor` can manage catalogue and public content.

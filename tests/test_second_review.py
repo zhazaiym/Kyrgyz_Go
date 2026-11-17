@@ -216,13 +216,16 @@ def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, mo
         assert owner.post(route, json={**identity, 'password': password}).status_code == 200
 
 
-def test_admin_login_limit_caps_attempts_per_account_and_ip(client, admin_headers, monkeypatch):
+def test_admin_login_limit_caps_attempts_per_account_and_ip(client, panel_admin, monkeypatch):
+    from tests.conftest import ADMIN_PASSWORD
+
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_333)
-    payload = {'username': 'test-admin', 'password': 'incorrect'}
+    wrong = {'username': panel_admin, 'password': 'incorrect'}
     for _ in range(5):
-        assert client.post('/admin/login/', json=payload).status_code == 401
-    assert client.post('/admin/login/', json=payload).status_code == 429
+        assert client.post('/admin/login', data=wrong).status_code == 400
+    right = {'username': panel_admin, 'password': ADMIN_PASSWORD}
+    assert client.post('/admin/login', data=right, follow_redirects=False).status_code == 400
 
 
 def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client, monkeypatch):
@@ -332,7 +335,7 @@ def test_failed_authentication_does_not_rollback_the_callers_pending_changes(cli
         assert pending in db.new
 
 
-def test_sqladmin_rejects_unsafe_image_urls(client, admin_headers):
+def test_sqladmin_rejects_unsafe_image_urls(client, panel_admin):
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
@@ -366,7 +369,7 @@ def test_bulk_updates_cannot_reopen_a_completed_request(client, selection):
         db.rollback()
 
 
-def test_country_used_only_by_tours_cannot_be_deleted(client, admin_headers):
+def test_country_used_only_by_tours_cannot_be_deleted(panel):
     with SessionLocal() as db:
         country = m.Country(name='Protected country ' + uuid4().hex)
         db.add(country)
@@ -374,7 +377,10 @@ def test_country_used_only_by_tours_cannot_be_deleted(client, admin_headers):
         identity = country.id
         db.add(m.Tour(title='Country dependency', price=10, country_id=identity))
         db.commit()
-    assert client.delete(f'/countries/{identity}/', headers=admin_headers).status_code == 409
+    response = panel.delete('/admin/country/delete', params={'pks': identity})
+    assert response.status_code == 200 and 'error=' in response.text
+    with SessionLocal() as db:
+        assert db.get(m.Country, identity) is not None
 
 
 def test_demo_tours_cannot_be_selected(client):
@@ -405,9 +411,7 @@ def test_short_admin_password_is_rejected_before_database_access(monkeypatch):
     create_admin.create_admin()
 
 
-def test_catalogue_translation_runs_after_commit_without_a_pooled_connection(
-    client, admin_headers, monkeypatch
-):
+def test_catalogue_translation_runs_after_commit_without_a_pooled_connection(panel, monkeypatch):
     observations = []
 
     def translate(source):
@@ -417,26 +421,14 @@ def test_catalogue_translation_runs_after_commit_without_a_pooled_connection(
         return {lang: source for lang in ('en', 'de', 'zh')}
 
     monkeypatch.setattr('mysite.translations.content.translate_fields', translate)
-    response = client.post(
-        '/faqs/',
-        headers=admin_headers,
-        json={'question': 'Committed before network', 'answer': 'Answer'},
+    response = panel.post(
+        '/admin/faq/create',
+        data={'question': 'Committed before network', 'answer': 'Answer', 'is_active': 'y'},
+        headers={'origin': 'http://testserver'},
+        follow_redirects=False,
     )
-    assert response.status_code == 200
+    assert response.status_code == 302, response.text
     assert observations == [0]
-
-
-def test_null_completed_status_is_rejected_by_schema_before_route_logic(
-    client, admin_headers, selection
-):
-    _, request_id = submit(client, selection)
-    with SessionLocal() as db:
-        db.get(m.TravelRequest, request_id).status = m.RequestStatusChoices.completed
-        db.commit()
-    response = client.put(
-        f'/travel-requests/{request_id}/', headers=admin_headers, json={'status': None}
-    )
-    assert response.status_code == 422
 
 
 def test_agent_import_preserves_process_proxy_configuration():

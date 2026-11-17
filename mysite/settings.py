@@ -6,6 +6,7 @@ Groups with their own tables check themselves at start as well: resource limits
 """
 
 import os
+import re
 
 FLAGS = {
     'API_DOCS': True,
@@ -14,8 +15,6 @@ FLAGS = {
     'ADMIN_COOKIE_SECURE': True,
 }
 NUMBERS = {
-    'ADMIN_ACCESS_TOKEN_MINUTES': (60, 1, 10_000),
-    'ADMIN_REFRESH_DAYS': (30, 1, 10_000),
     'ADMIN_SESSION_HOURS': (168, 1, 10_000),
     'GEMINI_REQUESTS_PER_MINUTE': (10, 1, 10_000),
     'TRIP_OPTION_RADIUS_KM': (100.0, 1, 2000),
@@ -48,7 +47,18 @@ def number(name):
     return parse_number(name, *NUMBERS[name])
 
 
+def admin_domain():
+    """The host of the admin panel, such as admin.example.kg, or None when it shares the API host."""
+    raw = os.getenv('ADMIN_DOMAIN', '').strip().casefold()
+    if not raw:
+        return None
+    if not re.fullmatch(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}', raw):
+        raise RuntimeError('ADMIN_DOMAIN must be a host name such as admin.example.kg')
+    return raw
+
+
 def validate_settings():
+    admin_domain()
     for name in FLAGS:
         flag(name)
     for name in NUMBERS:

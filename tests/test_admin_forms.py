@@ -1,7 +1,7 @@
 import re
 import uuid
 
-from mysite.api.admin import password_hash
+from mysite.admin.credentials import password_hash
 from mysite.database.db import SessionLocal
 from mysite.database.models import FAQ, Admin, HelicopterImage, HelicopterTour
 
@@ -116,3 +116,9 @@ def test_manager_publishes_a_review_from_the_admin(client):
         assert client.get(f'/tours/{tour_id}/reviews/').json()[0]['id'] == identity
     finally:
         client.get('/admin/logout')
+
+
+def test_panel_has_countries_selections_and_admin_passwords(panel):
+    for path in ('/admin/country/list', '/admin/country/create', '/admin/travel-selection/list'):
+        assert panel.get(path).status_code == 200, path
+    assert 'name="password"' in panel.get('/admin/admin/create').text

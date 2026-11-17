@@ -280,15 +280,17 @@ def test_corrections_cannot_silently_mutate_or_resubmit_sent_request(
 
 
 @pytest.mark.parametrize('status', ['in_progress', 'completed', 'cancelled'])
-def test_request_status_changes_are_visible_in_personal_cabinet(
-    client, admin_headers, selection, status
-):
+def test_request_status_changes_are_visible_in_personal_cabinet(panel, selection, status):
+    client = panel
     account, identity, _ = selection
     _, request_id = submit(client, selection)
-    response = client.put(
-        f'/travel-requests/{request_id}/', headers=admin_headers, json={'status': status}
+    response = client.post(
+        f'/admin/travel-request/edit/{request_id}',
+        data={'status': status},
+        headers={'origin': 'http://testserver'},
+        follow_redirects=False,
     )
-    assert response.status_code == 200
+    assert response.status_code == 302, response.text
     assert (
         client.get(f'/travel-selections/{identity}/', headers=headers(account)).json()['status']
         == status
@@ -297,19 +299,19 @@ def test_request_status_changes_are_visible_in_personal_cabinet(
     assert next(row for row in mine if row['id'] == identity)['status'] == status
 
 
-def test_manager_selection_status_updates_linked_request(client, admin_headers, selection):
+def test_manager_selection_status_updates_linked_request(panel, selection):
+    client = panel
     account, identity, _ = selection
     _, request_id = submit(client, selection)
-    response = client.patch(
-        f'/manager/travel-selections/{identity}/status/',
-        headers=admin_headers,
-        json={'status': 'completed'},
+    response = client.post(
+        f'/admin/travel-selection/edit/{identity}',
+        data={'status': 'completed'},
+        headers={'origin': 'http://testserver'},
+        follow_redirects=False,
     )
-    assert response.status_code == 200, response.text
-    assert (
-        client.get(f'/travel-requests/{request_id}/', headers=admin_headers).json()['status']
-        == 'completed'
-    )
+    assert response.status_code == 302, response.text
+    with SessionLocal() as db:
+        assert db.get(m.TravelRequest, request_id).status == 'completed'
     assert (
         client.get(f'/travel-selections/{identity}/', headers=headers(account)).json()['status']
         == 'completed'

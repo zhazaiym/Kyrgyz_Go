@@ -1,58 +1,16 @@
-"""Shared session lifecycle for the API and SQLAdmin.
+"""Revocable server-side sessions of the admin panel."""
 
-Refresh tokens contain an authenticated session identifier. Rotation is a keyed
-derivation from the previous secret and rotation time, allowing a second worker
-to reproduce the response during the grace period while storing only hashes.
-"""
-
-import base64
-import hashlib
-import hmac
-import secrets
-from datetime import timedelta, timezone
+from datetime import timedelta
 from uuid import uuid4
-
-import jwt
 
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.models import Admin
-from mysite.database.token_utils import digest, utcnow
+from mysite.database.token_utils import utcnow
 from mysite.settings import number
 
 
 def setting(name):
     return number(name)
-
-
-def _key():
-    from mysite.api.admin import SECRET_KEY
-
-    return SECRET_KEY.encode()
-
-
-def _mac(value):
-    return (
-        base64.urlsafe_b64encode(hmac.new(_key(), value.encode(), hashlib.sha256).digest())
-        .decode()
-        .rstrip('=')
-    )
-
-
-def _token(sid, secret):
-    payload = f'{sid}.{secret}'
-    return f'{payload}.{_mac("refresh:" + payload)}'
-
-
-def token_session_id(token):
-    try:
-        sid, secret, signature = token.split('.')
-        if len(sid) != 36 or not 40 <= len(secret) <= 64:
-            return None
-        if hmac.compare_digest(signature, _mac(f'refresh:{sid}.{secret}')):
-            return sid
-    except (ValueError, AttributeError, TypeError):
-        pass
-    return None
 
 
 def session_live(row, now=None):
@@ -61,85 +19,16 @@ def session_live(row, now=None):
 
 def new_session(db, admin_id, user_agent=''):
     now = utcnow()
-    sid = str(uuid4())
-    raw = _token(sid, secrets.token_urlsafe(32))
     row = AdminSession(
-        id=sid,
+        id=str(uuid4()),
         admin_id=admin_id,
-        refresh_hash=digest(raw),
         created_at=now,
         last_used_at=now,
-        rotated_at=now,
-        expires_at=now + timedelta(days=min(setting('ADMIN_REFRESH_DAYS'), 90)),
+        expires_at=now + timedelta(days=30),
         user_agent=user_agent[:200],
     )
     db.add(row)
-    return row, raw
-
-
-def token_pair(row, raw):
-    issued = row.rotated_at or row.created_at
-    expires = issued + timedelta(minutes=setting('ADMIN_ACCESS_TOKEN_MINUTES'))
-    access = jwt.encode(
-        {
-            'sub': str(row.admin_id),
-            'sid': row.id,
-            'iat': int(issued.timestamp()),
-            'exp': int(expires.timestamp()),
-        },
-        _key(),
-        algorithm='HS256',
-    )
-    return {
-        'access_token': access,
-        'token_type': 'bearer',
-        'expires_in': setting('ADMIN_ACCESS_TOKEN_MINUTES') * 60,
-        'refresh_token': raw,
-        'refresh_expires_at': row.expires_at.astimezone(timezone.utc),
-    }
-
-
-def _rotated_token(old, row):
-    secret = _mac(f'rotate:{old}:{row.rotated_at.astimezone(timezone.utc).isoformat()}')
-    return _token(row.id, secret)
-
-
-def rotate_refresh(db, raw):
-    sid = token_session_id(raw)
-    if sid is None:
-        return None
-    row = db.get(AdminSession, sid, with_for_update=True, populate_existing=True)
-    now = utcnow()
-    if not session_live(row, now):
-        return None
-    admin = db.get(Admin, row.admin_id)
-    if admin is None or not admin.is_active:
-        return None
-    supplied = digest(raw)
-    if hmac.compare_digest(supplied, row.refresh_hash):
-        row.previous_refresh_hash = supplied
-        row.rotated_at = now
-        row.last_used_at = now
-        row.expires_at = min(
-            now + timedelta(days=setting('ADMIN_REFRESH_DAYS')), row.created_at + timedelta(days=90)
-        )
-        new = _rotated_token(raw, row)
-        row.refresh_hash = digest(new)
-        result = token_pair(row, new)
-    elif (
-        row.previous_refresh_hash
-        and hmac.compare_digest(supplied, row.previous_refresh_hash)
-        and row.rotated_at
-        and now <= row.rotated_at + timedelta(seconds=30)
-    ):
-        result = token_pair(row, _rotated_token(raw, row))
-    else:
-        # The token signature proves that this is a previously issued secret,
-        # so arbitrary requests cannot revoke someone else's session.
-        row.revoked_at = now
-        result = None
-    db.commit()
-    return result
+    return row
 
 
 def sql_session_admin(db, session, *, touch=False):
