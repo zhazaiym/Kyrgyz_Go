@@ -28,11 +28,11 @@ from mysite.api.country import country_router
 from mysite.api.district import district_router
 from mysite.api.faq import faq_router
 from mysite.api.guest_ai import guest_ai_router
-from mysite.api.helicopter_image import helicopter_image_router
 from mysite.api.helicopter_tour import helicopter_tour_router
 from mysite.api.home_content import home_content_router
 from mysite.api.hotel import hotel_router
-from mysite.api.hotel_image import hotel_image_router
+from mysite.api.image_routes import (helicopter_image_router, hotel_image_router, tour_image_router,
+                                     transport_image_router, trekking_image_router)
 from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.observability import router as observability_router
@@ -47,16 +47,13 @@ from mysite.api.social_oauth import router as social_oauth_router
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
 from mysite.api.tour_category import category_router
-from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
 from mysite.api.tour_reviews import tour_reviews_router
 from mysite.api.tour_video import tour_video_router
 from mysite.api.transport import transport_router
-from mysite.api.transport_image import transport_image_router
 from mysite.api.travel_request import travel_request_router
 from mysite.api.travel_selection import selection_router
 from mysite.api.trekking import trekking_router
-from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 from mysite.api.trip_options import trip_options_router
 from mysite.api.video_media import video_media_router
