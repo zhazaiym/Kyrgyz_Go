@@ -84,7 +84,6 @@ Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
 ```dotenv
 CORS_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
 CHAT_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
-FRONTEND_RESET_URL=https://kerben-travel.vercel.app/ru/reset-password
 ```
 
 Multiple origins are separated by `;`. The example file includes the production
@@ -92,9 +91,7 @@ site origin and localhost ports 3000 and 5173. Add the production site origins
 on the server. HTTP CORS accepts the `Authorization` header and preflight requests.
 Chat WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`. The admin
 request notification socket stays on the same origin as SQLAdmin and requires its
-authenticated admin session. Reset emails use `FRONTEND_RESET_URL` and include a
-single-use token that expires after 15 minutes. SMTP settings must also be valid for
-delivery; the HTTP forgot-password response does not confirm that a message arrived.
+authenticated admin session.
 Do not set `*` for CORS origins when using credentials.
 
 The Vercel URL above is the frontend, not an API hostname. To use a custom API domain
@@ -370,7 +367,7 @@ deploying recovery, no manual SQL reset is needed when provider access returns.
 - Новая переменная окружения — со значением по умолчанию и строкой в
   `.env.example`; приложение стартует без неё. Владельцу сервера сказать заранее.
 - Скрипты, нужные на проде, — в образ (Dockerfile) и с тестом.
-- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы, SMTP) — только в серверном
+- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы) — только в серверном
   `.env`: не в репо, GitHub, чатах, логах и тестах.
 - Локально прогнать те же проверки, что CI (`.github/workflows/ci.yml`).
 

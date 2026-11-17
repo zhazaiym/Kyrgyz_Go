@@ -9,7 +9,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from mysite.database.chat_models import ChatLoginToken
 from mysite.database.db import SessionLocal
-from mysite.database.password_reset_models import PasswordResetToken
 from mysite.database.token_utils import utcnow
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 def cleanup_expired_tokens(batch_size=1000):
     cutoff = utcnow() - timedelta(days=1)
     counts = {}
-    for entity in (ChatLoginToken, PasswordResetToken):
+    for entity in (ChatLoginToken,):
         counts[entity.__tablename__] = 0
         while True:
             with SessionLocal() as db:

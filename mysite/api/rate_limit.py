@@ -159,20 +159,6 @@ def enforce_login_attempt(scope, request, account_key):
     )
 
 
-def clear_account_login_attempt(db, scope, request, account_key):
-    """Clear all IP counters and local blocks for an account after password reset."""
-    db.execute(
-        delete(RateLimitCounter).where(
-            RateLimitCounter.scope == scope, RateLimitCounter.account_id == account_key
-        )
-    )
-    prefix = f'account-ip:{account_key}:ip:'
-    with _cache_lock:
-        for limit in list(_blocked):
-            if limit[0] == scope and limit[1].startswith(prefix):
-                _blocked.pop(limit, None)
-
-
 def enforce_request_limits(
     scope: str,
     request: Request,

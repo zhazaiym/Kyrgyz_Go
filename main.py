@@ -39,7 +39,6 @@ from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.observability import router as observability_router
 from mysite.api.observability import validate_metrics_config
 from mysite.api.origin_config import configured_origins, validate_origin_settings
-from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
@@ -197,7 +196,6 @@ app.include_router(chat_ws_router)
 app.include_router(selection_router)
 app.include_router(manager_selection_router)
 app.include_router(registration_router)
-app.include_router(password_reset_router)
 app.include_router(observability_router)
 
 
