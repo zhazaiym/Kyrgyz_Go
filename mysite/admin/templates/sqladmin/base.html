@@ -42,6 +42,20 @@
 })();
 </script>
 {% endif %}
+{% if request.url.path.endswith('/list') %}
+<script>
+(() => {
+  const titles = { View: 'Открыть запись', Edit: 'Изменить запись', Delete: 'Удалить запись' };
+  for (const link of document.querySelectorAll('.card-table tbody td.text-end > a')) {
+    const title = titles[link.getAttribute('title') || link.dataset.bsOriginalTitle];
+    if (!title) continue;
+    link.setAttribute('title', title);
+    link.setAttribute('aria-label', title);
+    if (link.dataset.bsOriginalTitle) link.dataset.bsOriginalTitle = title;
+  }
+})();
+</script>
+{% endif %}
 {% if request.url.path.endswith('/create') or '/edit/' in request.url.path %}
 <script>
 (() => {
