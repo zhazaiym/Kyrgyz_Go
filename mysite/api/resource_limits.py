@@ -12,7 +12,7 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 
-from mysite.api.errors import error_detail
+from mysite.api.errors import STATUS_CODES, error_detail
 from mysite.api.network_identity import client_network, rate_limits_enabled
 from mysite.api.observability import record_websocket_connection
 from mysite.settings import parse_number
@@ -130,6 +130,118 @@ async def ai_capacity(*owners):
             _wake_ai_waiters()
 
 
+SECURITY_HEADERS = [
+    (b'x-content-type-options', b'nosniff'),
+    (b'x-frame-options', b'DENY'),
+    (b'referrer-policy', b'same-origin'),
+    (b'content-security-policy', b"frame-ancestors 'none'; object-src 'none'; base-uri 'self'"),
+]
+HTTPS_ONLY = [(b'strict-transport-security', b'max-age=15552000')]
+
+
+def body_limit(scope):
+    if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
+        return setting('MAX_IMAGE_UPLOAD_BYTES') + 65_536
+    if scope.get('method') == 'POST' and scope.get('path') in VIDEO_UPLOAD_PATHS:
+        return setting('MAX_VIDEO_UPLOAD_BYTES') + 65_536
+    return setting('MAX_REQUEST_BODY_BYTES')
+
+
+def refused_head(scope, headers, maximum):
+    """The status that refuses a request by its target and headers alone, or None."""
+    if len(scope.get('query_string', b'')) > 8192 or len(scope.get('path', '')) > 4096:
+        return 414
+    raw = scope.get('headers', [])
+    if len(raw) > 100 or sum(len(key) + len(value) for key, value in raw) > 32_768:
+        return 431
+    lengths = headers.getlist('content-length')
+    if lengths:
+        try:
+            declared = int(lengths[0])
+        except ValueError:
+            return 400
+        if len(lengths) != 1 or declared < 0:
+            return 400
+        if declared > maximum:
+            return 413
+    # Cookie-based SQLAdmin actions need origin checks; bearer-token API
+    # requests do not rely on ambient browser credentials.
+    if (
+        scope.get('method') in {'POST', 'PUT', 'PATCH', 'DELETE'}
+        and scope.get('path', '').startswith('/admin/')
+        and 'session=' in headers.get('cookie', '')
+    ):
+        origin = headers.get('origin')
+        own = f'{scope.get("scheme", "http")}://{headers.get("host", "")}'
+        if (origin and origin != own) or headers.get('sec-fetch-site') == 'cross-site':
+            return 403
+    return None
+
+
+def cheap_read(scope):
+    path = scope.get('path', '')
+    return scope.get('method') in {'GET', 'HEAD'} and (
+        path == '/' or path.startswith(('/admin/statics/', '/media/'))
+    )
+
+
+def upload_receive(receive, maximum):
+    size = 0
+    # A large file on a slow line may take minutes; what is refused is a
+    # sender that stops sending (REQUEST_BODY_TIMEOUT between pieces).
+    deadline = asyncio.get_running_loop().time() + setting('UPLOAD_MAX_SECONDS')
+
+    async def bounded_upload_receive():
+        nonlocal size
+        left = deadline - asyncio.get_running_loop().time()
+        try:
+            message = await asyncio.wait_for(
+                receive(), timeout=max(0, min(setting('REQUEST_BODY_TIMEOUT'), left))
+            )
+        except TimeoutError:
+            raise HTTPException(408, 'Request body timed out') from None
+        size += len(message.get('body', b''))
+        if size > maximum:
+            raise HTTPException(413, 'Request body is too large')
+        return message
+
+    return bounded_upload_receive
+
+
+async def buffered_body(receive, maximum):
+    """Read the whole body within REQUEST_BODY_TIMEOUT; None when the client left."""
+    chunks, size = deque(), 0
+    try:
+        async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT')):
+            while True:
+                message = await receive()
+                if message['type'] == 'http.disconnect':
+                    return None
+                chunk = message.get('body', b'')
+                size += len(chunk)
+                if size > maximum:
+                    raise HTTPException(413)
+                chunks.append(chunk)
+                if not message.get('more_body', False):
+                    break
+    except TimeoutError:
+        raise HTTPException(408) from None
+    delivered = False
+
+    async def replay():
+        nonlocal delivered
+        if chunks:
+            chunk = chunks.popleft()
+            delivered = not chunks
+            return {'type': 'http.request', 'body': chunk, 'more_body': bool(chunks)}
+        if not delivered:
+            delivered = True
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+        return await receive()
+
+    return replay
+
+
 class ResourceLimitsMiddleware:
     def __init__(self, app):
         validate_resource_settings()
@@ -185,142 +297,39 @@ class ResourceLimitsMiddleware:
 
         async def safe_send(message):
             if message['type'] == 'http.response.start':
-                message = {
-                    **message,
-                    'headers': [
-                        *message.get('headers', []),
-                        (b'x-content-type-options', b'nosniff'),
-                        (b'x-frame-options', b'DENY'),
-                        (b'referrer-policy', b'same-origin'),
-                        (
-                            b'content-security-policy',
-                            b"frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
-                        ),
-                    ],
-                }
-                if scope.get('scheme') == 'https':
-                    message['headers'].append((b'strict-transport-security', b'max-age=15552000'))
+                extra = SECURITY_HEADERS + (HTTPS_ONLY if scope.get('scheme') == 'https' else [])
+                message = {**message, 'headers': [*message.get('headers', []), *extra]}
             await send(message)
 
-        async def reject(status, detail, headers=None):
-            from mysite.api.errors import STATUS_CODES
-
-            if isinstance(detail, str):
-                detail = error_detail(STATUS_CODES.get(status, 'invalid_request'))
+        async def reject(status, detail=None, headers=None):
+            detail = detail or error_detail(STATUS_CODES.get(status, 'invalid_request'))
             await JSONResponse({'detail': detail}, status_code=status, headers=headers)(
                 scope, receive, safe_send
             )
 
         if not admitted:
-            return await reject(503, 'Server is busy; retry shortly', {'Retry-After': '1'})
+            return await reject(503, headers={'Retry-After': '1'})
         try:
-            if len(scope.get('query_string', b'')) > 8192 or len(scope.get('path', '')) > 4096:
-                return await reject(414, 'Request target is too long')
-            request_headers = Headers(scope=scope)
-            if (
-                len(scope.get('headers', [])) > 100
-                or sum(len(key) + len(value) for key, value in scope.get('headers', [])) > 32_768
-            ):
-                return await reject(431, 'Request headers are too large')
-            maximum = setting('MAX_REQUEST_BODY_BYTES')
-            if scope.get('method') == 'POST' and scope.get('path') in IMAGE_UPLOAD_PATHS:
-                maximum = setting('MAX_IMAGE_UPLOAD_BYTES') + 65_536
-            if scope.get('method') == 'POST' and scope.get('path') in VIDEO_UPLOAD_PATHS:
-                maximum = setting('MAX_VIDEO_UPLOAD_BYTES') + 65_536
-            lengths = request_headers.getlist('content-length')
-            if lengths:
+            maximum = body_limit(scope)
+            refused = refused_head(scope, Headers(scope=scope), maximum)
+            if refused:
+                return await reject(refused)
+            if not cheap_read(scope):
                 try:
-                    declared = int(lengths[0])
-                except ValueError:
-                    return await reject(400, 'Invalid Content-Length')
-                if len(lengths) != 1 or declared < 0:
-                    return await reject(400, 'Invalid Content-Length')
-                if declared > maximum:
-                    return await reject(413, 'Request body is too large')
-            # Cookie-based SQLAdmin actions need origin checks; bearer-token API
-            # requests do not rely on ambient browser credentials.
-            if (
-                scope.get('method') in {'POST', 'PUT', 'PATCH', 'DELETE'}
-                and scope.get('path', '').startswith('/admin/')
-                and 'session=' in request_headers.get('cookie', '')
-            ):
-                origin = request_headers.get('origin')
-                own = f'{scope.get("scheme", "http")}://{request_headers.get("host", "")}'
-                if (origin and origin != own) or request_headers.get(
-                    'sec-fetch-site'
-                ) == 'cross-site':
-                    return await reject(403, 'Cross-site admin request rejected')
-            try:
-                path = scope.get('path', '')
-                cheap_read = scope.get('method') in {'GET', 'HEAD'} and (
-                    path == '/' or path.startswith(('/admin/statics/', '/media/'))
-                )
-                if not cheap_read:
                     self.http_quota(address, scope.get('method'))
-            except HTTPException as exc:
-                return await reject(exc.status_code, exc.detail, exc.headers)
+                except HTTPException as exc:
+                    return await reject(exc.status_code, exc.detail, exc.headers)
             if (
                 scope.get('method') == 'POST'
                 and scope.get('path') in IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
             ):
-                size = 0
-                # A large file on a slow line may take minutes; what is refused is a
-                # sender that stops sending (REQUEST_BODY_TIMEOUT between pieces).
-                deadline = asyncio.get_running_loop().time() + setting('UPLOAD_MAX_SECONDS')
-
-                async def bounded_upload_receive():
-                    nonlocal size
-                    left = deadline - asyncio.get_running_loop().time()
-                    try:
-                        message = await asyncio.wait_for(
-                            receive(), timeout=max(0, min(setting('REQUEST_BODY_TIMEOUT'), left))
-                        )
-                    except TimeoutError:
-                        raise HTTPException(408, 'Request body timed out') from None
-                    size += len(message.get('body', b''))
-                    if size > maximum:
-                        raise HTTPException(413, 'Request body is too large')
-                    return message
-
-                return await self.app(scope, bounded_upload_receive, safe_send)
-
-            chunks, size = deque(), 0
+                return await self.app(scope, upload_receive(receive, maximum), safe_send)
             try:
-                async with asyncio.timeout(setting('REQUEST_BODY_TIMEOUT')):
-                    while True:
-                        message = await receive()
-                        if message['type'] == 'http.disconnect':
-                            return
-                        chunk = message.get('body', b'')
-                        size += len(chunk)
-                        if size > maximum:
-                            return await reject(413, 'Request body is too large')
-                        chunks.append(chunk)
-                        if not message.get('more_body', False):
-                            break
-            except TimeoutError:
-                return await reject(408, 'Request body timed out')
-            delivered = False
-
-            async def replay():
-                nonlocal delivered
-
-                if chunks:
-                    chunk = chunks.popleft()
-                    more_body = bool(chunks)
-
-                    if not more_body:
-                        delivered = True
-
-                    return {'type': 'http.request', 'body': chunk, 'more_body': more_body}
-
-                if not delivered:
-                    delivered = True
-                    return {'type': 'http.request', 'body': b'', 'more_body': False}
-
-                return await receive()
-
-            await self.app(scope, replay, safe_send)
+                replay = await buffered_body(receive, maximum)
+            except HTTPException as exc:
+                return await reject(exc.status_code)
+            if replay is not None:
+                await self.app(scope, replay, safe_send)
         finally:
             with self.lock:
                 self.http_active -= 1
