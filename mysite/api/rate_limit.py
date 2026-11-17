@@ -97,7 +97,7 @@ def consume_rate_limits(limits, *, current_time=None):
         if cleanup:
             db.execute(delete(table).where(table.c.window_start < instant - 8 * 86_400))
         db.commit()
-    return [(counts[key], retry) for key, retry in zip(identities, retries)]
+    return [(counts[key], retry) for key, retry in zip(identities, retries, strict=True)]
 
 
 def consume_rate_limit(scope, principal, *, max_requests, window_seconds, current_time=None):
@@ -127,7 +127,7 @@ def enforce_rate_limits(limits):
     results = consume_rate_limits(limits, current_time=instant)
     rejected = []
     with _cache_lock:
-        for limit, (count, retry) in zip(limits, results):
+        for limit, (count, retry) in zip(limits, results, strict=True):
             if count > limit[2]:
                 _blocked[limit] = instant + retry
                 _blocked.move_to_end(limit)
@@ -157,20 +157,6 @@ def enforce_login_attempt(scope, request, account_key):
             ),
         ]
     )
-
-
-def clear_account_login_attempt(db, scope, request, account_key):
-    """Clear all IP counters and local blocks for an account after password reset."""
-    db.execute(
-        delete(RateLimitCounter).where(
-            RateLimitCounter.scope == scope, RateLimitCounter.account_id == account_key
-        )
-    )
-    prefix = f'account-ip:{account_key}:ip:'
-    with _cache_lock:
-        for limit in list(_blocked):
-            if limit[0] == scope and limit[1].startswith(prefix):
-                _blocked.pop(limit, None)
 
 
 def enforce_request_limits(
@@ -220,7 +206,7 @@ def enforce_ai_budget(client_id, network=None):
     spent = consume_rate_limits([(*limit, 0) for limit in limits])
     if spent[-1][0] >= limits[-1][2]:
         raise AIError('ai_rate_limit', 'The daily AI token budget is spent')
-    for limit, (count, retry) in zip(limits, spent):
+    for limit, (count, retry) in zip(limits, spent, strict=True):
         if count >= limit[2]:
             _limited(retry)
 

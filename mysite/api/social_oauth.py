@@ -24,7 +24,7 @@ from mysite.database.db import get_db
 from mysite.database.social_models import AuthProvider, OAuthState, SocialLoginCode
 from mysite.database.token_utils import digest, utcnow
 
-router = APIRouter(tags=['Client authentication'])
+social_oauth_router = APIRouter(tags=['Client authentication'])
 
 STATE_COOKIE = 'kt_oauth'
 STATE_TTL = timedelta(minutes=10)
@@ -89,7 +89,7 @@ def login_code_for(db, client):
     return code
 
 
-@router.get('/providers')
+@social_oauth_router.get('/providers/')
 def providers(db: Session = Depends(get_db)):
     rows = {row.provider: row for row in db.scalars(select(AuthProvider))}
     found = {key: configured(row) for key, row in rows.items()}
@@ -102,14 +102,14 @@ def providers(db: Session = Depends(get_db)):
         'facebook': {'enabled': bool(found.get('facebook')), 'app_id': public_id('facebook')},
         'telegram': {'enabled': bool(found.get('telegram')), 'bot': public_id('telegram')},
         'redirect': [
-            {'provider': key, 'title': rows[key].title, 'start_url': f'/auth/oauth/{key}/start'}
+            {'provider': key, 'title': rows[key].title, 'start_url': f'/auth/oauth/{key}/start/'}
             for key in OAUTH_PROVIDERS
             if found.get(key)
         ],
     }
 
 
-@router.get('/oauth/{provider}/start', name='oauth_start')
+@social_oauth_router.get('/oauth/{provider}/start/', name='oauth_start')
 def oauth_start(provider: str, return_to: str, request: Request, db: Session = Depends(get_db)):
     limit('oauth-start', request)
     spec = oauth_provider(provider)
@@ -191,19 +191,19 @@ def finish_sign_in(provider, request, db, params):
     return back(login_code=login_code_for(db, client_for(db, provider, identity)))
 
 
-@router.get('/oauth/{provider}/callback', name='oauth_callback')
+@social_oauth_router.get('/oauth/{provider}/callback/', name='oauth_callback')
 def oauth_callback(provider: str, request: Request, db: Session = Depends(get_db)):
     return finish_sign_in(provider, request, db, request.query_params)
 
 
-@router.post('/oauth/{provider}/callback')
+@social_oauth_router.post('/oauth/{provider}/callback/')
 async def oauth_form_callback(provider: str, request: Request, db: Session = Depends(get_db)):
     async with request.form(max_files=0, max_fields=10) as form:
         params = {key: value for key, value in form.items() if isinstance(value, str)}
     return await run_in_threadpool(finish_sign_in, provider, request, db, params)
 
 
-@router.post('/oauth/exchange')
+@social_oauth_router.post('/oauth/exchange/')
 def oauth_exchange(data: LoginCode, request: Request, db: Session = Depends(get_db)):
     limit('oauth-exchange', request)
     row = db.get(SocialLoginCode, digest(data.login_code), with_for_update=True)
@@ -230,7 +230,7 @@ def telegram_identity(data, bot_token):
     return Identity(subject=str(data.id), email=None, email_trusted=False)
 
 
-@router.post('/telegram')
+@social_oauth_router.post('/telegram/')
 def telegram_login(data: TelegramLogin, request: Request, db: Session = Depends(get_db)):
     limit('client-telegram', request)
     _, bot_token = credentials(db, 'telegram')

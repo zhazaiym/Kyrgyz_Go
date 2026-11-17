@@ -10,10 +10,38 @@ _MONEY = re.compile(
     rf'|(?P<prefix>{_CURRENCY})\s*(?P<prefixed>{_NUMBER})',
     re.IGNORECASE,
 )
-_LABELLED = re.compile(
-    rf'(?:цена|стоимость|стоит|стоят|price|costs?|preis|kostet|价格)'
-    rf'(?:[^\S\n]+[^\W\d_]+){{0,3}}[^\S\n]*[:=—-]?[^\S\n]*({_NUMBER})',
-    re.IGNORECASE,
+# A bare number is a price only where the wording makes it one. "Вам стоит взять
+# 2 куртки" and "цена в 2026 году" are not price claims; "цена: 80",
+# "стоимость тура составляет 80", "стоит от 80 до 120" and "80 за человека" are.
+_PRICE_NOUN = r'(?:цен[аы]|стоимость|стоимости|price|cost|preis|kosten|价格|费用|баасы|наркы)'
+_PRICE_VERB = r'(?:стоит|стоят|costs?|kostet)'
+_LINK = (
+    r'(?:составляет|составит|равна|равен|будет|от|около|примерно|приблизительно|порядка|'
+    r'всего|лишь|только|is|are|from|about|around|approximately|only|beträgt|ab|etwa|ca\.?|约|为)'
+)
+_WORDS = r'(?:[^\W\d_]+[^\S\n]+){0,3}'
+_PER = (
+    r'(?:(?:за|на|с)[^\S\n]+(?:человека|чел\.?|персону|группу|компанию|поездку|тур|ночь|сутки|'
+    r'день|машину|автомобиль|полёт|полет|вертол[её]т)|per[^\S\n]+\w+|pro[^\S\n]+\w+|每\w+)'
+)
+_RANGE_TO = r'[^\S\n]*(?:-|–|—|до|to|bis)[^\S\n]*'
+# The upper bound of a range is checked too: "от 80 до 120".
+_RANGE = rf'(?:{_RANGE_TO}({_NUMBER}))?'
+# What may follow a bare amount: the end of the phrase, a currency or a price unit.
+_AMOUNT_END = (
+    rf'(?=[^\S\n]*(?:$|[^\w\s]|{_CURRENCY}|{_PER}|в[^\S\n]+(?:сутки|день|ночь|час|месяц)))'
+)
+_LABELLED = tuple(
+    re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+    for pattern in (
+        rf'(?<!\w){_PRICE_NOUN}[^\S\n]*(?:[:=—–-][^\S\n]*)?{_WORDS}({_NUMBER}){_RANGE}{_AMOUNT_END}',
+        rf'(?<!\w){_PRICE_NOUN}[^\n.!?:=—–]{{1,60}}[:=—–][^\S\n]*(?:{_LINK}[^\S\n]+)*'
+        rf'({_NUMBER}){_RANGE}{_AMOUNT_END}',
+        rf'(?<!\w){_PRICE_VERB}[^\S\n]+(?:{_LINK}[^\S\n]+)*({_NUMBER}){_RANGE}{_AMOUNT_END}',
+        rf'(?<![\d.,])({_NUMBER})[^\S\n]*{_PER}',
+        rf'(?<![\d.,])({_NUMBER}){_RANGE_TO}{_NUMBER}[^\S\n]*(?:{_CURRENCY})(?!\w)',
+        rf'(?:{_CURRENCY})[^\S\n]*{_NUMBER}[^\S\n]*[-–—][^\S\n]*({_NUMBER})',
+    )
 )
 _BUDGET = re.compile(r'бюджет|budget|预算', re.IGNORECASE)
 
@@ -71,7 +99,13 @@ class PriceEvidence:
             if (amount, currency) not in self.prices:
                 return False
         amounts = {amount for amount, _ in self.prices}
-        return all(_amount(match[1]) in amounts for match in _LABELLED.finditer(answer))
+        return all(
+            _amount(value) in amounts
+            for pattern in _LABELLED
+            for match in pattern.finditer(answer)
+            for value in match.groups()
+            if value is not None
+        )
 
     def fallback(self, language):
         if not self.offers:

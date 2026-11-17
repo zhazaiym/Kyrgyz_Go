@@ -12,7 +12,7 @@ def email_account(client, username, email):
     from mysite.database.chat_models import ChatClient
     from mysite.database.db import SessionLocal
 
-    response = client.post('/auth/register', json={'username': username, 'password': PASSWORD})
+    response = client.post('/account/register', json={'username': username, 'password': PASSWORD})
     assert response.status_code == 201, response.text
     with SessionLocal() as db:
         db.get(ChatClient, response.json()['client_id']).email = email
@@ -27,17 +27,17 @@ def test_customer_can_login_by_email_and_username(client):
         {'username': 'EMAIL_CUSTOMER', 'password': PASSWORD},
         {'username': 'guest@example.com', 'password': PASSWORD},
     ):
-        login = client.post('/auth/login', json=credentials)
+        login = client.post('/account/login', json=credentials)
         assert login.status_code == 200, login.text
         assert login.json()['client_id'] == identity
         headers = {'Authorization': 'Bearer ' + login.json()['access_token']}
-        assert client.get('/auth/me', headers=headers).json()['email'] == 'guest@example.com'
+        assert client.get('/account/me', headers=headers).json()['email'] == 'guest@example.com'
         assert client.post('/chat/session', headers=headers).status_code == 200
 
 
 def test_registration_does_not_store_email(client):
     response = client.post(
-        '/auth/register',
+        '/account/register',
         json={'username': 'email_ignored', 'email': 'ignored@example.com', 'password': PASSWORD},
     )
     assert response.status_code == 201
@@ -47,7 +47,7 @@ def test_registration_does_not_store_email(client):
 def test_unknown_account_and_wrong_password_have_identical_errors(client):
     email_account(client, 'email_bad_password', 'known@example.com')
     responses = [
-        client.post('/auth/login', json=credentials)
+        client.post('/account/login', json=credentials)
         for credentials in (
             {'email': 'known@example.com', 'password': 'WrongPassword123!'},
             {'email': 'missing@example.com', 'password': PASSWORD},
@@ -62,15 +62,17 @@ def test_unknown_account_and_wrong_password_have_identical_errors(client):
 
 def test_login_and_password_registration(client):
     credentials = {'username': 'legacy_without_email', 'password': PASSWORD}
-    registered = client.post('/auth/register', json=credentials)
+    registered = client.post('/account/register', json=credentials)
     assert registered.status_code == 201
     assert registered.json()['email'] is None
-    assert client.post('/chat/auth/login', json=credentials).status_code == 200
+    assert client.post('/account/login', json=credentials).status_code == 200
 
 
 @pytest.mark.parametrize('identifiers', [{}, {'email': 'a@example.com', 'username': 'someone'}])
 def test_login_requires_exactly_one_identifier(client, identifiers):
-    assert client.post('/auth/login', json={**identifiers, 'password': PASSWORD}).status_code == 422
+    assert (
+        client.post('/account/login', json={**identifiers, 'password': PASSWORD}).status_code == 422
+    )
 
 
 def test_email_migration_preserves_existing_accounts():

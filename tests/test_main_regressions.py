@@ -4,20 +4,19 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy import event
 
-from mysite.api import chat_service, password_reset, travel_selection
-from mysite.database.chat_models import ChatClient, ChatLoginToken, ChatSession
+from mysite.api import chat_service, travel_selection
+from mysite.database.chat_models import ChatClient, ChatSession
 from mysite.database.db import SessionLocal, engine
 from mysite.database.models import District, Hotel, Region, Tour, Transport, TravelRequest
-from mysite.database.password_reset_models import PasswordResetToken
 from mysite.database.selection_models import TravelSelection
 
 PASSWORD = 'RegressionPassword123!'
 
 
-def register(client, route='/auth', email=None):
+def register(client, route='/account', email=None):
     """Register with login + password, then attach an email as a legacy
     account would have, so email login and recovery stay covered."""
     identity = uuid4().hex[:16]
@@ -35,38 +34,21 @@ def headers(account):
     return {'Authorization': 'Bearer ' + account['access_token']}
 
 
-@pytest.mark.parametrize('route', ['/auth', '/account'])
-def test_registration_login_profile_and_recovery_share_one_identity(client, monkeypatch, route):
-    account, email = register(client, route)
-    other = '/account' if route == '/auth' else '/auth'
+def test_registration_login_and_profile_share_one_identity(client):
+    account, email = register(client)
     duplicate_body = {'username': account['username'].upper(), 'password': PASSWORD}
-    assert client.post(other + '/register', json=duplicate_body).status_code == 409
-    for prefix in ('/auth', '/account', '/chat/auth'):
-        login = client.post(prefix + '/login', json={'email': email.upper(), 'password': PASSWORD})
-        assert login.status_code == 200, login.text
-        assert login.json()['client_id'] == account['client_id']
-        me = client.get(prefix + '/me', headers=headers(account))
-        assert me.json()['email'] == email
-    sent = []
-    monkeypatch.setattr(password_reset, 'send_reset_email', lambda e, t: sent.append((e, t)))
-    assert client.post('/account/forgot-password', json={'email': email}).status_code == 200
-    assert sent[0][0] == email
-    new_password = PASSWORD + 'new'
-    assert (
-        client.post(
-            '/account/reset-password', json={'token': sent[0][1], 'new_password': new_password}
-        ).status_code
-        == 200
-    )
-    assert client.get('/auth/me', headers=headers(account)).status_code == 401
-    for prefix in ('/auth', '/account'):
-        assert (
-            client.post(prefix + '/login', json={'email': email, 'password': PASSWORD}).status_code
-            == 401
-        )
-        login = client.post(prefix + '/login', json={'email': email, 'password': new_password})
-        assert login.status_code == 200
-        assert login.json()['client_id'] == account['client_id']
+    assert client.post('/account/register', json=duplicate_body).status_code == 409
+    login = client.post('/account/login', json={'email': email.upper(), 'password': PASSWORD})
+    assert login.status_code == 200, login.text
+    assert login.json()['client_id'] == account['client_id']
+    assert client.get('/account/me', headers=headers(account)).json()['email'] == email
+    for removed in (
+        '/auth/register',
+        '/auth/login',
+        '/chat/auth/login',
+        '/account/forgot-password',
+    ):
+        assert client.post(removed, json={'email': email}).status_code == 404
 
 
 def test_concurrent_registration_cannot_split_login_between_routes(client):
@@ -78,7 +60,7 @@ def test_concurrent_registration_cannot_split_login_between_routes(client):
             barrier.wait(timeout=10)
 
     bodies = [
-        ('/auth/register', {'username': login, 'password': PASSWORD}),
+        ('/account/register', {'username': login, 'password': PASSWORD}),
         ('/account/register', {'username': login.upper(), 'password': PASSWORD}),
     ]
     event.listen(engine, 'before_cursor_execute', synchronize)
@@ -92,63 +74,6 @@ def test_concurrent_registration_cannot_split_login_between_routes(client):
     assert sorted(statuses) == [201, 409]
     with SessionLocal() as db:
         assert db.query(ChatClient).filter(ChatClient.username == login).count() == 1
-
-
-@pytest.mark.parametrize('different_tokens', [False, True])
-def test_concurrent_password_resets_allow_one_winner(client, monkeypatch, different_tokens):
-    account, email = register(client)
-    sent = []
-    monkeypatch.setattr(password_reset, 'send_reset_email', lambda e, t: sent.append(t))
-    for _ in range(2 if different_tokens else 1):
-        assert client.post('/account/forgot-password', json={'email': email}).status_code == 200
-    tokens = sent if different_tokens else [sent[0], sent[0]]
-    barrier = Barrier(2)
-
-    def synchronize(connection, cursor, statement, parameters, context, executemany):
-        if 'FROM chat_clients' in statement and 'FOR UPDATE' in statement:
-            barrier.wait(timeout=10)
-
-    def reset(entry):
-        index, token = entry
-        with SessionLocal() as db:
-            try:
-                password_reset.reset_password(
-                    password_reset.ResetPasswordInput(
-                        token=token, new_password=f'WinningPassword{index}!'
-                    ),
-                    Request(
-                        {
-                            'type': 'http',
-                            'http_version': '1.1',
-                            'method': 'POST',
-                            'scheme': 'http',
-                            'path': '/account/reset-password',
-                            'headers': [],
-                            'client': ('198.51.100.15', 54321),
-                            'server': ('testserver', 80),
-                        }
-                    ),
-                    db,
-                )
-                return index, 200
-            except HTTPException as exc:
-                return index, exc.status_code
-
-    event.listen(engine, 'before_cursor_execute', synchronize)
-    try:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(reset, enumerate(tokens)))
-    finally:
-        event.remove(engine, 'before_cursor_execute', synchronize)
-    assert sorted(code for _, code in results) == [200, 400]
-    winner = next(index for index, code in results if code == 200)
-    with SessionLocal() as db:
-        identity = db.get(ChatClient, account['client_id'])
-        assert password_reset.passwords.verify(f'WinningPassword{winner}!', identity.password_hash)
-        assert db.query(ChatLoginToken).filter_by(client_id=identity.id).count() == 0
-        assert (
-            db.query(PasswordResetToken).filter_by(client_id=identity.id, used_at=None).count() == 0
-        )
 
 
 @pytest.fixture

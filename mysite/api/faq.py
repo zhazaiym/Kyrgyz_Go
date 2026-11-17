@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import FAQ
@@ -66,11 +66,11 @@ def update_faq(faq_id: int, faq: FAQUpdateSchema, db: Session = Depends(get_db))
 
     for field in ('question', 'answer'):
         if field in data and not data[field]:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for field in ('order', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(faq_db, key, value)
@@ -92,4 +92,4 @@ def delete_faq(faq_id: int, db: Session = Depends(get_db)):
     db.delete(faq_db)
     db.commit()
 
-    return {'message': 'Суроо-жооп өчүрүлдү'}
+    return success_detail('deleted')

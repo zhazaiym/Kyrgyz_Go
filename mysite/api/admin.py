@@ -52,7 +52,6 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 
 def get_current_admin(
-    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(admin_bearer),
     db: Session = Depends(get_db),
 ) -> Admin:
@@ -75,7 +74,7 @@ def get_current_admin(
         admin_id = int(admin_id)
         sid = str(UUID(payload.get('sid')))
     except (InvalidTokenError, ValueError, TypeError, AttributeError):
-        raise credentials_exception
+        raise credentials_exception from None
 
     result = (
         db.query(Admin, AdminSession)
@@ -96,6 +95,9 @@ def require_admin_roles(*roles):
 
     dependency.admin_roles = roles
     return dependency
+
+
+staff_admin = require_admin_roles('manager', 'catalog_editor')
 
 
 @admin_router.post('/login/', response_model=TokenSchema, response_model_exclude_none=True)
@@ -152,7 +154,7 @@ class PasswordChangeInput(BaseModel):
 def change_admin_password(
     data: PasswordChangeInput,
     request: Request,
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
+    current_admin: Admin = Depends(staff_admin),
     db: Session = Depends(get_db),
 ):
     """Change the caller's own password and sign out every session, including this one."""
@@ -186,10 +188,7 @@ def _own_rows(db, model, admin_id):
 
 
 @admin_router.get('/sessions/')
-def list_sessions(
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-    db: Session = Depends(get_db),
-):
+def list_sessions(current_admin: Admin = Depends(staff_admin), db: Session = Depends(get_db)):
     return [
         {
             key: getattr(row, key)
@@ -217,17 +216,13 @@ def _revoke_own(db, model, identity, admin_id):
 
 @admin_router.delete('/sessions/{identity}/', status_code=204)
 def revoke_session(
-    identity: UUID,
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-    db: Session = Depends(get_db),
+    identity: UUID, current_admin: Admin = Depends(staff_admin), db: Session = Depends(get_db)
 ):
     return _revoke_own(db, AdminSession, str(identity), current_admin.id)
 
 
 @admin_router.get('/me/', response_model=AdminOutSchema)
-def get_admin_profile(
-    current_admin: Admin = Depends(require_admin_roles('manager', 'catalog_editor')),
-):
+def get_admin_profile(current_admin: Admin = Depends(staff_admin)):
     return current_admin
 
 
@@ -235,33 +230,34 @@ class RequestStatusUpdate(BaseModel):
     status: RequestStatusChoices
 
 
-@admin_router.get('/requests/', response_model=list[TravelRequestOutSchema])
-def list_travel_requests(
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
-    pagination: Pagination = Depends(),
-):
+@admin_router.get(
+    '/requests/',
+    response_model=list[TravelRequestOutSchema],
+    dependencies=[Depends(require_admin_roles('manager'))],
+)
+def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination = Depends()):
     return query_travel_requests(db, pagination.offset, pagination.limit)
 
 
-@admin_router.get('/requests/{request_id}/', response_model=TravelRequestOutSchema)
-def get_travel_request(
-    request_id: int,
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
-):
+@admin_router.get(
+    '/requests/{request_id}/',
+    response_model=TravelRequestOutSchema,
+    dependencies=[Depends(require_admin_roles('manager'))],
+)
+def get_travel_request(request_id: int, db: Session = Depends(get_db)):
     request = db.get(TravelRequest, request_id)
     if request is None:
         raise HTTPException(404, error_detail('not_found'))
     return request
 
 
-@admin_router.patch('/requests/{request_id}/status/', response_model=TravelRequestOutSchema)
+@admin_router.patch(
+    '/requests/{request_id}/status/',
+    response_model=TravelRequestOutSchema,
+    dependencies=[Depends(require_admin_roles('manager'))],
+)
 def update_travel_request_status(
-    request_id: int,
-    data: RequestStatusUpdate,
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
+    request_id: int, data: RequestStatusUpdate, db: Session = Depends(get_db)
 ):
     request = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
     if request is None:

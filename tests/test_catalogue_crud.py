@@ -206,3 +206,20 @@ def test_tour_video_link_is_stored_and_validated(client, admin_headers, customer
         assert response.status_code == 422, (unsafe, response.text)
     cleared = client.put(f'/tours/{tour["id"]}/', json={'video_url': None}, headers=admin_headers)
     assert cleared.status_code == 200 and cleared.json()['video_url'] is None
+
+
+def test_tour_minimum_people_cannot_be_cleared(client, admin_headers):
+    headers = admin_headers
+    created = client.post('/tours/', json={'title': 'Min people', 'price': 10}, headers=headers)
+    assert created.status_code == 200, created.text
+    tour = created.json()['id']
+    cleared = client.put(f'/tours/{tour}/', json={'min_people': None}, headers=headers)
+    assert cleared.status_code == 422
+    assert client.put(f'/tours/{tour}/', json={'min_people': 2}, headers=headers).status_code == 200
+
+
+def test_setup_directions_answers_with_a_code(client, admin_headers):
+    response = client.post('/tour-categories/setup-directions/', headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert response.json()['code'] == 'directions_ready'
+    assert len(response.json()['categories']) == 5

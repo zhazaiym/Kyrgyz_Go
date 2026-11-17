@@ -7,6 +7,7 @@ _LATIN = dict(
     zip(
         'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
         'a b v g d e e zh z i i k l m n o p r s t u f h c ch sh sh _ y _ e yu ya'.split(),
+        strict=True,
     )
 )
 _LATIN.update({'ъ': '', 'ь': ''})

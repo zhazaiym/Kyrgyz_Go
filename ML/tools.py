@@ -65,7 +65,7 @@ _LATIN_TO_CYRILLIC = (
 )
 _CYRILLIC_TO_LATIN = str.maketrans(
     {
-        **dict(zip('абвгдезийклмнопрстуфыэөү', 'abvgdeziyklmnoprstufyeou')),
+        **dict(zip('абвгдезийклмнопрстуфыэөү', 'abvgdeziyklmnoprstufyeou', strict=True)),
         'ё': 'yo',
         'ж': 'zh',
         'х': 'kh',
@@ -207,7 +207,7 @@ def _empty_catalogue():
     return {'items': [], 'total': 0, 'has_more': False}
 
 
-def _invalid_arguments(error):
+def _invalid_arguments(_error):
     return (
         'error: неверные параметры инструмента; kind — tour, helicopter_tour или trekking, '
         'числа — положительные целые'

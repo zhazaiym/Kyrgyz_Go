@@ -21,7 +21,7 @@ def test_session_creation_respects_foreign_keys(client):
 
 def register(client, username):
     response = client.post(
-        '/chat/auth/register', json={'username': username, 'password': 'StrongPassword123!'}
+        '/account/register', json={'username': username, 'password': 'StrongPassword123!'}
     )
     assert response.status_code == 201, response.text
     return response.json()['access_token']
@@ -47,9 +47,9 @@ def test_chat_sessions_are_owned_by_the_authenticated_client(client):
 
 def test_chat_logout_revokes_the_login_token(client):
     token = register(client, 'chat_logout')
-    assert client.get('/chat/auth/me', headers=bearer(token)).status_code == 200
-    assert client.post('/chat/auth/logout', headers=bearer(token)).status_code == 200
-    assert client.get('/chat/auth/me', headers=bearer(token)).status_code == 401
+    assert client.get('/account/me', headers=bearer(token)).status_code == 200
+    assert client.post('/account/logout', headers=bearer(token)).status_code == 200
+    assert client.get('/account/me', headers=bearer(token)).status_code == 401
 
 
 def test_booking_confirmation_is_idempotent(client):
@@ -106,7 +106,7 @@ def test_chat_database_wait_does_not_block_event_loop(client, monkeypatch, opera
     from mysite.database.db import engine
 
     token = register(client, f'chat_pool_{operation}')
-    client_id = client.get('/chat/auth/me', headers=bearer(token)).json()['client_id']
+    client_id = client.get('/account/me', headers=bearer(token)).json()['client_id']
     session_id = client.post('/chat/session', headers=bearer(token)).json()['session_id']
     limited_engine = create_engine(engine.url, pool_size=1, max_overflow=0, pool_timeout=3)
     sessions = sessionmaker(bind=limited_engine, autoflush=False)
@@ -184,7 +184,7 @@ def test_cancelled_chat_write_keeps_session_serialized(client, monkeypatch):
     from mysite.database.chat_models import ChatMessage
 
     token = register(client, 'chat_cancelled_write')
-    client_id = client.get('/chat/auth/me', headers=bearer(token)).json()['client_id']
+    client_id = client.get('/account/me', headers=bearer(token)).json()['client_id']
     session_id = client.post('/chat/session', headers=bearer(token)).json()['session_id']
     entered = threading.Event()
     release = threading.Event()

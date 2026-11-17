@@ -12,12 +12,12 @@ from mysite.database.models import TravelRequest
 
 def start_chat(client, username):
     response = client.post(
-        '/chat/auth/register', json={'username': username, 'password': 'StrongPassword123!'}
+        '/account/register', json={'username': username, 'password': 'StrongPassword123!'}
     )
     assert response.status_code == 201
     token = response.json()['access_token']
     headers = {'Authorization': f'Bearer {token}'}
-    identity = client.get('/chat/auth/me', headers=headers).json()['client_id']
+    identity = client.get('/account/me', headers=headers).json()['client_id']
     session_id = client.post('/chat/session', headers=headers).json()['session_id']
     return token, identity, session_id
 

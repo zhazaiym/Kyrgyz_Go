@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
@@ -73,7 +73,7 @@ def test_injection_payloads_remain_values_and_never_bypass_auth(client, payload)
     assert client.get('/tours/', params={'order_by': payload}).status_code == 422
     assert (
         client.post(
-            '/auth/login', json={'username': payload, 'password': 'WrongPassword123!'}
+            '/account/login', json={'username': payload, 'password': 'WrongPassword123!'}
         ).status_code
         == 401
     )
@@ -86,19 +86,23 @@ def test_injection_payloads_remain_values_and_never_bypass_auth(client, payload)
 
 def test_oversized_and_chunked_requests_are_rejected_before_json_parsing(client, monkeypatch):
     monkeypatch.setenv('MAX_REQUEST_BODY_BYTES', '1024')
-    assert client.post('/auth/login', content=b'x' * 1025).status_code == 413
+    assert client.post('/account/login', content=b'x' * 1025).status_code == 413
 
     def chunks():
         yield b'x' * 700
         yield b'x' * 700
 
-    assert client.post('/auth/login', content=chunks()).status_code == 413
+    assert client.post('/account/login', content=chunks()).status_code == 413
     assert (
-        client.post('/auth/login', content=b'x' * 1400, headers={'Content-Length': '1'}).status_code
+        client.post(
+            '/account/login', content=b'x' * 1400, headers={'Content-Length': '1'}
+        ).status_code
         == 413
     )
     assert (
-        client.post('/auth/login', content=b'{}', headers={'Content-Length': 'invalid'}).status_code
+        client.post(
+            '/account/login', content=b'{}', headers={'Content-Length': 'invalid'}
+        ).status_code
         == 400
     )
     assert client.get('/tours/?search=' + 'x' * 9000).status_code == 414
@@ -107,6 +111,7 @@ def test_oversized_and_chunked_requests_are_rejected_before_json_parsing(client,
 def test_http_quota_cannot_be_bypassed_with_untrusted_forwarded_headers(monkeypatch):
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setenv('HTTP_REQUESTS_PER_MINUTE', '3')
+    monkeypatch.setenv('HTTP_READS_PER_MINUTE', '3')
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_950_000_000)
     with TestClient(app, client=('198.51.100.111', 50001)) as browser:
         statuses = [
@@ -152,50 +157,6 @@ def test_rate_counter_is_atomic_across_concurrent_database_sessions():
 
     with ThreadPoolExecutor(max_workers=8) as workers:
         assert sorted(workers.map(consume, range(16))) == list(range(1, 17))
-
-
-def test_password_reset_cleanup_removes_all_account_ip_counters_and_blocks():
-    account_key = f'client:{uuid4().int}'
-    for address in ('198.51.100.21', '198.51.100.22'):
-        rate_limit.consume_rate_limit(
-            'client-login',
-            f'account-ip:{account_key}:ip:{address}',
-            max_requests=8,
-            window_seconds=60,
-            current_time=1_950_000_000,
-        )
-    rate_limit.consume_rate_limit(
-        'client-login',
-        'account-ip:client:unrelated:ip:198.51.100.21',
-        max_requests=8,
-        window_seconds=60,
-        current_time=1_950_000_000,
-    )
-    blocked = ('client-login', f'account-ip:{account_key}:ip:198.51.100.21', 8, 60)
-    with rate_limit._cache_lock:
-        rate_limit._blocked[blocked] = 1_950_000_060
-
-    request = Request(
-        {
-            'type': 'http',
-            'method': 'POST',
-            'scheme': 'http',
-            'path': '/account/reset-password',
-            'headers': [],
-            'client': ('198.51.100.21', 50000),
-            'server': ('testserver', 80),
-        }
-    )
-    with SessionLocal() as db:
-        rate_limit.clear_account_login_attempt(db, 'client-login', request, account_key)
-        db.commit()
-        assert db.query(rate_limit.RateLimitCounter).filter_by(account_id=account_key).count() == 0
-        assert (
-            db.query(rate_limit.RateLimitCounter).filter_by(account_id='client:unrelated').count()
-            == 1
-        )
-    with rate_limit._cache_lock:
-        assert blocked not in rate_limit._blocked
 
 
 def test_http_admission_rejects_excess_concurrency_and_releases_capacity(monkeypatch):
@@ -393,48 +354,6 @@ def test_repeated_invalid_websocket_frames_are_disconnected(client, payload):
 
 def test_headers_are_bounded_before_authentication(client):
     assert client.get('/', headers={'X-Audit': 'x' * 33000}).status_code == 431
-
-
-def test_reset_email_is_sent_after_the_generic_response(client, monkeypatch):
-    from mysite.api import password_reset
-
-    account, email = register(client)
-    response_body_seen = []
-
-    def mail(address, token):
-        assert response_body_seen, 'SMTP must not delay the generic HTTP response'
-        assert address == email
-
-    monkeypatch.setattr(password_reset, 'send_reset_email', mail)
-    payload = ('{"email":"' + email + '"}').encode()
-
-    async def scenario():
-        async def receive():
-            return {'type': 'http.request', 'body': payload, 'more_body': False}
-
-        async def send(message):
-            if message['type'] == 'http.response.body':
-                response_body_seen.append(message['body'])
-
-        await app(
-            {
-                'type': 'http',
-                'asgi': {'version': '3.0'},
-                'method': 'POST',
-                'path': '/account/forgot-password',
-                'raw_path': b'/account/forgot-password',
-                'root_path': '',
-                'scheme': 'http',
-                'query_string': b'',
-                'server': ('testserver', 80),
-                'client': ('reset-audit', 1),
-                'headers': [(b'content-type', b'application/json'), (b'host', b'testserver')],
-            },
-            receive,
-            send,
-        )
-
-    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(

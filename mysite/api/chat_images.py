@@ -18,7 +18,7 @@ from mysite.api.rate_limit import enforce_rate_limit
 from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
 
-CHAT_IMAGE_PATH = '/chat/images'
+CHAT_IMAGE_PATH = '/chat/images/'
 CHAT_IMAGE_SIDE = 1536
 CHAT_IMAGE_TTL_SECONDS = 600
 MAX_PENDING_IMAGES = 64

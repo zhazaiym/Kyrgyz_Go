@@ -9,7 +9,7 @@ def unique_login():
     return 'user_' + uuid4().hex[:12]
 
 
-@pytest.mark.parametrize('route', ['/auth', '/account'])
+@pytest.mark.parametrize('route', ['/account'])
 def test_registration_needs_only_login_and_password(client, route):
     login = unique_login()
     registered = client.post(f'{route}/register', json={'username': login, 'password': PASSWORD})
@@ -57,7 +57,7 @@ def test_registration_rejects_bad_login_or_password(client, body):
 def test_duplicate_login_is_rejected(client):
     login = unique_login()
     body = {'username': login, 'password': PASSWORD}
-    assert client.post('/auth/register', json=body).status_code == 201
+    assert client.post('/account/register', json=body).status_code == 201
     assert client.post('/account/register', json=body).status_code == 409
 
 

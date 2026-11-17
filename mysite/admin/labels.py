@@ -155,7 +155,7 @@ BISHKEK = timezone(timedelta(hours=6))
 def choice_text(name):
     labels = CHOICE_LABELS[name]
 
-    def formatter(model, attribute):
+    def formatter(model, _attribute):
         value = getattr(model, name)
         value = getattr(value, 'value', value)
         return labels.get(value, value)
@@ -164,7 +164,7 @@ def choice_text(name):
 
 
 def local_time(name):
-    def formatter(model, attribute):
+    def formatter(model, _attribute):
         value = getattr(model, name)
         if value is None:
             return ''

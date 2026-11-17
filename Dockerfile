@@ -24,4 +24,4 @@ COPY --chown=app:app scripts/ ./scripts/
 USER app
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --limit-concurrency 128 --backlog 256 --timeout-keep-alive 5 --ws-max-size 16384 --ws-max-queue 8 --ws-per-message-deflate false"]
+CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers --limit-concurrency 128 --backlog 256 --timeout-keep-alive 5 --ws-max-size 16384 --ws-max-queue 8 --ws-per-message-deflate false"]

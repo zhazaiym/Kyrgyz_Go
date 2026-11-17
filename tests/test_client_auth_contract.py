@@ -12,7 +12,7 @@ def test_account_and_auth_login_share_client_and_seven_day_token(client):
     registered = client.post('/account/register', json={'username': username, 'password': password})
     assert registered.status_code == 201, registered.text
 
-    login = client.post('/auth/login', json={'username': username, 'password': password})
+    login = client.post('/account/login', json={'username': username, 'password': password})
     assert login.status_code == 200, login.text
     assert login.json()['client_id'] == registered.json()['client_id']
     assert 'refresh_token' not in login.json()

@@ -14,7 +14,7 @@ from tests.test_chat_auth import bearer, register
 
 def account_session(client, username):
     token = register(client, username)
-    identity = client.get('/auth/me', headers=bearer(token)).json()['client_id']
+    identity = client.get('/account/me', headers=bearer(token)).json()['client_id']
     sid = client.post('/chat/session', headers=bearer(token)).json()['session_id']
     return token, identity, sid
 

@@ -12,11 +12,11 @@ PARK = 'https://alaarchapark.com/trails'
 
 
 def names(ru, latin):
-    return dict(zip(LANGUAGES, (ru, latin, latin, latin)))
+    return dict(zip(LANGUAGES, (ru, latin, latin, latin), strict=True))
 
 
 def text(ru, en, de, zh):
-    return dict(zip(LANGUAGES, (ru, en, de, zh)))
+    return dict(zip(LANGUAGES, (ru, en, de, zh), strict=True))
 
 
 REGIONS = {

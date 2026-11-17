@@ -105,7 +105,7 @@ def client():
 @pytest.fixture(scope='session')
 def customer_headers(client):
     response = client.post(
-        '/auth/register',
+        '/account/register',
         json={'username': 'catalogue_customer', 'password': 'StrongCustomerPassword123!'},
     )
     assert response.status_code == 201, response.text

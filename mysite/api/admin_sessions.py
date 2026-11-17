@@ -8,7 +8,6 @@ to reproduce the response during the grace period while storing only hashes.
 import base64
 import hashlib
 import hmac
-import os
 import secrets
 from datetime import timedelta, timezone
 from uuid import uuid4
@@ -18,18 +17,11 @@ import jwt
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.models import Admin
 from mysite.database.token_utils import digest, utcnow
+from mysite.settings import number
 
 
 def setting(name):
-    defaults = {
-        'ADMIN_ACCESS_TOKEN_MINUTES': 60,
-        'ADMIN_REFRESH_DAYS': 30,
-        'ADMIN_SESSION_HOURS': 168,
-    }
-    value = int(os.getenv(name, str(defaults[name])))
-    if not 1 <= value <= 10000:
-        raise RuntimeError(f'{name} must be between 1 and 10000')
-    return value
+    return number(name)
 
 
 def _key():

@@ -207,7 +207,7 @@
         <div>
           <span class="kt-catalog-label">Отзывы о турах</span>
           <span class="kt-catalog-value">{{ overview.reviews.count }}</span>
-          <span class="kt-catalog-note">{% if overview.reviews.average %}средняя оценка {{ overview.reviews.average }} из 5{% else %}оценок пока нет{% endif %}</span>
+          <span class="kt-catalog-note">{% if overview.reviews.average %}средняя оценка {{ overview.reviews.average }} из 5{% else %}оценок пока нет{% endif %}{% if overview.reviews.pending %}, ждут проверки: {{ overview.reviews.pending }}{% endif %}</span>
         </div>
       </div>
     </div>

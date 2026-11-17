@@ -1,5 +1,6 @@
-import os
 from ipaddress import IPv6Address, ip_address, ip_network
+
+from mysite.settings import flag
 
 
 def client_network(address):
@@ -19,4 +20,4 @@ def request_network(request):
 
 
 def rate_limits_enabled():
-    return os.getenv('RATE_LIMIT_ENABLED', 'true').strip().casefold() not in {'0', 'false', 'no'}
+    return flag('RATE_LIMIT_ENABLED')

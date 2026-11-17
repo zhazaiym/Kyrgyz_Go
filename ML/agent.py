@@ -8,6 +8,7 @@ import re
 import time
 from contextvars import ContextVar
 from datetime import date
+from functools import partial
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
@@ -478,32 +479,82 @@ async def _run_tools(calls, found, prices=None):
     return messages
 
 
+class _Release:
+    """Passes a round's text to the client as it comes, except numbers.
+
+    From the first digit of a sentence the text waits for the end of that
+    sentence; the whole sentence is then checked against the catalogue prices.
+    An unconfirmed price is never shown: it and everything after it is held
+    back, and the whole reply is then refused and redrafted.
+    """
+
+    _BOUNDARY = re.compile(r'(?<=[.!?…])[^\S\n]+|\n')
+
+    def __init__(self, on_chunk, prices, budget):
+        self.on_chunk = on_chunk
+        self.prices = prices
+        self.budget = budget
+        self.sentence = ''  # the shown start of the current sentence
+        self.held = ''
+        self.blocked = False
+
+    async def feed(self, text):
+        if self.blocked:
+            self.held += text
+            return
+        while text:
+            if not self.held:
+                digit = re.search(r'\d', text)
+                if digit is None:
+                    await self._show(text)
+                    return
+                if digit.start():
+                    await self._show(text[: digit.start()])
+                text = text[digit.start() :]
+            self.held += text
+            boundary = self._BOUNDARY.search(self.held)
+            if boundary is None:
+                return
+            sentence = self.held[: boundary.end()]
+            if not self.prices.accepts(self.sentence + sentence, self.budget):
+                self.blocked = True
+                return
+            text, self.held = self.held[boundary.end() :], ''
+            await self._show(sentence)
+
+    async def _show(self, text):
+        await self.on_chunk(text)
+        ends = [match.end() for match in self._BOUNDARY.finditer(self.sentence + text)]
+        self.sentence = (self.sentence + text)[ends[-1] :] if ends else self.sentence + text
+
+    async def finish(self):
+        if self.held:
+            await self._show(self.held)
+            self.held = ''
+
+
 async def _consult(message, known, history, on_chunk, image, today):
     """Pieces of the reply, written from the state before this message, and the records found."""
     live = callable(getattr(on_chunk, 'reset', None))
     msgs = _consult_messages(message, known, history, image, today)
     found = {}
     prices = PriceEvidence()
+    budget_context = str(known.get('budget') or '') + '\n' + message
     price_retry = False
     compact_retry = False
     tool_calls_used = 0
     # A photo turn may need several searches before reading the matching item.
     for _ in range(7 if image is not None else 5):
         visible_parts = []
-        held = []
+        release = _Release(on_chunk, prices, budget_context) if live else None
 
-        async def emit(text, parts=visible_parts):
+        async def emit(text, parts=visible_parts, release=release):
             if text:
                 parts.append(text)
-                if live:
-                    # A numeric claim waits for validation, including when its
-                    # amount and currency arrive in separate stream chunks.
-                    if held or re.search(r'\d', text):
-                        held.append(text)
-                    else:
-                        await on_chunk(text)
+                if release is not None:
+                    await release.feed(text)
 
-        reply = await _measured_call('generation', lambda: _stream_round(msgs, emit), timeout=60)
+        reply = await _measured_call('generation', partial(_stream_round, msgs, emit), timeout=60)
         if _reply_truncated(reply):
             if compact_retry:
                 raise AIError('ai_invalid_response', 'Gemini response exceeded output budget')
@@ -517,7 +568,6 @@ async def _consult(message, known, history, on_chunk, image, today):
         if not calls:
             if not ''.join(visible_parts).strip():
                 raise AIError('ai_invalid_response', 'Gemini returned empty final response')
-            budget_context = str(known.get('budget') or '') + '\n' + message
             if not prices.accepts(''.join(visible_parts), budget_context):
                 if live:
                     await on_chunk.reset()
@@ -531,8 +581,7 @@ async def _consult(message, known, history, on_chunk, image, today):
                 msgs.append(SystemMessage(content=PRICE_RECHECK))
                 continue
             if live:
-                for text in held:
-                    await on_chunk(text)
+                await release.finish()
             return visible_parts, found
         if live:
             await on_chunk.reset()  # text before a tool call is a preamble, not the answer

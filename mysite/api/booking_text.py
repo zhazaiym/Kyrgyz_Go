@@ -232,7 +232,7 @@ def preview_text(data, choice):
     ]
     lines = [
         f'{label}: {value if value is not None and value != "" else text["missing"]}'
-        for label, value in zip(text['labels'], values)
+        for label, value in zip(text['labels'], values, strict=True)
     ]
     labels = {
         'ru': {'hotel': 'Отель', 'transport': 'Транспорт'},

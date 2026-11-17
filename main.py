@@ -1,7 +1,6 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -22,52 +21,48 @@ from mysite.api.admin_access import AdminAccessMiddleware
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_images import chat_images_router
-from mysite.api.chat_ws import router as chat_ws_router
-from mysite.api.client_auth import router as client_auth_router
+from mysite.api.chat_ws import chat_ws_router
 from mysite.api.contact import contact_router
 from mysite.api.country import country_router
 from mysite.api.district import district_router
 from mysite.api.faq import faq_router
 from mysite.api.guest_ai import guest_ai_router
-from mysite.api.helicopter_image import helicopter_image_router
 from mysite.api.helicopter_tour import helicopter_tour_router
 from mysite.api.home_content import home_content_router
 from mysite.api.hotel import hotel_router
-from mysite.api.hotel_image import hotel_image_router
+from mysite.api.image_routes import (helicopter_image_router, hotel_image_router, tour_image_router,
+                                     transport_image_router, trekking_image_router)
 from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
-from mysite.api.observability import router as observability_router
-from mysite.api.observability import validate_metrics_config
-from mysite.api.origin_config import configured_origins
-from mysite.api.password_reset import router as password_reset_router
+from mysite.api.observability import observability_router, validate_metrics_config
+from mysite.api.origin_config import configured_origins, validate_origin_settings
+from mysite.api.paths import TrailingSlashMiddleware
 from mysite.api.region import region_router
-from mysite.api.registration import router as registration_router
+from mysite.api.registration import registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
-from mysite.api.social_auth import router as social_auth_router
-from mysite.api.social_oauth import router as social_oauth_router
+from mysite.api.social_auth import social_auth_router
+from mysite.api.social_oauth import social_oauth_router
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
 from mysite.api.tour_category import category_router
-from mysite.api.tour_image import tour_image_router
 from mysite.api.tour_program import tour_program_router
 from mysite.api.tour_reviews import tour_reviews_router
 from mysite.api.tour_video import tour_video_router
 from mysite.api.transport import transport_router
-from mysite.api.transport_image import transport_image_router
 from mysite.api.travel_request import travel_request_router
 from mysite.api.travel_selection import selection_router
 from mysite.api.trekking import trekking_router
-from mysite.api.trekking_image import trekking_image_router
 from mysite.api.trekking_program import trekking_program_router
 from mysite.api.trip_options import trip_options_router
 from mysite.api.video_media import video_media_router
+from mysite.settings import flag, validate_settings
 
 logger = logging.getLogger(__name__)
 
 
 # FASTAPI
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(_app):
     cleanup = asyncio.create_task(token_cleanup_loop())
     from mysite.translations.jobs import recover_missing_translations
 
@@ -105,19 +100,27 @@ async def lifespan(app):
 
 validate_resource_settings()
 validate_chat_settings()
+validate_origin_settings()
 validate_metrics_config()
+validate_settings()
+api_docs = flag('API_DOCS')
 app = FastAPI(
     title='KYRGYZGO',
     description='KYRGYZGO Tourism API + AI Travel Assistant',
     version='1.0.0',
     lifespan=lifespan,
+    docs_url='/docs' if api_docs else None,
+    redoc_url='/redoc' if api_docs else None,
+    openapi_url='/openapi.json' if api_docs else None,
 )
 
+from sqlalchemy.exc import TimeoutError as DatabasePoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from mysite.api.errors import http_error_response
+from mysite.api.errors import database_busy_response, http_error_response
 
 app.add_exception_handler(StarletteHTTPException, http_error_response)
+app.add_exception_handler(DatabasePoolTimeout, database_busy_response)
 
 
 # CORS
@@ -127,8 +130,6 @@ from mysite.api.observability import HTTPMetricsMiddleware
 
 app.add_middleware(HTTPMetricsMiddleware)
 cors_allowed_origins = list(configured_origins('CORS_ALLOWED_ORIGINS'))
-if '*' in cors_allowed_origins:
-    raise RuntimeError('CORS_ALLOWED_ORIGINS must list trusted origins explicitly')
 
 app.add_middleware(
     CORSMiddleware,
@@ -137,6 +138,7 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+app.add_middleware(TrailingSlashMiddleware)
 
 
 # ADMIN ROUTER
@@ -187,8 +189,6 @@ app.include_router(tour_program_router)
 
 
 # NEW AI CHAT ROUTERS
-app.include_router(client_auth_router, prefix='/auth')
-app.include_router(client_auth_router, prefix='/chat/auth', include_in_schema=False)
 app.include_router(social_auth_router, prefix='/auth')
 app.include_router(social_oauth_router, prefix='/auth')
 app.include_router(chat_router)
@@ -198,13 +198,12 @@ app.include_router(chat_ws_router)
 app.include_router(selection_router)
 app.include_router(manager_selection_router)
 app.include_router(registration_router)
-app.include_router(password_reset_router)
 app.include_router(observability_router)
 
 
 # MEDIA FILES
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-if os.getenv('SERVE_MEDIA_LOCALLY', 'true').lower() == 'true':
+if flag('SERVE_MEDIA_LOCALLY'):
     app.mount(MEDIA_URL, StaticFiles(directory=MEDIA_ROOT), name='media')
 
 

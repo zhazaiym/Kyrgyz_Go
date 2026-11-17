@@ -84,7 +84,6 @@ Set the exact frontend origins (scheme, hostname, and port, no trailing slash):
 ```dotenv
 CORS_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
 CHAT_ALLOWED_ORIGINS=https://kerben-travel.vercel.app
-FRONTEND_RESET_URL=https://kerben-travel.vercel.app/ru/reset-password
 ```
 
 Multiple origins are separated by `;`. The example file includes the production
@@ -92,9 +91,7 @@ site origin and localhost ports 3000 and 5173. Add the production site origins
 on the server. HTTP CORS accepts the `Authorization` header and preflight requests.
 Chat WebSockets use their own origin check through `CHAT_ALLOWED_ORIGINS`. The admin
 request notification socket stays on the same origin as SQLAdmin and requires its
-authenticated admin session. Reset emails use `FRONTEND_RESET_URL` and include a
-single-use token that expires after 15 minutes. SMTP settings must also be valid for
-delivery; the HTTP forgot-password response does not confirm that a message arrived.
+authenticated admin session.
 Do not set `*` for CORS origins when using credentials.
 
 The Vercel URL above is the frontend, not an API hostname. To use a custom API domain
@@ -136,23 +133,25 @@ docker compose logs --tail=100 api
 curl --fail http://127.0.0.1:8000/
 ```
 
-The container runs as an unprivileged user, uses one Uvicorn worker, rotates
+The container runs as an unprivileged user, uses one Uvicorn worker (pinned
+with `--workers 1`, so `WEB_CONCURRENCY` cannot raise it), rotates
 logs, and restarts after process failures. The healthcheck verifies HTTP
 availability; it does not verify PostgreSQL or Gemini connectivity. An unhealthy
 status alone does not trigger Docker's restart policy.
 
 Database-backed rate limits are enabled by default and shared across workers:
 client registration is limited by IP/account, client and admin login by IP and
-identifier, password-reset requests by IP/email, WebSocket handshakes by IP,
+identifier, WebSocket handshakes by IP,
 and AI messages by client account. The AI limit is 10 messages per minute and
 300 per day per client. Counters store hashed identifiers and old windows are
 cleaned automatically. Keep `RATE_LIMIT_ENABLED=true` in production.
 
-The coarse HTTP/IP limit uses a bounded in-memory counter per worker, with no
-PostgreSQL writes. GET/HEAD health checks and SQLAdmin static assets bypass
-this counter; admission, header and body limits still apply. With N workers,
-the coarse allowance can reach N times the configured value. Use the proxy
-or an upstream service for network-level and cross-worker traffic limits.
+The coarse HTTP/IP limits (`HTTP_REQUESTS_PER_MINUTE` for writes,
+`HTTP_READS_PER_MINUTE` for GET/HEAD) use bounded in-memory counters, with no
+PostgreSQL writes; so do AI capacity and WebSocket connection counts. They are
+exact only because the API runs as one process. Running more workers would
+need these counters in a shared store first; network-level limits belong to
+the proxy or an upstream service.
 Numeric resource settings are validated at startup; restart after changing them.
 
 The coarse counter uses LRU eviction and groups IPv6 addresses by /64. Evicted
@@ -250,7 +249,7 @@ Caddy normally serves `/media/`. With a host Nginx either add an equivalent
 
 ### Frontend connection
 
-Customer registration and login use `/auth/register` and `/auth/login`.
+Customer registration and login use `/account/register/` and `/account/login/`.
 Keep one customer token for both catalogue details and chat. Catalogue lists
 return public summary cards; detailed objects, programs, galleries and chat
 require the customer token. On HTTP 401, show the shared registration/login
@@ -370,7 +369,7 @@ deploying recovery, no manual SQL reset is needed when provider access returns.
 - Новая переменная окружения — со значением по умолчанию и строкой в
   `.env.example`; приложение стартует без неё. Владельцу сервера сказать заранее.
 - Скрипты, нужные на проде, — в образ (Dockerfile) и с тестом.
-- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы, SMTP) — только в серверном
+- Секреты (`GEMINI_API_KEY`, `SECRET_KEY`, пароли базы) — только в серверном
   `.env`: не в репо, GitHub, чатах, логах и тестах.
 - Локально прогнать те же проверки, что CI (`.github/workflows/ci.yml`).
 

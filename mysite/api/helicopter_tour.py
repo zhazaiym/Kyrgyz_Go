@@ -3,7 +3,7 @@ from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import (HelicopterCatalogueDetailSchema,
                                               HelicopterTourCardSchema)
@@ -62,7 +62,7 @@ def update_helicopter_tour(
 
     for field in ('title', 'price', 'price_unit', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(helicopter_db, key, value)
@@ -86,7 +86,7 @@ def delete_helicopter_tour(helicopter_id: int, db: Session = Depends(get_db)):
     db.delete(helicopter_db)
     db.commit()
 
-    return {'message': 'Вертолёт туру өчүрүлдү'}
+    return success_detail('deleted')
 
 
 @helicopter_tour_router.get('/', response_model=list[HelicopterTourCardSchema])

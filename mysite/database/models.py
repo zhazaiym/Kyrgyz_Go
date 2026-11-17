@@ -125,7 +125,7 @@ class Tour(Base):
     __tablename__ = 'tours'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    category_id: Mapped[int | None] = mapped_column(ForeignKey('tour_categories.id'))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey('tour_categories.id'), index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     included: Mapped[str | None] = mapped_column(Text)
@@ -199,7 +199,9 @@ class TourImage(Base):
     __tablename__ = 'tour_images'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tour_id: Mapped[int] = mapped_column(ForeignKey('tours.id', ondelete='CASCADE'), nullable=False)
+    tour_id: Mapped[int] = mapped_column(
+        ForeignKey('tours.id', ondelete='CASCADE'), nullable=False, index=True
+    )
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
     tour: Mapped['Tour'] = relationship(back_populates='images')
@@ -223,7 +225,9 @@ class TourProgram(LocalizedContent, Base):
     __tablename__ = 'tour_programs'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tour_id: Mapped[int] = mapped_column(ForeignKey('tours.id', ondelete='CASCADE'), nullable=False)
+    tour_id: Mapped[int] = mapped_column(
+        ForeignKey('tours.id', ondelete='CASCADE'), nullable=False, index=True
+    )
     day_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str | None] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
@@ -245,7 +249,7 @@ class Region(LocalizedContent, Base):
     __tablename__ = 'regions'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    country_id: Mapped[int | None] = mapped_column(ForeignKey('countries.id'))
+    country_id: Mapped[int | None] = mapped_column(ForeignKey('countries.id'), index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     image: Mapped[str | None] = mapped_column(String(500))
     country: Mapped['Country | None'] = relationship(back_populates='regions')
@@ -257,7 +261,7 @@ class District(LocalizedContent, Base):
     __tablename__ = 'districts'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    region_id: Mapped[int] = mapped_column(ForeignKey('regions.id'), nullable=False)
+    region_id: Mapped[int] = mapped_column(ForeignKey('regions.id'), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     region: Mapped['Region'] = relationship(back_populates='districts')
     hotels: Mapped[list['Hotel']] = relationship(back_populates='district')
@@ -267,8 +271,8 @@ class Hotel(LocalizedContent, Base):
     __tablename__ = 'hotels'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    region_id: Mapped[int] = mapped_column(ForeignKey('regions.id'), nullable=False)
-    district_id: Mapped[int] = mapped_column(ForeignKey('districts.id'), nullable=False)
+    region_id: Mapped[int] = mapped_column(ForeignKey('regions.id'), nullable=False, index=True)
+    district_id: Mapped[int] = mapped_column(ForeignKey('districts.id'), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(String(500))
@@ -296,7 +300,7 @@ class HotelImage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     hotel_id: Mapped[int] = mapped_column(
-        ForeignKey('hotels.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('hotels.id', ondelete='CASCADE'), nullable=False, index=True
     )
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
@@ -336,7 +340,7 @@ class TransportImage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     transport_id: Mapped[int] = mapped_column(
-        ForeignKey('transports.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('transports.id', ondelete='CASCADE'), nullable=False, index=True
     )
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
@@ -373,7 +377,7 @@ class HelicopterImage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     helicopter_id: Mapped[int] = mapped_column(
-        ForeignKey('helicopter_tours.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('helicopter_tours.id', ondelete='CASCADE'), nullable=False, index=True
     )
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
@@ -422,7 +426,7 @@ class TrekkingImage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trekking_id: Mapped[int] = mapped_column(
-        ForeignKey('trekkings.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('trekkings.id', ondelete='CASCADE'), nullable=False, index=True
     )
     image: Mapped[str] = mapped_column(String(500), nullable=False)
     order: Mapped[int] = mapped_column(Integer, default=0)
@@ -434,7 +438,7 @@ class TrekkingProgram(LocalizedContent, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trekking_id: Mapped[int] = mapped_column(
-        ForeignKey('trekkings.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('trekkings.id', ondelete='CASCADE'), nullable=False, index=True
     )
     day_number: Mapped[int] = mapped_column(Integer, nullable=False)
     start_time: Mapped[str | None] = mapped_column(String(10))
@@ -461,7 +465,7 @@ class Contact(LocalizedContent, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     @validates('whatsapp')
-    def validate_whatsapp(self, key, value):
+    def validate_whatsapp(self, _key, value):
         return validate_whatsapp_link(value)
 
 
@@ -524,7 +528,7 @@ class TravelRequest(Base):
 
 @event.listens_for(AboutSection, 'after_insert')
 @event.listens_for(FAQ, 'after_insert')
-def assign_content_order(mapper, connection, target):
+def assign_content_order(_mapper, connection, target):
     connection.execute(
         target.__table__.update().where(target.__table__.c.id == target.id).values(order=target.id)
     )
@@ -533,7 +537,7 @@ def assign_content_order(mapper, connection, target):
 
 
 @event.listens_for(TravelRequest, 'before_update')
-def protect_completed_request(mapper, connection, target):
+def protect_completed_request(_mapper, connection, target):
     status = inspect(target).attrs.status
     if not status.history.has_changes():
         return
@@ -550,7 +554,7 @@ def protect_completed_request(mapper, connection, target):
 
 @event.listens_for(Base, 'before_insert', propagate=True)
 @event.listens_for(Base, 'before_update', propagate=True)
-def validate_catalogue_write(mapper, connection, target):
+def validate_catalogue_write(_mapper, _connection, target):
     if type(target).__module__ != __name__:
         return
     from mysite.database.storage_validation import validate_storage_values

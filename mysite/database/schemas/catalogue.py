@@ -56,7 +56,7 @@ class TourUpdateSchema(StorageInput):
     price_unit: PriceUnitChoices | None = None
     duration_days: int | None = None
     duration_nights: int | None = None
-    min_people: int | None = None
+    min_people: int = Field(default=None, ge=1)
     max_people: int | None = None
     tour_type: TourTypeChoices | None = None
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)

@@ -7,7 +7,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from wtforms import PasswordField, SelectField, validators
 
-from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels
+from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels, local_time
 from mysite.api.provider_secrets import open_secret, seal_secret
 from mysite.api.social_auth import WITHOUT_SECRET, valid_app_id, valid_secret
 from mysite.database.db import SessionLocal
@@ -17,6 +17,7 @@ from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, Di
                                     Transport, TransportImage, TravelRequest, Trekking,
                                     TrekkingImage, TrekkingProgram)
 from mysite.database.social_models import AuthProvider
+from mysite.database.tour_review_models import TourReview
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
                                          manual_translation_changed,
                                          manual_translation_needs_refresh, mark_manual_translations,
@@ -43,7 +44,7 @@ class SelectedItemGuard:
         except IntegrityError:
             raise ValueError(ERROR_MESSAGES['selected_item_in_use']) from None
 
-    async def on_model_delete(self, model, request):
+    async def on_model_delete(self, model, _request):
         from mysite.api.deletion_guards import protect_selected_item
 
         def check():
@@ -64,10 +65,10 @@ class RequestSourceFilter:
     has_operator = False
     template = 'sqladmin/filters/lookup_filter.html'
 
-    async def lookups(self, request, model, run_query):
+    async def lookups(self, _request, _model, _run_query):
         return [('__all', 'Все'), ('chat', 'Чат'), ('site', 'Сайт')]
 
-    async def get_filtered_query(self, query, value, model):
+    async def get_filtered_query(self, query, value, _model):
         return query.where(TravelRequest.source == value) if value in {'chat', 'site'} else query
 
 
@@ -109,7 +110,7 @@ class LocalizedAdminMixin:
             )
             request.state.catalogue_source = source
 
-    async def after_model_change(self, data, model, is_created, request):
+    async def after_model_change(self, _data, model, _is_created, request):
         source = getattr(request.state, 'catalogue_source', None)
         if source is not None:
             enqueue_translation(type(model), model.id, source, generate_translations)
@@ -216,7 +217,7 @@ class TourAdmin(SelectedItemGuard, ModelView, model=Tour):
                     and hashes.get(field) == source_field_hash(source.get(field))
                 ]
 
-    async def after_model_change(self, data, model, is_created, request):
+    async def after_model_change(self, _data, model, _is_created, request):
         if request.state.tour_source_changed:
             await run_in_threadpool(self._refresh_translations, model.id)
 
@@ -420,22 +421,22 @@ SECRET_HINT = (
 )
 
 
-def provider_title(model, attribute):
+def provider_title(model, _attribute):
     hint = APP_ID_HINTS.get(model.provider, '')
     return Markup(
         '<strong>{}</strong><div class="kt-provider-hint text-secondary small">{}</div>'
     ).format(model.title, hint)
 
 
-def provider_callback(model, attribute):
+def provider_callback(model, _attribute):
     if model.provider in WITHOUT_SECRET:
         return 'не нужен'
     if model.provider == 'telegram':
         return 'домен сайта в @BotFather (/setdomain)'
-    return f'/auth/oauth/{model.provider}/callback'
+    return f'/auth/oauth/{model.provider}/callback/'
 
 
-def provider_secret(model, attribute):
+def provider_secret(model, _attribute):
     if model.provider in WITHOUT_SECRET:
         return 'не нужен'
     return 'сохранён' if open_secret(model.client_secret) else 'нет'
@@ -479,7 +480,7 @@ class AuthProviderAdmin(ModelView, model=AuthProvider):
         )
         return form
 
-    async def on_model_change(self, data, model, is_created, request):
+    async def on_model_change(self, data, model, _is_created, _request):
         hint = APP_ID_HINTS.get(model.provider, '')
         app_id = (data.get('app_id') or '').strip() or None
         secret = (data.pop('secret', None) or '').strip() or None
@@ -536,15 +537,50 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     form_columns = [TravelRequest.status]
 
 
+REVIEW_STATUSES = {'pending': 'Ждёт проверки', 'published': 'Опубликован', 'rejected': 'Отклонён'}
+
+
+class TourReviewAdmin(ModelView, model=TourReview):
+    name = 'Отзыв'
+    name_plural = 'Отзывы'
+    icon = 'fa-solid fa-star'
+    can_create = False
+    column_list = [
+        TourReview.status,
+        TourReview.tour,
+        TourReview.display_name,
+        TourReview.rating,
+        TourReview.text,
+        TourReview.created_at,
+    ]
+    column_labels = {
+        'status': 'Статус',
+        'tour': 'Тур',
+        'display_name': 'Автор',
+        'rating': 'Оценка',
+        'text': 'Текст',
+        'created_at': 'Создано',
+    }
+    column_default_sort = [(TourReview.created_at, True)]
+    column_formatters = {
+        'status': lambda model, _attribute: REVIEW_STATUSES.get(model.status, model.status),
+        'created_at': local_time('created_at'),
+    }
+    column_formatters_detail = column_formatters
+    form_columns = [TourReview.status]
+    form_overrides = {'status': SelectField}
+    form_args = {'status': {'choices': list(REVIEW_STATUSES.items()), 'label': 'Статус'}}
+
+
 def _view_roles(view):
     if view in (AdminAdmin, AuthProviderAdmin):
         allowed = {'owner'}
-    elif view is TravelRequestAdmin:
+    elif view in (TravelRequestAdmin, TourReviewAdmin):
         allowed = {'owner', 'manager'}
     else:
         allowed = {'owner', 'catalog_editor'}
 
-    def can_access(self, request: Request):
+    def can_access(_view, request: Request):
         admin_id = request.session.get('admin_id')
         if admin_id is None:
             return False
@@ -584,3 +620,4 @@ for _admin_view in (
     _view_roles(_admin_view)
     apply_labels(_admin_view)
     apply_form_rules(_admin_view)
+_view_roles(TourReviewAdmin)

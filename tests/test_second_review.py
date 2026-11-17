@@ -15,12 +15,11 @@ from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from main import app
-from mysite.api import chat_ws, client_auth, password_reset, rate_limit, resource_limits
+from mysite.api import chat_ws, client_auth, rate_limit, resource_limits
 from mysite.api.token_maintenance import cleanup_expired_tokens
 from mysite.database import models as m
-from mysite.database.chat_models import ChatClient, ChatLoginToken, ChatSession
+from mysite.database.chat_models import ChatLoginToken, ChatSession
 from mysite.database.db import SessionLocal, engine
-from mysite.database.password_reset_models import PasswordResetToken
 from tests.test_main_regressions import PASSWORD, headers, register
 from tests.test_main_regressions import selection as selection
 from tests.test_user_flow_regressions import complete, submit
@@ -156,30 +155,6 @@ def test_button_confirmation_recovers_and_an_unavailable_optional_service_can_be
     assert confirmed.json()['status'] == 'submitted'
 
 
-def test_password_reset_hashing_does_not_lock_the_client_row(client, monkeypatch):
-    account, email = register(client)
-    sent = []
-    monkeypatch.setattr(password_reset, 'send_reset_email', lambda email, token: sent.append(token))
-    client.post('/account/forgot-password', json={'email': email})
-    original = password_reset.passwords.hash
-
-    def encode(password):
-        with SessionLocal() as db:
-            db.query(ChatClient).filter_by(id=account['client_id']).with_for_update(
-                nowait=True
-            ).one()
-        return original(password)
-
-    monkeypatch.setattr(password_reset.passwords, 'hash', encode)
-    assert (
-        client.post(
-            '/account/reset-password',
-            json={'token': sent[0], 'new_password': 'UpdatedPassword123!'},
-        ).status_code
-        == 200
-    )
-
-
 @pytest.mark.parametrize('phase', ['handshake', 'message'])
 def test_websocket_limiter_database_errors_are_reported_without_leaking_details(
     client, monkeypatch, phase
@@ -225,7 +200,7 @@ def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, mo
     # Keep all attempts in one fixed window; real minute rollover legitimately resets it.
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_200)
     identity = {'email': email}
-    route = '/auth/login'
+    route = '/account/login'
     attempts = 8
     with (
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
@@ -257,7 +232,9 @@ def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client
     assert len(email) == 254
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_334)
-    response = client.post('/auth/login', json={'email': email, 'password': 'NotThePassword123!'})
+    response = client.post(
+        '/account/login', json={'email': email, 'password': 'NotThePassword123!'}
+    )
     assert response.status_code == 401, response.text
 
     expected = 'unknown:' + hashlib.sha256(email.encode()).hexdigest()
@@ -316,7 +293,7 @@ def test_expiry_cleanup_preserves_active_tokens(client):
         expired = ChatLoginToken(
             client_id=account['client_id'], token_hash=uuid4().hex, expires_at=old
         )
-        active = PasswordResetToken(
+        active = ChatLoginToken(
             client_id=account['client_id'], token_hash=uuid4().hex, expires_at=future
         )
         db.add_all([expired, active])
@@ -325,7 +302,7 @@ def test_expiry_cleanup_preserves_active_tokens(client):
     cleanup_expired_tokens()
     with SessionLocal() as db:
         assert db.get(ChatLoginToken, expired_id) is None
-        assert db.get(PasswordResetToken, active_id) is not None
+        assert db.get(ChatLoginToken, active_id) is not None
 
 
 def test_failed_authentication_does_not_rollback_the_callers_pending_changes(client):
@@ -345,7 +322,7 @@ def test_failed_authentication_does_not_rollback_the_callers_pending_changes(cli
                         'http_version': '1.1',
                         'method': 'POST',
                         'scheme': 'http',
-                        'path': '/auth/login',
+                        'path': '/account/login',
                         'headers': [],
                         'client': ('198.51.100.14', 54321),
                         'server': ('testserver', 80),
@@ -488,3 +465,39 @@ for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_chats_silent_for_a_year_are_removed_unless_a_request_needs_them(client):
+    from mysite.api.token_maintenance import cleanup_old_chats
+    from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSession
+
+    account, _ = register(client)
+    client_id = account['client_id']
+    old = datetime.now(timezone.utc) - timedelta(days=400)
+    recent = datetime.now(timezone.utc) - timedelta(days=10)
+    sessions = {name: str(uuid4()) for name in ('silent', 'answered', 'booked')}
+    with SessionLocal() as db:
+        for identity in sessions.values():
+            db.add(ChatSession(id=identity, client_id=client_id, state={}, created_at=old))
+        db.flush()
+        for name, identity in sessions.items():
+            when = recent if name == 'answered' else old
+            db.add(ChatMessage(session_id=identity, role='user', content=name, created_at=when))
+        request = m.TravelRequest(client_id=client_id, name='Guest', phone='+996700000000')
+        db.add(request)
+        db.flush()
+        db.add(
+            ChatBookingLink(
+                client_id=client_id,
+                session_id=sessions['booked'],
+                request_id=request.id,
+                revision=0,
+            )
+        )
+        db.commit()
+    assert cleanup_old_chats() >= 1
+    with SessionLocal() as db:
+        assert db.get(ChatSession, sessions['silent']) is None
+        assert db.query(ChatMessage).filter_by(session_id=sessions['silent']).count() == 0
+        assert db.get(ChatSession, sessions['answered']) is not None
+        assert db.get(ChatSession, sessions['booked']) is not None

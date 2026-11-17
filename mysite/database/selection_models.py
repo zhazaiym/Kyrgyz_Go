@@ -17,11 +17,13 @@ class TravelSelection(Base):
         ForeignKey('chat_clients.id'), nullable=False, index=True
     )
 
-    tour_id: Mapped[int | None] = mapped_column(ForeignKey('tours.id'), nullable=True)
+    tour_id: Mapped[int | None] = mapped_column(ForeignKey('tours.id'), nullable=True, index=True)
 
-    hotel_id: Mapped[int | None] = mapped_column(ForeignKey('hotels.id'), nullable=True)
+    hotel_id: Mapped[int | None] = mapped_column(ForeignKey('hotels.id'), nullable=True, index=True)
 
-    transport_id: Mapped[int | None] = mapped_column(ForeignKey('transports.id'), nullable=True)
+    transport_id: Mapped[int | None] = mapped_column(
+        ForeignKey('transports.id'), nullable=True, index=True
+    )
 
     session_id: Mapped[str | None] = mapped_column(ForeignKey('chat_sessions.id'), nullable=True)
 

@@ -3,7 +3,7 @@ from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TrekkingCardSchema, TrekkingCatalogueDetailSchema
 from mysite.database.db import get_db
@@ -61,7 +61,7 @@ def update_trekking(
 
     for field in ('title', 'price', 'price_unit', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(trekking_db, key, value)
@@ -85,7 +85,7 @@ def delete_trekking(trekking_id: int, db: Session = Depends(get_db)):
     db.delete(trekking_db)
     db.commit()
 
-    return {'message': 'Треккинг өчүрүлдү'}
+    return success_detail('deleted')
 
 
 @trekking_router.get('/', response_model=list[TrekkingCardSchema])

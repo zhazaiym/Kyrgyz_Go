@@ -9,7 +9,6 @@ Step 3 — transport: active vehicles with enough seats for the group, nearest
 """
 
 import math
-import os
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -20,12 +19,12 @@ from mysite.api.errors import error_detail
 from mysite.database.catalogue_rules import is_demo_name
 from mysite.database.db import get_db
 from mysite.database.models import Hotel, Region, Tour, Transport
+from mysite.settings import number
 from mysite.translations.content import Language, localized
 
 trip_options_router = APIRouter(prefix='/tours', tags=['Trip options'])
 
 EARTH_RADIUS_KM = 6371.0088
-DEFAULT_RADIUS_KM = 100.0
 MAX_OPTIONS = 50
 
 HOTEL_CARD_FIELDS = (
@@ -51,11 +50,7 @@ TRANSPORT_CARD_FIELDS = (
 
 
 def radius_km() -> float:
-    try:
-        value = float(os.getenv('TRIP_OPTION_RADIUS_KM', DEFAULT_RADIUS_KM))
-    except ValueError:
-        return DEFAULT_RADIUS_KM
-    return value if 0 < value <= 2000 else DEFAULT_RADIUS_KM
+    return number('TRIP_OPTION_RADIUS_KM')
 
 
 def coordinates(record) -> tuple[float, float] | None:

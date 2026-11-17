@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import About
@@ -75,4 +75,4 @@ def delete_about(about_id: int, db: Session = Depends(get_db)):
 
     db.delete(about_db)
     db.commit()
-    return {'message': 'Маалымат өчүрүлдү'}
+    return success_detail('deleted')

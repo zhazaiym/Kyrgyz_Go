@@ -23,4 +23,5 @@ class TourReviewOut(BaseModel):
     display_name: str
     rating: int
     text: str
+    status: str
     created_at: datetime

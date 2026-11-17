@@ -32,7 +32,7 @@ def test_request_limit_returns_429_for_repeated_identity(monkeypatch):
             'http_version': '1.1',
             'method': 'POST',
             'scheme': 'http',
-            'path': '/auth/login',
+            'path': '/account/login',
             'headers': [],
             'client': ('198.51.100.42', 54321),
             'server': ('testserver', 80),
@@ -59,10 +59,10 @@ def test_public_client_login_is_rate_limited(client, monkeypatch):
     username = 'rate_limit_' + uuid.uuid4().hex[:12]
 
     responses = [
-        client.post('/auth/login', json={'username': username, 'password': 'incorrect'})
+        client.post('/account/login', json={'username': username, 'password': 'incorrect'})
         for _ in range(8)
     ]
-    limited = client.post('/auth/login', json={'username': username, 'password': 'incorrect'})
+    limited = client.post('/account/login', json={'username': username, 'password': 'incorrect'})
 
     assert all(response.status_code == 401 for response in responses)
     assert limited.status_code == 429

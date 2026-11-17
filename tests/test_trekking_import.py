@@ -121,7 +121,7 @@ def test_dataset_has_fifteen_sourced_multilingual_itineraries():
         )
         assert route['sources'] and all(url.startswith('https://') for url in route['sources'])
         assert set(route['content']) == set(LANGUAGES)
-        for lang, values in route['content'].items():
+        for values in route['content'].values():
             assert values['title'] and values['description'] and values['route']
             assert values['included'] is None
 

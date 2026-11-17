@@ -93,7 +93,7 @@ def test_http_metrics_use_route_patterns_without_customer_ids():
 
 
 def test_metrics_endpoint_requires_a_configured_bearer_token(monkeypatch):
-    from mysite.api.observability import router
+    from mysite.api.observability import observability_router as router
 
     monkeypatch.delenv('METRICS_BEARER_TOKEN', raising=False)
     app = FastAPI()
@@ -104,7 +104,7 @@ def test_metrics_endpoint_requires_a_configured_bearer_token(monkeypatch):
 
 
 def test_metrics_endpoint_accepts_only_the_configured_bearer_token(monkeypatch):
-    from mysite.api.observability import router
+    from mysite.api.observability import observability_router as router
 
     secret = 'm' * 40
     monkeypatch.setenv('DATABASE_URL', 'postgresql+psycopg2://test:test@127.0.0.1:5432/test')

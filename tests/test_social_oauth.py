@@ -125,7 +125,7 @@ def test_redirect_sign_in_uses_each_provider_contract(client, site, monkeypatch,
     target, params = _start(client, provider)
     assert f'{target.scheme}://{target.netloc}{target.path}' == spec.authorize_url
     assert params[spec.client_id_param] == APP_IDS[provider]
-    assert params['redirect_uri'].endswith(f'/auth/oauth/{provider}/callback')
+    assert params['redirect_uri'].endswith(f'/auth/oauth/{provider}/callback/')
     assert params.get('scope') == (spec.scope or None)
     assert ('code_challenge' in params) == spec.pkce
 
@@ -151,7 +151,7 @@ def test_redirect_sign_in_uses_each_provider_contract(client, site, monkeypatch,
     signed_in = client.post('/auth/oauth/exchange', json={'login_code': result['login_code']})
     assert signed_in.status_code == 200, signed_in.text
     token = signed_in.json()['access_token']
-    me = client.get('/auth/me', headers={'Authorization': f'Bearer {token}'}).json()
+    me = client.get('/account/me', headers={'Authorization': f'Bearer {token}'}).json()
     with SessionLocal() as db:
         identity = db.query(ClientIdentity).filter_by(provider=provider).one()
         assert identity.client_id == me['client_id']
@@ -240,7 +240,7 @@ def test_public_list_shows_only_complete_providers(client, site):
     payload = client.get('/auth/providers').json()
     assert payload['telegram'] == {'enabled': True, 'bot': 'KerbenTravelBot'}
     assert payload['redirect'] == [
-        {'provider': 'vk', 'title': 'VK ID', 'start_url': '/auth/oauth/vk/start'}
+        {'provider': 'vk', 'title': 'VK ID', 'start_url': '/auth/oauth/vk/start/'}
     ]
 
 

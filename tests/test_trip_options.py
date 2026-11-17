@@ -254,7 +254,7 @@ def test_other_clients_cannot_read_selection_steps(client, customer_headers, tri
         '/travel-selections/', json={'tour_id': trip['tour']}, headers=customer_headers
     )
     stranger = client.post(
-        '/auth/register',
+        '/account/register',
         json={'username': 'trip_' + uuid4().hex[:12], 'password': 'StrangerPassword123!'},
     ).json()
     response = client.get(

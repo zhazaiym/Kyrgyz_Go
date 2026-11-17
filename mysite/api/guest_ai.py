@@ -47,7 +47,7 @@ def guest_quota(request: Request):
     enforce_rate_limit('guest-ai-global', 'all', max_requests=100, window_seconds=3600)
 
 
-@guest_ai_router.post('/api/ask-ai', response_model=GuestAnswer)
+@guest_ai_router.post('/api/ask-ai/', response_model=GuestAnswer)
 async def ask_ai(data: GuestQuestion, request: Request, response: Response):
     response.headers['Cache-Control'] = 'no-store'
     async with ai_capacity(f'ip:{request_network(request)}'):

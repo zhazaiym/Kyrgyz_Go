@@ -37,7 +37,7 @@ def revoke_admin_access(connection, admin_id):
 
 
 @event.listens_for(Base, 'before_update', propagate=True)
-def revoke_changed_admin(mapper, connection, target):
+def revoke_changed_admin(_mapper, connection, target):
     if target.__tablename__ != 'admins':
         return
     state = inspect(target)

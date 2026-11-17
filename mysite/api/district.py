@@ -3,7 +3,7 @@ from fastapi_filter import FilterDepends
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.db import get_db
 from mysite.database.models import District, Region
@@ -101,7 +101,7 @@ def delete_district(district_id: int, db: Session = Depends(get_db)):
     db.delete(district_db)
     db.commit()
 
-    return {'message': 'Район өчүрүлдү'}
+    return success_detail('deleted')
 
 
 @district_router.get('/', response_model=list[DistrictOutSchema])

@@ -75,8 +75,8 @@ def main():
     with temporary_database() as isolated_url:
         os.environ['DATABASE_URL'] = isolated_url
         os.environ['SECRET_KEY'] = secrets.token_urlsafe(48)
-        os.environ['CORS_ALLOWED_ORIGINS'] = 'http://testserver;http://localhost:3000'
-        os.environ['CHAT_ALLOWED_ORIGINS'] = 'http://testserver;http://localhost:3000'
+        os.environ['CORS_ALLOWED_ORIGINS'] = 'http://localhost:3000'
+        os.environ['CHAT_ALLOWED_ORIGINS'] = 'http://localhost:3000'
         os.environ['ADMIN_COOKIE_SECURE'] = 'false'
         os.environ['RATE_LIMIT_ENABLED'] = 'false'
         command.upgrade(Config('alembic.ini'), 'head')
@@ -92,7 +92,7 @@ def main():
         if mode == 'stub':
             import mysite.api.chat_service as chat_service
 
-            async def deterministic_respond(message, state, history, on_chunk=None):
+            async def deterministic_respond(_message, state, _history, **_options):
                 return 'Local deterministic answer.', dict(state or {}), False
 
             chat_service.respond = deterministic_respond
@@ -124,10 +124,11 @@ def main():
         generator_errors = []
         started = time.perf_counter()
 
-        def virtual_user(index, client):
+        def virtual_user(_index, client):
             username = f'load_{secrets.token_hex(6)}'
             registered = client.post(
-                '/auth/register', json={'username': username, 'password': secrets.token_urlsafe(18)}
+                '/account/register/',
+                json={'username': username, 'password': secrets.token_urlsafe(18)},
             )
             if registered.status_code != 201:
                 raise RuntimeError(f'registration returned {registered.status_code}')
@@ -138,7 +139,7 @@ def main():
             sid = created.json()['session_id']
             elapsed = []
             with client.websocket_connect(
-                f'/ws/chat/{sid}', headers={'origin': 'http://testserver'}
+                f'/ws/chat/{sid}', headers={'origin': 'http://localhost:3000'}
             ) as websocket:
                 websocket.send_json({'type': 'auth', 'token': token})
                 if websocket.receive_json().get('type') != 'connected':

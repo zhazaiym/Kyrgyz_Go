@@ -9,7 +9,6 @@ from mysite.api.selection_status import linked_request, processing_status, requi
 from mysite.api.travel_selection import selection_context, selection_data
 from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
-from mysite.database.models import Admin
 from mysite.database.selection_models import TravelSelection
 from mysite.database.selection_statuses import SELECTION_TO_REQUEST_STATUS, SelectionStatus
 
@@ -22,12 +21,8 @@ class SelectionStatusUpdate(BaseModel):
     status: SelectionStatus
 
 
-@manager_selection_router.get('/')
-def list_all_selections(
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
-    pagination: Pagination = Depends(),
-):
+@manager_selection_router.get('/', dependencies=[Depends(require_admin_roles('manager'))])
+def list_all_selections(db: Session = Depends(get_db), pagination: Pagination = Depends()):
     selections = (
         db.query(TravelSelection)
         .order_by(TravelSelection.created_at.desc())
@@ -52,12 +47,10 @@ def list_all_selections(
     return result
 
 
-@manager_selection_router.get('/{selection_id}/')
-def detail_manager_selection(
-    selection_id: int,
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
-):
+@manager_selection_router.get(
+    '/{selection_id}/', dependencies=[Depends(require_admin_roles('manager'))]
+)
+def detail_manager_selection(selection_id: int, db: Session = Depends(get_db)):
     selection = db.get(TravelSelection, selection_id)
 
     if not selection:
@@ -73,12 +66,11 @@ def detail_manager_selection(
     return data
 
 
-@manager_selection_router.patch('/{selection_id}/status/')
+@manager_selection_router.patch(
+    '/{selection_id}/status/', dependencies=[Depends(require_admin_roles('manager'))]
+)
 def update_selection_status(
-    selection_id: int,
-    data: SelectionStatusUpdate,
-    current_admin: Admin = Depends(require_admin_roles('manager')),
-    db: Session = Depends(get_db),
+    selection_id: int, data: SelectionStatusUpdate, db: Session = Depends(get_db)
 ):
     selection = db.get(TravelSelection, selection_id, with_for_update=True, populate_existing=True)
 

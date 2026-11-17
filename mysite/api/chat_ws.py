@@ -24,7 +24,7 @@ from mysite.api.rate_limit import enforce_chat_message_limits, enforce_rate_limi
 from mysite.api.resource_limits import setting
 from mysite.database.db import SessionLocal
 
-router = APIRouter(tags=['KYRGYZGO AI WebSocket'])
+chat_ws_router = APIRouter(tags=['KYRGYZGO AI WebSocket'])
 log = logging.getLogger(__name__)
 # One Uvicorn worker (DEPLOY.md): open chat connections of each client, counted after login.
 _client_connections = {}
@@ -136,7 +136,7 @@ async def process_connected(websocket, operation, pending):
         await asyncio.gather(work, incoming, return_exceptions=True)
 
 
-@router.websocket('/ws/chat/{session_id}')
+@chat_ws_router.websocket('/ws/chat/{session_id}')
 async def socket(websocket: WebSocket, session_id: str):
     try:
         await socket_session(websocket, session_id)
