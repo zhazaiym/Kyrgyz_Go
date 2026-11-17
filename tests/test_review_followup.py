@@ -41,7 +41,8 @@ def test_caddy_clients_have_independent_http_quotas_and_https_scheme(monkeypatch
         assert browser.get('/openapi.json', headers=second).status_code == 200
 
 
-def test_websocket_limit_behind_caddy_is_per_client_not_per_proxy(client):
+def test_websocket_limit_behind_caddy_is_per_client_not_per_proxy(client, monkeypatch):
+    monkeypatch.setenv('WS_MAX_PER_CLIENT', '16')  # this test is about the limit per address
     account, _ = register(client)
     sid = client.post('/chat/session', headers=headers(account)).json()['session_id']
     proxy = ProxyHeadersMiddleware(app, trusted_hosts='172.30.240.2')

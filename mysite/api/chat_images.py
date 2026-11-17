@@ -1,4 +1,5 @@
-"""Chat photos: validated in memory, handed once to Gemini, never written to disk or the DB."""
+"""Chat photos: validated in memory, never written to disk or the DB; a photo is gone
+once the reply to its message is saved."""
 
 import secrets
 import time
@@ -26,6 +27,7 @@ MAX_PENDING_PER_CLIENT = 3
 chat_images_router = APIRouter(tags=['KYRGYZGO AI Chat'])
 # One Uvicorn worker (DEPLOY.md): a photo waits here until its chat message takes it.
 _pending: dict[str, tuple[int, str, bytes, float]] = {}
+_in_use: set[str] = set()  # photos handed to a message whose reply is not saved yet
 _lock = Lock()
 
 
@@ -53,13 +55,28 @@ def remember_image(client_id: int, session_id: str, data: bytes) -> str:
 
 
 def take_image(image_id: str, client_id: int, session_id: str) -> bytes | None:
-    """Return the photo once to its owner in its session; None if unknown or expired."""
+    """Hand the photo to a message of its owner in its session; None if unknown or expired.
+
+    The photo stays reserved for that message until finish_image() and still
+    counts towards the limits above.
+    """
     with _lock:
         entry = _pending.get(image_id)
-        if entry is None or entry[0] != client_id or entry[1] != session_id:
+        if entry is None or entry[0] != client_id or entry[1] != session_id or image_id in _in_use:
             return None
-        del _pending[image_id]
-    return entry[2] if entry[3] > time.monotonic() else None
+        if entry[3] <= time.monotonic():
+            del _pending[image_id]
+            return None
+        _in_use.add(image_id)
+        return entry[2]
+
+
+def finish_image(image_id: str, used: bool) -> None:
+    """A photo is used once its reply is saved; after a failed reply it can be sent again."""
+    with _lock:
+        _in_use.discard(image_id)
+        if used:
+            _pending.pop(image_id, None)
 
 
 @chat_images_router.post(CHAT_IMAGE_PATH, status_code=201)

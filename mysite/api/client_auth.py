@@ -35,6 +35,18 @@ def login_required(message: str) -> HTTPException:
     )
 
 
+class SessionExpired(HTTPException):
+    """A valid login that has run out, as opposed to an unknown token.
+
+    The HTTP answer is the same 401 as before; the type lets the chat tell the
+    two apart without reading the message text.
+    """
+
+    def __init__(self):
+        error = login_required('Сессия входа истекла. Войдите снова')
+        super().__init__(error.status_code, detail=error.detail, headers=error.headers)
+
+
 class RegistrationCredentials(BaseModel):
     """Registration needs only a login and a password."""
 
@@ -149,7 +161,7 @@ def client_by_token(db: Session, token: str):
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     if expires <= utcnow():
-        raise login_required('Сессия входа истекла. Войдите снова')
+        raise SessionExpired()
     client = db.get(ChatClient, access.client_id)
     if not client:
         raise login_required('Клиент не найден')

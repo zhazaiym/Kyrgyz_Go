@@ -1,6 +1,7 @@
 import json
-import os
 from types import SimpleNamespace
+
+from ML.config import chat_setting
 
 
 def text_content(content):
@@ -18,8 +19,8 @@ def text_content(content):
 
 
 def recent_messages(history):
-    message_limit = max(1, int(os.getenv('CHAT_HISTORY_MESSAGES', '12')))
-    character_limit = max(1, int(os.getenv('CHAT_HISTORY_CHARACTERS', '8000')))
+    message_limit = chat_setting('CHAT_HISTORY_MESSAGES')
+    character_limit = chat_setting('CHAT_HISTORY_CHARACTERS')
     selected = []
     characters = 0
     for item in reversed(history[-message_limit:]):

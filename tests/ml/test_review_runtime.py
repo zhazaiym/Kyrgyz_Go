@@ -12,7 +12,7 @@ from ML import agent
 @pytest.mark.parametrize('outcome', ['success', 'failure', 'timeout'])
 def test_operation_timing_is_recorded_for_every_outcome(monkeypatch, caplog, outcome):
     recorded = []
-    monkeypatch.setattr(agent, 'record_ai_call', lambda *args: recorded.append(args))
+    monkeypatch.setattr(agent.app, 'record_ai_call', lambda *args: recorded.append(args))
 
     async def invoke():
         if outcome == 'failure':
@@ -38,15 +38,15 @@ def test_operation_timing_is_recorded_for_every_outcome(monkeypatch, caplog, out
 
 def test_both_prompts_receive_the_same_bishkek_calendar_date(monkeypatch):
     seen = {}
-    monkeypatch.setattr(agent, 'bishkek_today', lambda: date(2026, 11, 7))
+    monkeypatch.setattr(agent.app, 'today', lambda: date(2026, 11, 7))
     monkeypatch.setattr(agent, 'active_tour_ids', lambda: [])
 
     async def extract(prompt):
-        seen['extract'] = prompt
+        seen['extract'] = prompt[1].content
         return agent.Changes(travel_date='2026-11-08')
 
     async def stream(messages):
-        seen['system'] = messages[0].content
+        seen['system'] = messages[-2].content
         yield AIMessageChunk(content='Уточним поездку на завтра.')
 
     monkeypatch.setattr(agent, 'extractor', SimpleNamespace(ainvoke=extract))

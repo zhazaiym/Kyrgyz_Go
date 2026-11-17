@@ -1,18 +1,22 @@
 """Atomic database limits for account actions and chat, shared across workers."""
 
 import hashlib
+import logging
 import time
 from collections import OrderedDict
 from threading import Lock
 
 from fastapi import HTTPException, Request
-from sqlalchemy import case, delete
+from sqlalchemy import case, delete, func
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 
+from ML.errors import AIError
 from mysite.api.network_identity import rate_limits_enabled, request_network
+from mysite.api.resource_limits import setting
 from mysite.database.db import SessionLocal
 from mysite.database.rate_limit_models import RateLimitCounter
 
+log = logging.getLogger(__name__)
 _cache_lock = Lock()
 _blocked = OrderedDict()
 _cleanup_after = 0
@@ -43,8 +47,10 @@ def _account_index(principal):
 def consume_rate_limits(limits, *, current_time=None):
     instant = _current_epoch() if current_time is None else current_time
     rows, bounds, identities, retries = [], {}, [], []
-    for scope, principal, maximum, window in limits:
-        if maximum < 1 or window < 1:
+    for scope, principal, maximum, window, *amount in limits:
+        # The optional fifth item is how much to add: one request, or a number of tokens.
+        amount = amount[0] if amount else 1
+        if maximum < 1 or window < 1 or amount < 0:
             raise ValueError('Rate limits must be positive')
         start = instant // window * window
         key = _counter_key(scope, principal)
@@ -60,7 +66,7 @@ def consume_rate_limits(limits, *, current_time=None):
                 'scope': scope,
                 'account_id': account_id,
                 'window_start': start,
-                'request_count': 1,
+                'request_count': amount,
             }
         )
     table = RateLimitCounter.__table__
@@ -74,12 +80,11 @@ def consume_rate_limits(limits, *, current_time=None):
                 'request_count': case(
                     (
                         table.c.window_start == statement.excluded.window_start,
-                        case(
-                            (table.c.request_count < ceiling, table.c.request_count + 1),
-                            else_=ceiling,
+                        func.least(
+                            table.c.request_count + statement.excluded.request_count, ceiling
                         ),
                     ),
-                    else_=1,
+                    else_=statement.excluded.request_count,
                 ),
             },
         ).returning(table.c.key_hash, table.c.request_count)
@@ -192,3 +197,50 @@ def enforce_chat_message_limits(client_id):
     enforce_rate_limits(
         [('chat-message-minute', principal, 10, 60), ('chat-message-day', principal, 300, 86_400)]
     )
+
+
+AI_BUDGET_WINDOW = 86_400
+_budget_signal = (0, 0)  # the day and the level last reported to people
+
+
+def _ai_budgets(client_id, network):
+    """Daily token budgets: the client, their address (all its accounts), everyone."""
+    limits = [('ai-tokens', f'client:{client_id}', setting('AI_CLIENT_DAILY_TOKENS'))]
+    if network:
+        limits.append(('ai-tokens', f'ip:{network}', setting('AI_IP_DAILY_TOKENS')))
+    limits.append(('ai-tokens', 'all', setting('AI_DAILY_TOKENS')))
+    return [(*limit, AI_BUDGET_WINDOW) for limit in limits]
+
+
+def enforce_ai_budget(client_id, network=None):
+    """Refuse before the model is called once a daily token budget is spent."""
+    if not rate_limits_enabled():
+        return
+    limits = _ai_budgets(client_id, network)
+    spent = consume_rate_limits([(*limit, 0) for limit in limits])
+    if spent[-1][0] >= limits[-1][2]:
+        raise AIError('ai_rate_limit', 'The daily AI token budget is spent')
+    for limit, (count, retry) in zip(limits, spent):
+        if count >= limit[2]:
+            _limited(retry)
+
+
+def record_ai_spend(client_id, network, tokens):
+    """Add what a reply cost to the budgets; tell people when the common one runs out."""
+    if tokens <= 0 or not rate_limits_enabled():
+        return
+    limits = _ai_budgets(client_id, network)
+    instant = _current_epoch()
+    spent = consume_rate_limits([(*limit, tokens) for limit in limits], current_time=instant)
+    used, maximum = spent[-1][0], limits[-1][2]
+    level = 2 if used >= maximum else 1 if used * 5 >= maximum * 4 else 0
+    signal = (instant // AI_BUDGET_WINDOW, level)
+    global _budget_signal
+    with _cache_lock:
+        report = level and signal > _budget_signal
+        if report:
+            _budget_signal = signal
+    if report and level == 2:
+        log.error('AI token budget for today is spent (%d tokens); chat refuses messages', maximum)
+    elif report:
+        log.warning('AI token budget for today is 80%% spent: %d of %d tokens', used, maximum)

@@ -40,18 +40,23 @@ class GuestAnswer(BaseModel):
 
 
 def guest_quota(request: Request):
-    enforce_rate_limit('guest-ai', request_network(request), max_requests=5, window_seconds=60)
+    """One address gets a burst and a small share of the hourly limit for everyone."""
+    address = request_network(request)
+    enforce_rate_limit('guest-ai', address, max_requests=5, window_seconds=60)
+    enforce_rate_limit('guest-ai-hour', address, max_requests=10, window_seconds=3600)
     enforce_rate_limit('guest-ai-global', 'all', max_requests=100, window_seconds=3600)
 
 
 @guest_ai_router.post('/api/ask-ai', response_model=GuestAnswer)
 async def ask_ai(data: GuestQuestion, request: Request, response: Response):
-    try:
-        await run_in_threadpool(guest_quota, request)
-    except SQLAlchemyError:
-        raise HTTPException(503, detail=error_detail('service_unavailable')) from None
     response.headers['Cache-Control'] = 'no-store'
-    with ai_capacity():
+    async with ai_capacity(f'ip:{request_network(request)}'):
+        # The quota is counted only with a place at the model in hand: a question
+        # refused because the model is busy must not use up the limit for everyone.
+        try:
+            await run_in_threadpool(guest_quota, request)
+        except SQLAlchemyError:
+            raise HTTPException(503, detail=error_detail('service_unavailable')) from None
         try:
             async with asyncio.timeout(GUEST_RESPONSE_TIMEOUT):
                 model = await run_in_threadpool(client, 'llm')

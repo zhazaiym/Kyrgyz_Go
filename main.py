@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from ML.config import validate_chat_settings
 from mysite.admin.setup import setup_admin
 from mysite.api.about import about_router
 from mysite.api.about_section import about_section_router
@@ -80,18 +81,30 @@ async def lifespan(app):
             await asyncio.sleep(900)
 
     translation_recovery = asyncio.create_task(recover_translations())
+
+    async def warm_chat_clients():
+        from ML.provider import warm_up
+
+        try:
+            await asyncio.to_thread(warm_up)
+        except Exception:
+            logger.warning('Chat clients were not prepared in advance')
+
+    chat_warm_up = asyncio.create_task(warm_chat_clients())
     try:
         yield
     finally:
         cleanup.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup
+        chat_warm_up.cancel()
         translation_recovery.cancel()
         with suppress(asyncio.CancelledError):
             await translation_recovery
 
 
 validate_resource_settings()
+validate_chat_settings()
 validate_metrics_config()
 app = FastAPI(
     title='KYRGYZGO',

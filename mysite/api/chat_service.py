@@ -2,24 +2,30 @@
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import date
 from functools import partial
 from types import SimpleNamespace
+from typing import NamedTuple
 
 from fastapi import HTTPException
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from ML.agent import respond
+from ML import runtime as agent_runtime
+from ML.agent import client_state, respond
 from mysite.admin.realtime import publish_new_request
 from mysite.api.booking_intent import confirmation_allowed, explicit_confirmation, rejection_allowed
 from mysite.api.booking_text import booking_text, not_ready_text, preview_text
 from mysite.api.client_auth import client_by_token
 from mysite.api.errors import error_detail
-from mysite.api.observability import record_booking_conflict
+from mysite.api.observability import record_ai_call, record_ai_tokens, record_booking_conflict
+from mysite.api.rate_limit import enforce_ai_budget, record_ai_spend
 from mysite.api.resource_limits import ai_capacity
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import linked_request, processing_status
+from mysite.database import models as catalogue_models
 from mysite.database.booking_validation import optional_email
 from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSession
 from mysite.database.db import SessionLocal
@@ -29,8 +35,42 @@ from mysite.database.traveler_validation import validate_travelers_count
 from mysite.dates import bishkek_today
 from mysite.phone_validation import normalize_phone
 
+log = logging.getLogger(__name__)
 _locks = {}
 _lock_users = {}
+_spent_tokens = ContextVar('chat_spent_tokens', default=None)
+
+
+def _count_tokens(operation, tokens):
+    record_ai_tokens(operation, tokens)
+    spent = _spent_tokens.get()
+    if spent is not None:
+        spent.append(tokens)
+
+
+# The agent imports nothing from the application: this is all it is lent.
+agent_runtime.configure(
+    sessions=lambda: SessionLocal(),
+    models=catalogue_models,
+    today=bishkek_today,
+    record_ai_call=record_ai_call,
+    record_ai_tokens=_count_tokens,
+)
+
+
+class ServerReply(NamedTuple):
+    """The server answered this turn itself; the model is not needed."""
+
+    result: dict
+
+
+class ModelTurn(NamedTuple):
+    """The client's message is stored and waits for the model's reply."""
+
+    state: dict
+    history: list
+    message_version: int
+    message_id: int
 
 
 class ReplyStream:
@@ -81,10 +121,9 @@ async def _database_call(function, *args, on_cancel=None):
         raise
 
 
-def _discard_prepared_message(session_id, result):
-    final, _, _, _, message_id = result
-    if final is None:
-        _discard_failed_message(session_id, message_id)
+def _discard_prepared_message(session_id, prepared):
+    if isinstance(prepared, ModelTurn):
+        _discard_failed_message(session_id, prepared.message_id)
 
 
 def _is_confirmation_text(message):
@@ -103,6 +142,23 @@ def owned(db, session_id, client_id):
     if not session or session.client_id != client_id:
         raise HTTPException(404, error_detail('not_found'))
     return session
+
+
+def _client_session(db, session_id, client_id, token):
+    """The client's own conversation, with the login checked again."""
+    if client_by_token(db, token).id != client_id:
+        raise HTTPException(401, error_detail('authentication_required'))
+    return owned(db, session_id, client_id)
+
+
+def _store_turn(db, s, message, answer):
+    db.add_all(
+        [
+            ChatMessage(session_id=s.id, role='user', content=message),
+            ChatMessage(session_id=s.id, role='assistant', content=answer),
+        ]
+    )
+    db.commit()
 
 
 def advance_message_version(db, session):
@@ -170,83 +226,79 @@ async def session_lock(session_id):
                 _locks.pop(session_id, None)
 
 
-async def process_message(session_id, client_id, token, message, on_chunk=None, image=None):
+async def process_message(
+    session_id, client_id, token, message, on_chunk=None, image=None, network=None
+):
     if image is not None:
         # History keeps only a marker: the photo itself is never stored.
         message = f'{message}\n[фото]' if message else '[фото]'
     async with session_lock(session_id):
-        return await _respond_and_save(session_id, client_id, token, message, on_chunk, image)
+        return await _respond_and_save(
+            session_id, client_id, token, message, on_chunk, image, network
+        )
+
+
+def _decline(db, s, message):
+    advance_message_version(db, s)
+    s.stage = 'collecting'
+    s.revision += 1
+    answer = booking_text(s.state or {})['declined']
+    _store_turn(db, s, message, answer)
+    return {
+        'answer': answer,
+        'revision': s.revision,
+        'booking_intent': False,
+        'stage': s.stage,
+        'booking_preview': None,
+    }
+
+
+def _submit(db, s, client_id, message):
+    result = confirm_booking(db, s, client_id, s.revision, True, message=message)
+    if result['status'] == 'needs_update':
+        return result
+    answer = booking_text(s.state or {})['submitted'].format(request_id=result['request_id'])
+    _store_turn(db, s, message, answer)
+    return {
+        'answer': answer,
+        'revision': s.revision,
+        'booking_intent': True,
+        'stage': 'submitted',
+        'booking_submitted': result,
+    }
+
+
+def _server_reply(db, s, client_id, message):
+    """The server's own answer to a refusal or a confirmation; None when the model replies."""
+    if rejection_allowed(s.stage, message):
+        return _decline(db, s, message)
+    if confirmation_allowed(s.stage, message) or (
+        s.stage == 'submitted' and _is_confirmation_text(message)
+    ):
+        return _submit(db, s, client_id, message)
+    if (
+        s.stage in ('consultation', 'collecting')
+        and explicit_confirmation(message)
+        and (
+            s.stage == 'collecting'
+            or build_preview(db, s)['complete']
+            or _assistant_asked_to_confirm(db, s)
+        )
+    ):
+        # The client confirms before any server summary, often after the AI
+        # paraphrased one. The AI must not answer this: show the real
+        # summary, or say exactly what is still missing. A first "book it"
+        # with nothing collected yet still goes to the AI.
+        return _confirmation_before_summary(db, s, message)
+    return None
 
 
 def _prepare_message(session_id, client_id, token, message):
     with SessionLocal() as db:
-        c = client_by_token(db, token)
-        if c.id != client_id:
-            raise HTTPException(401, error_detail('authentication_required'))
-        s = owned(db, session_id, client_id)
-        if rejection_allowed(s.stage, message):
-            advance_message_version(db, s)
-            s.stage = 'collecting'
-            s.revision += 1
-            answer = booking_text(s.state or {})['declined']
-            db.add_all(
-                [
-                    ChatMessage(session_id=s.id, role='user', content=message),
-                    ChatMessage(session_id=s.id, role='assistant', content=answer),
-                ]
-            )
-            db.commit()
-            return (
-                {
-                    'answer': answer,
-                    'revision': s.revision,
-                    'booking_intent': False,
-                    'stage': s.stage,
-                    'booking_preview': None,
-                },
-                None,
-                None,
-                None,
-                None,
-            )
-        if confirmation_allowed(s.stage, message) or (
-            s.stage == 'submitted' and _is_confirmation_text(message)
-        ):
-            result = confirm_booking(db, s, client_id, s.revision, True, message=message)
-            if result['status'] == 'needs_update':
-                return result, None, None, None, None
-            answer = booking_text(s.state or {})['submitted'].format(
-                request_id=result['request_id']
-            )
-            db.add_all(
-                [
-                    ChatMessage(session_id=s.id, role='user', content=message),
-                    ChatMessage(session_id=s.id, role='assistant', content=answer),
-                ]
-            )
-            db.commit()
-            final = {
-                'answer': answer,
-                'revision': s.revision,
-                'booking_intent': True,
-                'stage': 'submitted',
-                'booking_submitted': result,
-            }
-            return final, None, None, None, None
-        if (
-            s.stage in ('consultation', 'collecting')
-            and explicit_confirmation(message)
-            and (
-                s.stage == 'collecting'
-                or build_preview(db, s)['complete']
-                or _assistant_asked_to_confirm(db, s)
-            )
-        ):
-            # The client confirms before any server summary, often after the AI
-            # paraphrased one. The AI must not answer this: show the real
-            # summary, or say exactly what is still missing. A first "book it"
-            # with nothing collected yet still goes to the AI.
-            return _confirmation_before_summary(db, s, message), None, None, None, None
+        s = _client_session(db, session_id, client_id, token)
+        answered = _server_reply(db, s, client_id, message)
+        if answered is not None:
+            return ServerReply(answered)
         # Each accepted operation owns its row, including identical concurrent
         # text. A losing worker may remove only that row.
         user_message = ChatMessage(session_id=s.id, role='user', content=message)
@@ -270,7 +322,7 @@ def _prepare_message(session_id, client_id, token, message):
         previous = [SimpleNamespace(role=item.role, content=item.content) for item in previous]
         db.commit()
 
-    return None, original, previous, message_version, user_message_id
+    return ModelTurn(original, previous, message_version, user_message_id)
 
 
 CONFIRM_PROMPTS = ('«подтверждаю»', 'i confirm', '«ырастайм»', 'ich bestätige', '确认提交')
@@ -286,9 +338,13 @@ def _last_assistant_text(db, s):
     return last[0] if last else ''
 
 
-def _assistant_asked_to_confirm(db, s):
-    text = _last_assistant_text(db, s).casefold()
+def _asks_to_confirm(text):
+    text = text.casefold()
     return any(prompt in text for prompt in CONFIRM_PROMPTS)
+
+
+def _assistant_asked_to_confirm(db, s):
+    return _asks_to_confirm(_last_assistant_text(db, s))
 
 
 def _confirmation_before_summary(db, s, message):
@@ -301,13 +357,7 @@ def _confirmation_before_summary(db, s, message):
     else:
         s.stage = 'collecting'
         answer = not_ready_text(s.state or {}, preview['missing_fields'])
-    db.add_all(
-        [
-            ChatMessage(session_id=s.id, role='user', content=message),
-            ChatMessage(session_id=s.id, role='assistant', content=answer),
-        ]
-    )
-    db.commit()
+    _store_turn(db, s, message, answer)
     return {
         'answer': answer,
         'revision': s.revision,
@@ -315,6 +365,35 @@ def _confirmation_before_summary(db, s, message):
         'stage': s.stage,
         'booking_preview': preview,
     }
+
+
+def _booking_step(db, s, answer, changed, intent):
+    """Move the stage after a model reply; the reply and the summary event to send.
+
+    Only the server asks for the confirmation word, and only under its own
+    summary: a model reply that asks for it is replaced.
+    """
+    preview = build_preview(db, s)
+    asked = _asks_to_confirm(answer)
+    if s.stage == 'submitted' or not (
+        intent
+        or asked
+        or s.stage == 'awaiting_confirmation'
+        or (changed and (s.stage == 'collecting' or preview['complete']))
+    ):
+        return answer, None
+    if not preview['complete']:
+        s.stage = 'collecting'
+        if asked or answer.strip() == _last_assistant_text(db, s).strip():
+            # The model asked to confirm too early or echoed its previous turn;
+            # name the missing fields deterministically.
+            answer = not_ready_text(s.state or {}, preview['missing_fields'])
+        return answer, None
+    if s.stage == 'awaiting_confirmation' and not (changed or intent or asked):
+        return answer, None
+    s.stage = 'awaiting_confirmation'
+    preview = build_preview(db, s)
+    return _preview_summary(db, preview), preview
 
 
 def _save_message_response(
@@ -328,12 +407,8 @@ def _save_message_response(
     original,
     intent,
 ):
-    summary = None
     with SessionLocal() as db:
-        c = client_by_token(db, token)
-        if c.id != client_id:
-            raise HTTPException(401, error_detail('authentication_required'))
-        s = owned(db, session_id, client_id)
+        s = _client_session(db, session_id, client_id, token)
         if s.message_version != expected_message_version:
             discard_pending_message(db, s.id, user_message_id)
             raise HTTPException(409, error_detail('conflict'))
@@ -342,41 +417,18 @@ def _save_message_response(
         except HTTPException:
             discard_pending_message(db, session_id, user_message_id)
             raise
-        if s.stage == 'submitted' and (updated != original or intent):
+        # Records shown to the client are the server bookkeeping, not request data.
+        changed = client_state(updated) != client_state(original)
+        if s.stage == 'submitted' and (changed or intent):
             # A sent request is immutable from chat; do not silently change its
             # state or create a second request from a correction.
-            updated, intent = original, False
-            answer = {
-                'ru': 'Заявка уже отправлена. Для исправления данных обратитесь к менеджеру; для новой поездки откройте новый чат.',
-                'ky': 'Өтүнмө жөнөтүлгөн. Маалыматты өзгөртүү үчүн менеджерге кайрылыңыз; жаңы сапар үчүн жаңы чат ачыңыз.',
-                'en': 'Your request has already been sent. Contact the manager to correct it, or open a new chat for a new trip.',
-                'de': 'Ihre Anfrage wurde bereits gesendet. Für Änderungen wenden Sie sich an das Team; für eine neue Reise öffnen Sie einen neuen Chat.',
-                'zh': '您的申请已发送。如需修改，请联系工作人员；如需安排新行程，请开启新对话。',
-            }.get(
-                original.get('language', 'ru'),
-                'Your request has already been sent. Contact the manager to correct it.',
-            )
-        changed = updated != original
-        if changed:
+            updated, intent, changed = original, False, False
+            answer = booking_text(original)['already_submitted']
+        if updated != original:
             s.state = updated
+        if changed:
             s.revision += 1
-        preview = build_preview(db, s)
-        preview_event = None
-        if intent or s.stage == 'awaiting_confirmation' or (s.stage == 'collecting' and changed):
-            if preview['complete']:
-                if s.stage != 'awaiting_confirmation' or changed or intent:
-                    s.stage = 'awaiting_confirmation'
-                    preview = build_preview(db, s)
-                    preview_event = preview
-                    summary = _preview_summary(db, preview)
-                    answer = summary
-                s.stage = 'awaiting_confirmation'
-            else:
-                s.stage = 'collecting'
-                if answer.strip() == _last_assistant_text(db, s).strip():
-                    # The model echoed its previous turn instead of asking for the
-                    # next field; name the missing fields deterministically.
-                    answer = not_ready_text(s.state or {}, preview['missing_fields'])
+        answer, preview_event = _booking_step(db, s, answer, changed, intent)
         if not answer.strip():
             raise HTTPException(502, error_detail('service_unavailable'))
         db.add(
@@ -394,12 +446,38 @@ def _save_message_response(
             'booking_intent': bool(intent),
             'stage': s.stage,
             'booking_preview': preview_event,
-        }, summary
+        }, (answer if preview_event else None)
 
 
-async def _respond_and_save(session_id, client_id, token, message, on_chunk=None, image=None):
+def _checked_reply(answer, updated, intent):
+    if (
+        not isinstance(answer, str)
+        or len(answer) > 65_536
+        or not isinstance(updated, dict)
+        or type(intent) is not bool
+    ):
+        raise HTTPException(502, error_detail('service_unavailable'))
+    try:
+        state_bytes = json.dumps(updated, allow_nan=False).encode('utf-8')
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(502, error_detail('service_unavailable')) from exc
+    if len(state_bytes) > 32_768:
+        raise HTTPException(502, error_detail('service_unavailable'))
+    return answer, updated, intent
+
+
+def _record_spend(client_id, network, tokens):
+    try:
+        record_ai_spend(client_id, network, tokens)
+    except SQLAlchemyError:
+        log.exception('AI token spend was not recorded')
+
+
+async def _respond_and_save(
+    session_id, client_id, token, message, on_chunk=None, image=None, network=None
+):
     # Keep each synchronous database phase off the event loop.
-    (final, original, previous, message_version, user_message_id) = await _database_call(
+    prepared = await _database_call(
         _prepare_message,
         session_id,
         client_id,
@@ -407,45 +485,40 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
         message,
         on_cancel=partial(_discard_prepared_message, session_id),
     )
-    if final is not None:
+    if isinstance(prepared, ServerReply):
         if on_chunk is not None:
-            await on_chunk(final['answer'])
-        return final
+            await on_chunk(prepared.result['answer'])
+        return prepared.result
     live = on_chunk if isinstance(on_chunk, ReplyStream) else None
+    spent = []
+    meter = _spent_tokens.set(spent)
     try:
-        with ai_capacity():
+        await asyncio.to_thread(enforce_ai_budget, client_id, network)
+        async with ai_capacity(f'client:{client_id}', f'ip:{network}' if network else None):
             photo = {'image': image} if image is not None else {}
-            answer, updated, intent = await respond(
-                message, original, previous, on_chunk=live, **photo
+            answer, updated, intent = _checked_reply(
+                *await respond(message, prepared.state, prepared.history, on_chunk=live, **photo)
             )
-            if (
-                not isinstance(answer, str)
-                or len(answer) > 65_536
-                or not isinstance(updated, dict)
-                or type(intent) is not bool
-            ):
-                raise HTTPException(502, error_detail('service_unavailable'))
-            try:
-                state_bytes = json.dumps(updated, allow_nan=False).encode('utf-8')
-            except (ValueError, TypeError) as exc:
-                raise HTTPException(502, error_detail('service_unavailable')) from exc
-            if len(state_bytes) > 32_768:
-                raise HTTPException(502, error_detail('service_unavailable'))
         result, summary = await _database_call(
             _save_message_response,
             session_id,
             client_id,
             token,
-            message_version,
-            user_message_id,
+            prepared.message_version,
+            prepared.message_id,
             answer,
             updated,
-            original,
+            prepared.state,
             intent,
         )
     except (Exception, asyncio.CancelledError):
-        await _database_call(_discard_failed_message, session_id, user_message_id)
+        await _database_call(_discard_failed_message, session_id, prepared.message_id)
         raise
+    finally:
+        _spent_tokens.reset(meter)
+        if spent:
+            # A failed or cancelled reply has cost tokens too.
+            await _database_call(_record_spend, client_id, network, sum(spent))
     if live is not None:
         await live.finish(summary or result['answer'])
     elif on_chunk is not None:
@@ -453,15 +526,10 @@ async def _respond_and_save(session_id, client_id, token, message, on_chunk=None
     return result
 
 
-def build_preview(db, s):
-    state = dict(s.state or {})
-    services, unavailable = selected_services(db, state)
-    state['selected_services'] = services
+def _contact_problems(state):
+    """Missing-field codes for the contact data; email and phone are normalized in place."""
+    missing = []
     name = state.get('client_name')
-    phone = state.get('phone')
-    people = state.get('people_count')
-    duration = state.get('duration_days')
-    missing = list(unavailable)
     try:
         state['email'] = optional_email(state.get('email'))
     except ValueError:
@@ -469,11 +537,17 @@ def build_preview(db, s):
     if not isinstance(name, str) or not name.strip() or len(name) > 255:
         missing.append('client_name')
     try:
-        state['phone'] = normalize_phone(phone)
+        state['phone'] = normalize_phone(state.get('phone'))
     except ValueError:
         missing.append('phone')
+    return missing
+
+
+def _trip_problems(state):
+    missing = []
+    duration = state.get('duration_days')
     try:
-        validate_travelers_count(people)
+        validate_travelers_count(state.get('people_count'))
     except ValueError:
         missing.append('people_count')
     if duration is not None and (type(duration) is not int or not 1 <= duration <= 2147483647):
@@ -491,14 +565,27 @@ def build_preview(db, s):
                 missing.append('future_travel_date')
         except (ValueError, TypeError):
             missing.append('valid_travel_date')
+    return missing
+
+
+def build_preview(db, s):
+    state = client_state(s.state)
+    services, unavailable = selected_services(db, state)
+    state['selected_services'] = services
+    tour = None
     if state.get('tour_id') and 'valid_tour' not in unavailable:
         tour = db.get(Tour, state['tour_id'])
-
-        if tour and tour.is_active and 'people_count' not in missing:
-            try:
-                validate_travelers_count(people, tour)
-            except ValueError:
-                missing.append('people_count')
+        if tour is not None and not tour.is_active:
+            tour = None
+    if tour is not None and tour.duration_days:
+        # The length of a ready tour is its own property, not the client's wish.
+        state['duration_days'] = tour.duration_days
+    missing = [*unavailable, *_contact_problems(state), *_trip_problems(state)]
+    if tour is not None and 'people_count' not in missing:
+        try:
+            validate_travelers_count(state.get('people_count'), tour)
+        except ValueError:
+            missing.append('people_count')
     return {
         'status': 'draft',
         'session_id': s.id,
@@ -538,32 +625,16 @@ def recover_confirmation(db, session, message=None):
     }
 
 
-def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
-    if not confirmed:
-        raise HTTPException(400, error_detail('invalid_request'))
-
-    existing = (
+def _submitted_link(db, s, revision):
+    return (
         db.query(ChatBookingLink)
         .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
         .first()
     )
 
-    if existing:
-        return already_submitted(existing.request_id, client_id)
 
-    if s.stage != 'awaiting_confirmation':
-        raise HTTPException(409, error_detail('conflict'))
-
-    preview = build_preview(db, s)
-
-    if revision != s.revision:
-        record_booking_conflict()
-        raise HTTPException(409, error_detail('conflict'))
-    if preview['missing_fields']:
-        return recover_confirmation(db, s, message)
-
-    st = preview['data']
-
+def _open_selection(db, s):
+    """The linked selection, locked; a finished or cancelled one cannot be submitted."""
     selection = (
         db.query(TravelSelection)
         .filter(TravelSelection.session_id == s.id)
@@ -577,23 +648,10 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
     ):
         record_booking_conflict()
         raise HTTPException(409, error_detail('conflict'))
-    try:
-        advance_message_version(db, s)
-    except HTTPException as exc:
-        if exc.status_code != 409:
-            raise
+    return selection
 
-        existing = (
-            db.query(ChatBookingLink)
-            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
-            .first()
-        )
 
-        if existing:
-            return already_submitted(existing.request_id, client_id)
-        record_booking_conflict()
-        raise
-
+def _travel_request(db, s, client_id, st):
     tour_note = ''
     destination = st.get('destination')
 
@@ -615,7 +673,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
             f'{item["kind"]} #{item["id"]}: {item["name"]}' for item in st['selected_services']
         )
 
-    obj = TravelRequest(
+    return TravelRequest(
         client_id=client_id,
         name=st['client_name'],
         phone=st['phone'],
@@ -629,6 +687,39 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         status=RequestStatusChoices.new,
     )
 
+
+def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
+    if not confirmed:
+        raise HTTPException(400, error_detail('invalid_request'))
+
+    existing = _submitted_link(db, s, revision)
+    if existing:
+        return already_submitted(existing.request_id, client_id)
+
+    if s.stage != 'awaiting_confirmation':
+        raise HTTPException(409, error_detail('conflict'))
+
+    preview = build_preview(db, s)
+
+    if revision != s.revision:
+        record_booking_conflict()
+        raise HTTPException(409, error_detail('conflict'))
+    if preview['missing_fields']:
+        return recover_confirmation(db, s, message)
+
+    selection = _open_selection(db, s)
+    try:
+        advance_message_version(db, s)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        existing = _submitted_link(db, s, revision)
+        if existing:
+            return already_submitted(existing.request_id, client_id)
+        record_booking_conflict()
+        raise
+
+    obj = _travel_request(db, s, client_id, preview['data'])
     try:
         db.add(obj)
         db.flush()
@@ -649,13 +740,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
         publish_new_request(obj.id)
     except IntegrityError:
         db.rollback()
-
-        existing = (
-            db.query(ChatBookingLink)
-            .filter(ChatBookingLink.session_id == s.id, ChatBookingLink.revision == revision)
-            .first()
-        )
-
+        existing = _submitted_link(db, s, revision)
         if existing:
             return already_submitted(existing.request_id, client_id)
         record_booking_conflict()
@@ -665,10 +750,7 @@ def confirm_booking(db, s, client_id, revision, confirmed, *, message=None):
 
 def _confirm_booking_for_client(session_id, client_id, token, revision, confirmed):
     with SessionLocal() as db:
-        client = client_by_token(db, token)
-        if client.id != client_id:
-            raise HTTPException(401, error_detail('authentication_required'))
-        session = owned(db, session_id, client_id)
+        session = _client_session(db, session_id, client_id, token)
         return confirm_booking(db, session, client_id, revision, confirmed)
 
 
@@ -681,9 +763,7 @@ async def confirm_booking_serialized(session_id, client_id, token, revision, con
 
 def _remove_service(session_id, client_id, token, kind):
     with SessionLocal() as db:
-        if client_by_token(db, token).id != client_id:
-            raise HTTPException(401, error_detail('authentication_required'))
-        session = owned(db, session_id, client_id)
+        session = _client_session(db, session_id, client_id, token)
         if session.stage == 'submitted':
             raise HTTPException(409, error_detail('conflict'))
         selection = (

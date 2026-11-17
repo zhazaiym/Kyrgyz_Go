@@ -31,14 +31,30 @@ def test_failed_worker_cleanup_does_not_keep_a_turn_answered_by_another_worker(
     winning_question = 'Failed first question' if same_text else 'Successful second question'
     second = chat_service._prepare_message(sid, identity, token, winning_question)
     chat_service._save_message_response(
-        sid, identity, token, second[3], second[4], 'Answer to second', {}, {}, False
+        sid,
+        identity,
+        token,
+        second.message_version,
+        second.message_id,
+        'Answer to second',
+        {},
+        {},
+        False,
     )
     if loser_outcome == 'failure':
-        chat_service._discard_failed_message(sid, first[4])
+        chat_service._discard_failed_message(sid, first.message_id)
     else:
         with pytest.raises(HTTPException) as conflict:
             chat_service._save_message_response(
-                sid, identity, token, first[3], first[4], 'Stale answer', {}, {}, False
+                sid,
+                identity,
+                token,
+                first.message_version,
+                first.message_id,
+                'Stale answer',
+                {},
+                {},
+                False,
             )
         assert conflict.value.status_code == 409
     with SessionLocal() as db:
@@ -264,7 +280,7 @@ def test_faq_search_does_not_return_unrelated_first_rows():
         identity = faq.id
 
     try:
-        result = search_company_faq.invoke({'question': f'Unrelated marker {uuid4().hex}'})
+        result = search_company_faq.invoke({'question': f'Xylophone quasar {uuid4().hex}'})
         assert result == []
         assert search_company_faq.invoke({'question': 'Hi'}) == []
     finally:

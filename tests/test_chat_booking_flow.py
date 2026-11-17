@@ -444,8 +444,8 @@ def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
     assert results[0]['stage'] == 'consultation'
     assert results[1]['stage'] == 'collecting'
     assert results[-1]['stage'] == 'awaiting_confirmation'
-    assert 'Как к вам обращаться?' in extraction_prompts[2]
-    assert 'номер телефона' in extraction_prompts[3]
+    assert 'Как к вам обращаться?' in extraction_prompts[2][1].content
+    assert 'номер телефона' in extraction_prompts[3][1].content
     preview = results[-1]['booking_preview']
     assert preview['can_confirm']
     assert preview['data']['client_name'] == 'Анна'

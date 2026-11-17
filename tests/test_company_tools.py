@@ -250,7 +250,6 @@ def test_demonstration_tours_do_not_consume_real_offer_limit(company_database, m
     assert [(item['kind'], item['id']) for item in result['items']] == [('tour', real_id)]
     assert result['total'] == 1
     assert 'error' in tools.get_catalogue_item.invoke({'kind': 'tour', 'id': demo_id})
-    monkeypatch.setattr(agent, 'SessionLocal', sessions)
     assert agent.active_tour_ids() == [real_id]
 
 

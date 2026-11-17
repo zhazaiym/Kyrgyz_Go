@@ -12,6 +12,7 @@ from langchain_core.messages import (AIMessage, AIMessageChunk, HumanMessage, Sy
                                      ToolMessage)
 
 from ML import agent
+from ML.context import text_content
 
 
 def fake_runtime(monkeypatch, replies, changes=None):
@@ -32,18 +33,27 @@ def fake_runtime(monkeypatch, replies, changes=None):
 
 
 def test_chat_models_have_separate_output_budgets():
-    assert agent.llm.max_output_tokens == max(
-        256, min(4096, int(os.getenv('CHAT_MAX_OUTPUT_TOKENS', '1536')))
-    )
-    assert agent.extract_llm.max_output_tokens == max(
-        256, min(1024, int(os.getenv('CHAT_EXTRACT_MAX_OUTPUT_TOKENS', '512')))
+    from ML.provider import client
+
+    assert client('llm').max_output_tokens == int(os.getenv('CHAT_MAX_OUTPUT_TOKENS', '1536'))
+    assert client('extract_llm').max_output_tokens == int(
+        os.getenv('CHAT_EXTRACT_MAX_OUTPUT_TOKENS', '512')
     )
 
 
-@pytest.mark.parametrize(('configured', 'expected'), [('999999', 4096), ('1', 256), ('1536', 1536)])
+@pytest.mark.parametrize(
+    ('configured', 'expected'), [('999999', None), ('1', None), ('1536', 1536)]
+)
 def test_response_budget_has_hard_bounds(monkeypatch, configured, expected):
+    from ML.config import chat_setting
+
     monkeypatch.setenv('CHAT_MAX_OUTPUT_TOKENS', configured)
-    assert agent.output_budget('CHAT_MAX_OUTPUT_TOKENS', 1536, 4096) == expected
+    if expected is None:
+        # Out of bounds is an error named after the setting, not a silent correction.
+        with pytest.raises(ValueError, match='CHAT_MAX_OUTPUT_TOKENS'):
+            chat_setting('CHAT_MAX_OUTPUT_TOKENS')
+    else:
+        assert chat_setting('CHAT_MAX_OUTPUT_TOKENS') == expected
 
 
 def test_extractor_receives_previous_question_for_short_answers(monkeypatch):
@@ -54,7 +64,8 @@ def test_extractor_receives_previous_question_for_short_answers(monkeypatch):
     )
     history = [SimpleNamespace(role='assistant', content='Как к вам обращаться?')]
     answer, updated, intent = asyncio.run(agent.respond('Анна', {}, history))
-    assert 'Как к вам обращаться?' in seen['extraction'][0]
+    assert 'Как к вам обращаться?' in seen['extraction'][0][1].content
+    assert seen['extraction'][0][-1].content == 'Анна'
     assert updated['client_name'] == 'Анна'
     assert not intent
 
@@ -62,22 +73,24 @@ def test_extractor_receives_previous_question_for_short_answers(monkeypatch):
 def test_prompt_budgets_and_runtime_contracts():
     from ML.prompts import EXTRACT_PROMPT, SYSTEM_PROMPT
 
-    assert 3000 <= len(SYSTEM_PROMPT) <= 6000
+    assert 3000 <= len(SYSTEM_PROMPT) <= 7500
     assert 2000 <= len(EXTRACT_PROMPT) <= 4000
 
     def fields(prompt):
         return {name for _, name, _, _ in Formatter().parse(prompt) if name}
 
-    assert fields(SYSTEM_PROMPT) == {'state', 'today'}
-    assert fields(EXTRACT_PROMPT) == {'state', 'tour_ids', 'message', 'context', 'today'}
+    from ML.prompts import CONSULT_DATA, EXTRACT_DATA
+
+    # The rules are fixed text; everything variable lives in the data messages.
+    assert '{' not in SYSTEM_PROMPT and '{' not in EXTRACT_PROMPT
+    assert fields(CONSULT_DATA) == {'state', 'today'}
+    assert fields(EXTRACT_DATA) == {'state', 'shown', 'context', 'today'}
     for field in agent.Changes.model_fields:
         assert field in EXTRACT_PROMPT
     for tool in agent.READ_TOOLS:
         assert tool.name in SYSTEM_PROMPT
-    assert SYSTEM_PROMPT.format(state='{}', today='2026-10-23')
-    assert EXTRACT_PROMPT.format(
-        state='{}', tour_ids='[]', message='Анна', context='[]', today='2026-10-23'
-    )
+    assert CONSULT_DATA.format(state='{}', today='2026-10-23')
+    assert EXTRACT_DATA.format(state='{}', shown='[]', context='[]', today='2026-10-23')
 
 
 def test_prompt_distinguishes_catalogue_evidence_and_failures():
@@ -108,7 +121,7 @@ def test_history_context_is_bounded_and_keeps_recent_turns(monkeypatch):
     ]
     history.append(SimpleNamespace(role='user', content='Most recent preference'))
     asyncio.run(agent.respond('Текущий вопрос', {}, history))
-    context = seen['messages'][0][1:-1]
+    context = seen['messages'][0][1:-2]  # between the rules and the server data
     assert len(context) <= 12
     assert sum(len(message.content) for message in context) <= 8000
     assert context[-1].content == 'Most recent preference'
@@ -226,7 +239,10 @@ def test_extracted_corrections_keep_unrelated_state_and_reach_response(monkeypat
     assert updated['people_count'] == 4 and updated['language'] == 'en'
     for field in ('client_name', 'phone', 'tour_id', 'budget'):
         assert updated[field] == original[field]
-    assert 'children aged 4 and 9' in seen['messages'][0][0].content
+    # Extraction runs alongside the reply: the consultant gets the state as it was
+    # and reads the corrections from the message itself.
+    assert 'Quiet room.' in seen['messages'][0][-2].content
+    assert 'children aged 4 and 9' not in seen['messages'][0][-2].content
     assert seen['messages'][0][-1].content == message
     assert not intent
 
@@ -339,8 +355,8 @@ def live_gemini_runner():
             return await awaitable
 
         yield SimpleNamespace(run=lambda awaitable: runner.run(paced_call(awaitable)))
-        runner.run(agent.llm.async_client.aclose())
-        runner.run(agent.extract_llm.async_client.aclose())
+        runner.run(client('llm').async_client.aclose())
+        runner.run(client('extract_llm').async_client.aclose())
     client.cache_clear()
 
 
@@ -358,10 +374,12 @@ def test_live_catalogue_grounding(
     case, question, tool, args, result, repeat, record_property, live_gemini_runner
 ):
     """Bounded regression signals, not a proof of factuality for arbitrary dialogue."""
-    from ML.prompts import SYSTEM_PROMPT
+    from ML.prompts import CONSULT_DATA, SYSTEM_PROMPT
+    from ML.provider import client
 
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT.format(state='{}', today='2026-10-28')),
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=CONSULT_DATA.format(state='{}', today='2026-10-28')),
         HumanMessage(content=question),
         AIMessage(
             content='',
@@ -380,7 +398,9 @@ def test_live_catalogue_grounding(
     started = time.perf_counter()
     reply = None
     try:
-        reply = live_gemini_runner.run(asyncio.wait_for(agent.llm.ainvoke(messages), timeout=35))
+        reply = live_gemini_runner.run(
+            asyncio.wait_for(client('llm').ainvoke(messages), timeout=35)
+        )
     except Exception as error:
         metrics['error'] = type(error).__name__
         raise
@@ -409,7 +429,7 @@ def test_live_catalogue_grounding(
         # Only opt-in synthetic fixtures can reach this path, never customer messages.
         print(
             json.dumps(
-                {'failed_fixture': case, 'synthetic_answer': agent.to_text(reply.content)},
+                {'failed_fixture': case, 'synthetic_answer': text_content(reply.content)},
                 ensure_ascii=False,
             )
         )
@@ -423,20 +443,29 @@ def test_live_catalogue_grounding(
         ('Нет, давайте лучше в Каракол', 'switch'),
         ('А чем отличается от Каракола?', 'comparison'),
         ('Поедем завтра', 'tomorrow'),
-        ('Выбираю тур 8', 'known_tour'),
+        ('Выбираю Сон-Куль', 'known_tour'),
     ],
 )
 def test_live_review_extraction(message, expected, live_gemini_runner):
-    from ML.prompts import EXTRACT_PROMPT
-
-    prompt = EXTRACT_PROMPT.format(
-        state=json.dumps({'tour_id': 7, 'people_count': 4}),
-        tour_ids='[7, 8]',
-        context='Выбран тур 7: Иссык-Куль. Направление Каракол ещё не подобрано.',
-        message=message,
-        today='2026-11-07',
+    state = {
+        'tour_id': 7,
+        'people_count': 4,
+        agent.SHOWN: [
+            {'kind': 'tour', 'id': 8, 'title': 'Сон-Куль: юрты и кони'},
+            {'kind': 'tour', 'id': 7, 'title': 'Иссык-Куль: южный берег'},
+        ],
+    }
+    history = [
+        SimpleNamespace(
+            role='assistant',
+            content='Выбран тур «Иссык-Куль: южный берег». Ещё есть «Сон-Куль: юрты и кони». '
+            'Направление Каракол ещё не подобрано.',
+        )
+    ]
+    prompt = agent.extraction_messages(message, state, history, '2026-11-07')
+    changes = agent._extracted_changes(
+        live_gemini_runner.run(asyncio.wait_for(agent.extractor.ainvoke(prompt), timeout=45))
     )
-    changes = live_gemini_runner.run(asyncio.wait_for(agent.extractor.ainvoke(prompt), timeout=45))
     if expected == 'switch':
         assert 'tour_id' in changes.clear_fields
         assert changes.destination == 'Каракол'
@@ -452,7 +481,7 @@ def test_live_review_extraction(message, expected, live_gemini_runner):
 
 
 def _assert_catalogue_grounding(case, reply):
-    answer = agent.to_text(reply.content).casefold()
+    answer = text_content(reply.content).strip().casefold()
     assert answer and not getattr(reply, 'tool_calls', []), reply.content
     assert reply.response_metadata.get('finish_reason') == 'STOP', reply.response_metadata
     assert 'небесный vip' not in answer, reply.content

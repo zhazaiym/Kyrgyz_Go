@@ -44,17 +44,17 @@ def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
 
     first = chat_service._prepare_message(session_id, client_id, token, 'first turn')
     stale = chat_service._prepare_message(session_id, client_id, token, 'stale turn')
-    assert first[3] == stale[3]
+    assert first.message_version == stale.message_version
 
     chat_service._save_message_response(
         session_id,
         client_id,
         token,
-        first[3],
-        first[4],
+        first.message_version,
+        first.message_id,
         'first response',
         {'client_name': 'First'},
-        first[1],
+        first.state,
         False,
     )
 
@@ -63,11 +63,11 @@ def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
             session_id,
             client_id,
             token,
-            stale[3],
-            stale[4],
+            stale.message_version,
+            stale.message_id,
             'stale response',
             {'client_name': 'Stale'},
-            stale[1],
+            stale.state,
             False,
         )
 
@@ -75,6 +75,6 @@ def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
     with SessionLocal() as db:
         session = db.get(ChatSession, session_id)
         assert session.state == {'client_name': 'First'}
-        assert session.message_version == first[3] + 1
-        stale_message = db.query(ChatMessage).filter_by(id=stale[4]).first()
+        assert session.message_version == first.message_version + 1
+        stale_message = db.query(ChatMessage).filter_by(id=stale.message_id).first()
         assert stale_message is None

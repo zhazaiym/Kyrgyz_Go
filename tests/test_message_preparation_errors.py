@@ -30,7 +30,7 @@ def test_history_load_failure_rolls_back_new_user_message(client, monkeypatch):
 def test_prepared_history_remains_readable_after_commit_and_session_close(client):
     token, identity, sid = account_session(client, 'detached_prepared_history')
     prepared = chat_service._prepare_message(sid, identity, token, 'Question')
-    assert [(turn.role, bool(turn.content)) for turn in prepared[2]] == [('assistant', True)]
+    assert [(turn.role, bool(turn.content)) for turn in prepared.history] == [('assistant', True)]
     with SessionLocal() as db:
         assert (
             db.query(ChatMessage).filter_by(session_id=sid, role='user').one().content == 'Question'

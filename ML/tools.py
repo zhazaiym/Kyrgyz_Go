@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import joinedload, selectinload
 
 from ML.prompts import COMPANY_PROFILE
+from ML.runtime import SessionLocal, app
 
 _UPPER = 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯӨҮҢ'
 # Same folding in Python and SQL: separators and soft/hard signs vanish, Kyrgyz and
@@ -136,8 +137,7 @@ def _translation_values(column):
 
 
 def _haystack(kind, model):
-    from mysite.database.models import Country, TourTranslation
-
+    Country, TourTranslation = app.models.Country, app.models.TourTranslation
     parts = [
         model.title,
         model.description,
@@ -163,8 +163,24 @@ def _haystack(kind, model):
     return _normalized_sql(func.concat_ws(' | ', *(part for part in parts if part is not None)))
 
 
-def _search_score(kind, model, variants):
-    haystack = _haystack(kind, model)
+def _search_text(db, kind, model):
+    """Normalized text of each active record, computed once per search.
+
+    The folding regexp is costly, and the score reads the text twice per variant
+    in the filter, the result and the ordering; MATERIALIZED keeps PostgreSQL
+    from inlining the expression back into each of those places.
+    """
+    query = db.query(model.id.label('id'), _haystack(kind, model).label('text'))
+    if kind == 'tour':
+        query = query.outerjoin(model.country)
+    return (
+        query.filter(model.is_active.is_(True))
+        .cte(f'{kind}_search_text')
+        .prefix_with('MATERIALIZED')
+    )
+
+
+def _search_score(haystack, variants):
     scores = []
     for key, weight in variants.items():
         fuzzy = (
@@ -174,12 +190,6 @@ def _search_score(kind, model, variants):
         )
         scores.append(case((func.strpos(haystack, key) > 0, literal(weight)), else_=fuzzy))
     return scores[0] if len(scores) == 1 else func.greatest(*scores)
-
-
-def SessionLocal():
-    from mysite.database.db import SessionLocal as sessions
-
-    return sessions()
 
 
 def _public_text(value, limit):
@@ -223,7 +233,7 @@ def _base_item(kind, record, brief):
         'description': _public_text(record.description, 350) if brief else record.description,
         'price': _text_number(record.price),
         'price_unit': getattr(record.price_unit, 'value', None),
-        'currency': 'Уточнить у менеджера',
+        'currency': None,  # the catalogue stores no currency yet
     }
 
 
@@ -289,13 +299,35 @@ def _trekking_item(trek, brief=True):
 
 
 def _catalogue_kinds():
-    from mysite.database.models import HelicopterTour, Tour, Trekking
-
     return {
-        'tour': (Tour, _tour_item),
-        'helicopter_tour': (HelicopterTour, _helicopter_item),
-        'trekking': (Trekking, _trekking_item),
+        'tour': (app.models.Tour, _tour_item),
+        'helicopter_tour': (app.models.HelicopterTour, _helicopter_item),
+        'trekking': (app.models.Trekking, _trekking_item),
     }
+
+
+def active_tour_ids():
+    Tour = app.models.Tour
+    with SessionLocal() as db:
+        return [
+            row[0]
+            for row in db.query(Tour.id)
+            .filter(Tour.is_active.is_(True), _not_demo(Tour.title))
+            .order_by(Tour.id)
+            .limit(256)
+            .all()
+        ]
+
+
+def valid_selected_tour(identity):
+    Tour = app.models.Tour
+    with SessionLocal() as db:
+        return (
+            db.query(Tour.id)
+            .filter(Tour.id == identity, Tour.is_active.is_(True), _not_demo(Tour.title))
+            .first()
+            is not None
+        )
 
 
 def _catalogue_query(db, kind, model):
@@ -353,8 +385,11 @@ def search_catalogue(
                 if max_duration_days is not None:
                     query = query.filter(model.duration_days <= max_duration_days)
             if variants:
-                score = _search_score(name, model, variants)
-                query = query.filter(score >= SEARCH_SIMILARITY)
+                search_text = _search_text(db, name, model)
+                score = _search_score(search_text.c.text, variants)
+                query = query.join(search_text, search_text.c.id == model.id).filter(
+                    score >= SEARCH_SIMILARITY
+                )
                 rows = (
                     query.add_columns(score)
                     .order_by(score.desc(), model.id)
@@ -393,8 +428,7 @@ get_catalogue_item.handle_validation_error = _invalid_arguments
 @tool
 def get_company_info() -> dict:
     """Read public company profile, active about sections and contacts. Database content overrides supplied profile claims, which are not independently verified. Geography is illustrative, not bookable offers."""
-    from mysite.database.models import About, AboutSection, Contact
-
+    About, AboutSection, Contact = app.models.About, app.models.AboutSection, app.models.Contact
     with SessionLocal() as db:
         about_rows = (
             db.query(About)
@@ -483,8 +517,7 @@ def get_company_info() -> dict:
 @tool
 def list_active_hotels() -> list[dict]:
     """Read company-listed active accommodation (up to 15). No room availability or booking IDs. Use name/address/price and save client preferences in notes."""
-    from mysite.database.models import Hotel
-
+    Hotel = app.models.Hotel
     with SessionLocal() as db:
         rows = (
             db.query(Hotel)
@@ -500,7 +533,7 @@ def list_active_hotels() -> list[dict]:
                 'address': hotel.address,
                 'price': str(hotel.price) if hotel.price is not None else None,
                 'price_unit': getattr(hotel.price_unit, 'value', None),
-                'currency': 'Уточнить у менеджера',
+                'currency': None,
             }
             for hotel in rows
         ]
@@ -509,8 +542,7 @@ def list_active_hotels() -> list[dict]:
 @tool
 def list_active_transport() -> list[dict]:
     """Read active transport offers (up to 15); not confirmed schedule or seat availability."""
-    from mysite.database.models import Transport
-
+    Transport = app.models.Transport
     with SessionLocal() as db:
         rows = (
             db.query(Transport)
@@ -526,34 +558,92 @@ def list_active_transport() -> list[dict]:
                 'seats': transport.seats,
                 'price': str(transport.price) if transport.price is not None else None,
                 'price_unit': getattr(transport.price_unit, 'value', None),
-                'currency': 'Уточнить у менеджера',
+                'currency': None,
             }
             for transport in rows
         ]
 
 
+FAQ_LIMIT = 8
+_FAQ_MAX_TERMS = 10
+_CJK = re.compile(r'[぀-ヿ㐀-鿿]+')
+
+
+def _faq_terms(question):
+    """Meaningful words of the question, each as normalized spellings with a stem.
+
+    The stem is the prefix shared by inflected forms: "отменить" and "отмена",
+    "cancel" and "cancellation". Chinese has no spaces and is matched by pairs
+    of characters.
+    """
+    phrase = question.strip().lower()[:200]
+    terms = []
+    for run in _CJK.findall(phrase):
+        pairs = [run[index : index + 2] for index in range(len(run) - 1)] or [run]
+        terms += [((pair, pair),) for pair in pairs]
+    for word in re.split(r'[\W_]+', _CJK.sub(' ', phrase)):
+        spellings = []
+        for spelling in (word, _to_cyrillic(word), word.translate(_CYRILLIC_TO_LATIN)):
+            key = normalize_search_text(spelling)
+            if len(key) >= _FUZZY_MIN_LENGTH:
+                spellings.append((key, key[: max(4, min(5, len(key) - 1))]))
+        if spellings:
+            terms.append(tuple(dict.fromkeys(spellings)))
+    return list(dict.fromkeys(terms))[:_FAQ_MAX_TERMS]
+
+
+def _faq_term_found(haystack, spellings):
+    """Same normalization, translations and similarity as the catalogue search."""
+    exact = or_(*(func.strpos(haystack, stem) > 0 for _, stem in spellings))
+    similar = _search_score(haystack, {key: 1.0 for key, _ in spellings}) >= SEARCH_SIMILARITY
+    return case((or_(exact, similar), 1), else_=0)
+
+
 @tool
 def search_company_faq(question: str) -> list[dict]:
     """Search active company FAQ by relevant phrase. Use for company rules; never invent policies or legal/visa guarantees."""
-    from mysite.database.models import FAQ
-
-    words = [word.lower() for word in question.split() if len(word) >= 4][:8]
-    if not words:
+    terms = _faq_terms(question)
+    if not terms:
         return []
+    FAQ = app.models.FAQ
     with SessionLocal() as db:
+        active = db.query(FAQ.id).filter(FAQ.is_active.is_(True), _not_demo(FAQ.question))
+        search_text = (
+            active.add_columns(
+                FAQ.order.label('order'),
+                _normalized_sql(
+                    func.concat_ws(
+                        ' | ', FAQ.question, FAQ.answer, _translation_values(FAQ.translations)
+                    )
+                ).label('text'),
+            )
+            .cte('faq_search_text')
+            .prefix_with('MATERIALIZED')
+        )
+        found = [_faq_term_found(search_text.c.text, spellings) for spellings in terms]
         rows = (
-            db.query(FAQ)
-            .filter(FAQ.is_active.is_(True), _not_demo(FAQ.question))
-            .order_by(FAQ.order)
-            .limit(30)
+            db.query(search_text.c.id, search_text.c.order, *found)
+            .filter(or_(*(flag == 1 for flag in found)))
             .all()
         )
-        matches = [
-            faq
-            for faq in rows
-            if any(word in (faq.question + ' ' + faq.answer).lower() for word in words)
+        # A word found in a large share of the FAQ ("Кыргызстан", "можно") says
+        # nothing about the question, in any language; only rarer words count.
+        common = max(3, active.count() // 4)
+        rare = [
+            index for index in range(len(terms)) if sum(row[2 + index] for row in rows) <= common
         ]
-        return [{'question': faq.question, 'answer': faq.answer} for faq in matches[:8]]
+        ranked = sorted(
+            (-sum(row[2 + index] for index in rare), row.order or 0, row.id) for row in rows
+        )
+        identities = [identity for hits, _, identity in ranked if hits][:FAQ_LIMIT]
+        if not identities:
+            return []
+        records = {faq.id: faq for faq in db.query(FAQ).filter(FAQ.id.in_(identities))}
+        return [
+            {'question': records[identity].question, 'answer': records[identity].answer}
+            for identity in identities
+            if identity in records
+        ]
 
 
 READ_TOOLS = [

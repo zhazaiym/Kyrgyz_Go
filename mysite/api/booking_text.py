@@ -25,6 +25,7 @@ TEXT = {
         'получить новую сводку.',
         'service_removed': 'Выбранная услуга убрана из заявки. Уточните остальные детали поездки.',
         'not_ready': 'Заявка ещё не отправлена: не хватает данных — {fields}. Напишите их, и я покажу сводку для подтверждения.',
+        'already_submitted': 'Заявка уже отправлена. Для исправления данных обратитесь к менеджеру; для новой поездки откройте новый чат.',
         'fields': {
             'tour_or_destination': 'тур или направление',
             'travel_date': 'дата начала поездки',
@@ -66,6 +67,7 @@ TEXT = {
         'service_removed': 'The selected service was removed. Please review the remaining trip '
         'details.',
         'not_ready': 'The request has not been sent yet: missing {fields}. Send them and I will show the summary to confirm.',
+        'already_submitted': 'Your request has already been sent. Contact the manager to correct it, or open a new chat for a new trip.',
         'fields': {
             'tour_or_destination': 'tour or destination',
             'travel_date': 'start date',
@@ -106,6 +108,7 @@ TEXT = {
         'service_removed': 'Тандалган кызмат өтүнмөдөн алынды. Сапардын калган маалыматын '
         'тактаңыз.',
         'not_ready': 'Өтүнмө азырынча жөнөтүлгөн жок: маалымат жетишпейт — {fields}. Жазыңыз, ырастоо үчүн корутунду көрсөтөм.',
+        'already_submitted': 'Өтүнмө жөнөтүлгөн. Маалыматты өзгөртүү үчүн менеджерге кайрылыңыз; жаңы сапар үчүн жаңы чат ачыңыз.',
         'fields': {
             'tour_or_destination': 'тур же багыт',
             'travel_date': 'сапардын башталыш күнү',
@@ -148,6 +151,7 @@ TEXT = {
         'service_removed': 'Die gewählte Leistung wurde entfernt. Bitte prüfen Sie die weiteren '
         'Reisedaten.',
         'not_ready': 'Die Anfrage wurde noch nicht gesendet: es fehlen {fields}. Schreiben Sie diese, dann zeige ich die Zusammenfassung zur Bestätigung.',
+        'already_submitted': 'Ihre Anfrage wurde bereits gesendet. Für Änderungen wenden Sie sich an das Team; für eine neue Reise öffnen Sie einen neuen Chat.',
         'fields': {
             'tour_or_destination': 'Tour oder Reiseziel',
             'travel_date': 'Reisebeginn',
@@ -183,6 +187,7 @@ TEXT = {
         'invalid_preview': '申请信息已更改或失效。请核对服务、旅行日期和联系方式。申请尚未发送，请更新信息以获取新的摘要。',
         'service_removed': '已移除所选服务。请核对其余旅行信息。',
         'not_ready': '申请尚未发送：还缺少{fields}。请补充，我会显示摘要供您确认。',
+        'already_submitted': '您的申请已发送。如需修改，请联系工作人员；如需安排新行程，请开启新对话。',
         'fields': {
             'tour_or_destination': '行程或目的地',
             'travel_date': '出发日期',

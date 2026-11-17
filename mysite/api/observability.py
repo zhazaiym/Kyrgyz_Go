@@ -11,7 +11,16 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, gene
 router = APIRouter()
 _AI_OPERATIONS = {'extractor', 'generation', 'tool'}
 _AI_OUTCOMES = {'success', 'failure', 'timeout', 'blocked'}
-_CHAT_OUTCOMES = {'success', 'ai_error', 'timeout', 'conflict', 'disconnected', 'internal_error'}
+_AI_TOKEN_OPERATIONS = {'extractor', 'generation'}
+_CHAT_OUTCOMES = {
+    'success',
+    'ai_error',
+    'timeout',
+    'conflict',
+    'rate_limited',
+    'disconnected',
+    'internal_error',
+}
 _TRANSLATION_OUTCOMES = {
     'translated',
     'failed',
@@ -47,6 +56,7 @@ def create_metrics(registry):
     return {
         'ai': counter('ai_calls_total', ('operation', 'outcome')),
         'ai_time': duration('ai_call_duration_seconds', ('operation',)),
+        'ai_tokens': counter('ai_tokens_total', ('operation',)),
         'chat': counter('chat_messages_total', ('outcome',)),
         'chat_time': duration('chat_message_duration_seconds', ('outcome',)),
         'conflicts': counter('booking_conflicts_total'),
@@ -76,6 +86,12 @@ def record_ai_call(operation, outcome, duration):
         raise ValueError('AI metric label is outside the bounded label set')
     _metrics['ai'].labels(operation, outcome).inc()
     _metrics['ai_time'].labels(operation).observe(max(0, duration))
+
+
+def record_ai_tokens(operation, tokens):
+    if operation not in _AI_TOKEN_OPERATIONS:
+        raise ValueError('AI metric label is outside the bounded label set')
+    _metrics['ai_tokens'].labels(operation).inc(max(0, tokens))
 
 
 def record_chat_message(outcome, duration):

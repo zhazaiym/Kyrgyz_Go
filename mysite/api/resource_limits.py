@@ -4,7 +4,7 @@ import asyncio
 import os
 import time
 from collections import OrderedDict, deque
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from threading import Lock
 
@@ -20,6 +20,12 @@ from mysite.api.origin_config import configured_origins
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
+    'AI_MAX_PER_CLIENT': (2, 32),
+    'AI_MAX_PER_IP': (3, 32),
+    'AI_QUEUE_SECONDS': (5, 30),
+    'AI_DAILY_TOKENS': (20_000_000, 2_000_000_000),
+    'AI_CLIENT_DAILY_TOKENS': (1_000_000, 2_000_000_000),
+    'AI_IP_DAILY_TOKENS': (3_000_000, 2_000_000_000),
     'AUTH_MAX_CONCURRENT': (4, 16),
     'HTTP_MAX_CONCURRENT': (64, 512),
     'HTTP_REQUESTS_PER_MINUTE': (120, 100_000),
@@ -30,6 +36,9 @@ RESOURCE_LIMITS = {
     'REQUEST_BODY_TIMEOUT': (10, 60),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
+    'WS_MAX_PER_CLIENT': (8, 64),
+    'WS_IDLE_SECONDS': (600, 3600),
+    'WS_AUTH_SECONDS': (10, 30),
 }
 IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload', '/chat/images'}
 VIDEO_UPLOAD_PATHS = {'/admin/media/videos/', '/admin/media/video-upload'}
@@ -53,24 +62,76 @@ def validate_resource_settings():
         setting(name)
 
 
+# One Uvicorn worker (DEPLOY.md): these counters live in the memory of this process.
 _ai_lock = Lock()
 _ai_active = 0
+_ai_owners = {}  # replies being written or waiting for a place, per client and per address
+_ai_waiters = set()
 
 
-@contextmanager
-def ai_capacity():
-    global _ai_active
-    with _ai_lock:
-        if _ai_active >= setting('AI_MAX_CONCURRENT'):
-            raise HTTPException(
-                503, error_detail('service_unavailable'), headers={'Retry-After': '5'}
+def _ai_busy():
+    return HTTPException(503, error_detail('service_unavailable'), headers={'Retry-After': '5'})
+
+
+def _owner_limit(owner):
+    # One owner never gets every place, whatever the settings say.
+    share = setting('AI_MAX_PER_IP' if owner.startswith('ip:') else 'AI_MAX_PER_CLIENT')
+    return min(share, max(1, setting('AI_MAX_CONCURRENT') - 1))
+
+
+def _wake_ai_waiters():
+    for waiter in tuple(_ai_waiters):
+        try:
+            waiter.get_loop().call_soon_threadsafe(
+                lambda waiter=waiter: waiter.done() or waiter.set_result(None)
             )
-        _ai_active += 1
+        except RuntimeError:  # its event loop is already closed
+            _ai_waiters.discard(waiter)
+
+
+@asynccontextmanager
+async def ai_capacity(*owners):
+    """A place at the model: AI_MAX_CONCURRENT replies for everyone and a smaller
+    share for each owner ("client:7", "ip:203.0.113.0").
+
+    An owner over its share is refused at once. When only the common places
+    are taken, the caller waits up to AI_QUEUE_SECONDS for one to become free.
+    """
+    global _ai_active
+    owners = tuple(owner for owner in owners if owner)
+    with _ai_lock:
+        if any(_ai_owners.get(owner, 0) >= _owner_limit(owner) for owner in owners):
+            raise _ai_busy()
+        for owner in owners:
+            _ai_owners[owner] = _ai_owners.get(owner, 0) + 1
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + setting('AI_QUEUE_SECONDS')
+    admitted = False
     try:
+        while not admitted:
+            with _ai_lock:
+                admitted = _ai_active < setting('AI_MAX_CONCURRENT')
+                if admitted:
+                    _ai_active += 1
+                    break
+                waiter = loop.create_future()
+                _ai_waiters.add(waiter)
+            try:
+                await asyncio.wait_for(waiter, timeout=max(0, deadline - loop.time()))
+            except TimeoutError:
+                raise _ai_busy() from None
+            finally:
+                _ai_waiters.discard(waiter)
         yield
     finally:
         with _ai_lock:
-            _ai_active -= 1
+            if admitted:
+                _ai_active -= 1
+            for owner in owners:
+                _ai_owners[owner] -= 1
+                if not _ai_owners[owner]:
+                    del _ai_owners[owner]
+            _wake_ai_waiters()
 
 
 class ResourceLimitsMiddleware:
