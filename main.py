@@ -13,10 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from ML.config import validate_chat_settings
+from mysite.admin.host import AdminHostMiddleware
 from mysite.admin.setup import setup_admin
 from mysite.api.about import about_router
 from mysite.api.about_section import about_section_router
-from mysite.api.admin import admin_router
 from mysite.api.admin_access import AdminAccessMiddleware
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
@@ -32,7 +32,6 @@ from mysite.api.home_content import home_content_router
 from mysite.api.hotel import hotel_router
 from mysite.api.image_routes import (helicopter_image_router, hotel_image_router, tour_image_router,
                                      transport_image_router, trekking_image_router)
-from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.observability import observability_router, validate_metrics_config
 from mysite.api.origin_config import configured_origins, validate_origin_settings
@@ -138,11 +137,11 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+app.add_middleware(AdminHostMiddleware)
 app.add_middleware(TrailingSlashMiddleware)
 
 
 # ADMIN ROUTER
-app.include_router(admin_router)
 app.include_router(media_router)
 app.include_router(video_media_router)
 
@@ -196,7 +195,6 @@ app.include_router(guest_ai_router)
 app.include_router(chat_images_router)
 app.include_router(chat_ws_router)
 app.include_router(selection_router)
-app.include_router(manager_selection_router)
 app.include_router(registration_router)
 app.include_router(observability_router)
 

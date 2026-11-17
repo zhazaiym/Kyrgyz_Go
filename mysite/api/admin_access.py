@@ -4,49 +4,22 @@ import binascii
 import json
 from base64 import b64decode
 
-from fastapi import HTTPException
-from fastapi.security import HTTPAuthorizationCredentials
 from itsdangerous import BadSignature, TimestampSigner
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-UPLOAD_PATHS = {
-    '/admin/media',
-    '/admin/media/upload',
-    '/admin/media/videos',
-    '/admin/media/video-upload',
-}
+UPLOAD_PATHS = {'/admin/media/upload', '/admin/media/video-upload'}
 
 
 def upload_admin_allowed(scope) -> bool:
     # Локальные импорты не связывают middleware с загрузкой
     # модулей API при импорте main.py.
-    from mysite.api.admin import SECRET_KEY, get_current_admin, require_admin_roles
+    from mysite.admin.credentials import SECRET_KEY
     from mysite.api.admin_sessions import setting, sql_session_admin
     from mysite.database.db import SessionLocal
 
     request = Request(scope)
-    path = scope.get('path', '').rstrip('/')
-
-    # Этот маршрут использует Bearer-токен.
-    if path in {'/admin/media', '/admin/media/videos'}:
-        authorization = request.headers.get('authorization', '')
-        scheme, _, token = authorization.partition(' ')
-
-        if scheme.lower() != 'bearer' or not token.strip():
-            return False
-
-        credentials = HTTPAuthorizationCredentials(scheme='Bearer', credentials=token.strip())
-
-        with SessionLocal() as db:
-            try:
-                admin = get_current_admin(credentials=credentials, db=db)
-                require_admin_roles('catalog_editor')(admin)
-            except HTTPException:
-                return False
-
-        return True
 
     # Загрузка из SQLAdmin использует подписанную session-cookie.
     cookie = request.cookies.get('session')

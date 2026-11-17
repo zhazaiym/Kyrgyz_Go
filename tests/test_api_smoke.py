@@ -44,75 +44,22 @@ def test_catalogue_detail_resources_are_public(client, customer_headers, path):
     assert client.get(path, headers=customer_headers).status_code == 200
 
 
-PROTECTED_WRITES = [
-    ('post', '/abouts/'),
-    ('put', '/abouts/1/'),
-    ('delete', '/abouts/1/'),
-    ('post', '/about-sections/'),
-    ('put', '/about-sections/1/'),
-    ('delete', '/about-sections/1/'),
-    ('post', '/tour-categories/'),
-    ('put', '/tour-categories/1/'),
-    ('delete', '/tour-categories/1/'),
-    ('post', '/tours/'),
-    ('put', '/tours/1/'),
-    ('delete', '/tours/1/'),
-    ('post', '/tours/1/translate/'),
-    ('post', '/countries/'),
-    ('put', '/countries/1/'),
-    ('delete', '/countries/1/'),
-    ('post', '/regions/'),
-    ('put', '/regions/1/'),
-    ('delete', '/regions/1/'),
-    ('post', '/districts/'),
-    ('put', '/districts/1/'),
-    ('delete', '/districts/1/'),
-    ('post', '/hotels/'),
-    ('put', '/hotels/1/'),
-    ('delete', '/hotels/1/'),
-    ('post', '/hotel-images/'),
-    ('put', '/hotel-images/1/'),
-    ('delete', '/hotel-images/1/'),
-    ('post', '/transports/'),
-    ('put', '/transports/1/'),
-    ('delete', '/transports/1/'),
-    ('post', '/transport-images/'),
-    ('put', '/transport-images/1/'),
-    ('delete', '/transport-images/1/'),
-    ('post', '/helicopter-tours/'),
-    ('put', '/helicopter-tours/1/'),
-    ('delete', '/helicopter-tours/1/'),
-    ('post', '/helicopter-images/'),
-    ('put', '/helicopter-images/1/'),
-    ('delete', '/helicopter-images/1/'),
-    ('post', '/trekkings/'),
-    ('put', '/trekkings/1/'),
-    ('delete', '/trekkings/1/'),
-    ('post', '/trekking-images/'),
-    ('put', '/trekking-images/1/'),
-    ('delete', '/trekking-images/1/'),
-    ('post', '/trekking-programs/'),
-    ('put', '/trekking-programs/1/'),
-    ('delete', '/trekking-programs/1/'),
-    ('post', '/faqs/'),
-    ('put', '/faqs/1/'),
-    ('delete', '/faqs/1/'),
-    ('post', '/contacts/'),
-    ('put', '/contacts/1/'),
-    ('delete', '/contacts/1/'),
-    ('post', '/tour-images/'),
-    ('put', '/tour-images/1/'),
-    ('delete', '/tour-images/1/'),
-    ('post', '/tour-programs/'),
-    ('put', '/tour-programs/1/'),
-    ('delete', '/tour-programs/1/'),
-]
-
-
-@pytest.mark.parametrize(('method', 'path'), PROTECTED_WRITES)
-def test_catalogue_writes_reject_anonymous_requests(client, method, path):
-    response = client.request(method.upper(), path, json={})
-    assert response.status_code == 401, f'{method.upper()} {path}: {response.text}'
+def test_catalogue_is_read_only_through_the_api(client):
+    paths = client.get('/openapi.json').json()['paths']
+    writes = {
+        path for path, operations in paths.items() for method in operations if method != 'get'
+    }
+    client_areas = (
+        '/account/',
+        '/auth/',
+        '/chat/',
+        '/booking/',
+        '/travel-requests/',
+        '/travel-selections/',
+        '/api/ask-ai/',
+        '/tours/{tour_id}/reviews/',
+    )
+    assert all(path.startswith(client_areas) for path in writes), sorted(writes)
 
 
 def test_private_customer_routes_reject_anonymous_requests(client):
@@ -126,10 +73,9 @@ def test_private_customer_routes_reject_anonymous_requests(client):
         },
     )
     assert request.status_code == 401
-    assert client.get('/travel-requests/').status_code == 401
-    assert client.get('/travel-requests/1/').status_code == 401
-    assert client.put('/travel-requests/1/', json={}).status_code == 401
-    assert client.delete('/travel-requests/1/').status_code == 401
+    assert client.get('/travel-requests/').status_code == 405
+    for method in ('get', 'put', 'delete'):
+        assert client.request(method, '/travel-requests/1/').status_code == 404
 
 
 def test_openapi_advertises_client_requests_and_chat_booking(client):
@@ -140,15 +86,11 @@ def test_openapi_advertises_client_requests_and_chat_booking(client):
     assert '/booking/confirm/' in paths
 
 
-def test_legacy_booking_submission_requires_chat(client, admin_headers):
-    category = client.post(
-        '/tour-categories/', json={'name': 'Booking category'}, headers=admin_headers
-    ).json()
-    tour = client.post(
-        '/tours/',
-        json={'category_id': category['id'], 'title': 'Bookable tour', 'price': '50.00'},
-        headers=admin_headers,
-    ).json()
+def test_legacy_booking_submission_requires_chat(client, seed):
+    from mysite.database.models import Tour, TourCategory
+
+    category_id = seed(TourCategory, name='Booking category')
+    tour = {'id': seed(Tour, category_id=category_id, title='Bookable tour', price=50)}
 
     response = client.post(
         '/bookings/',

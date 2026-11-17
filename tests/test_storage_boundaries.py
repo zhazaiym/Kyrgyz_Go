@@ -25,9 +25,7 @@ from mysite.database.db import SessionLocal
         ('/contacts/', {'email': 'invalid-email'}),
     ],
 )
-def test_invalid_storage_values_return_validation_errors_before_postgresql(
-    client, admin_headers, path, changes
-):
+def test_invalid_storage_values_are_rejected_before_postgresql(path, changes):
     with SessionLocal() as db:
         region = m.Region(name='Boundary region')
         district = m.District(name='Boundary district', region=region)
@@ -42,27 +40,25 @@ def test_invalid_storage_values_return_validation_errors_before_postgresql(
         '/trekkings/': {'title': 'Boundary trek', 'price': 10},
         '/contacts/': {'city': 'Boundary city'},
     }[path]
-    assert client.post(path, headers=admin_headers, json={**base, **changes}).status_code == 422
-
-
-def test_unknown_country_is_not_a_database_exception(client, admin_headers):
-    assert (
-        client.post(
-            '/tours/',
-            headers=admin_headers,
-            json={'title': 'Missing country', 'price': 10, 'country_id': 2_147_483_647},
-        ).status_code
-        == 404
-    )
-
-
-def test_partial_group_update_checks_existing_other_bound(client, admin_headers):
+    model = {
+        '/tours/': m.Tour,
+        '/hotels/': m.Hotel,
+        '/transports/': m.Transport,
+        '/helicopter-tours/': m.HelicopterTour,
+        '/trekkings/': m.Trekking,
+        '/contacts/': m.Contact,
+    }[path]
     with SessionLocal() as db:
-        tour = m.Tour(title='Group boundaries', price=10, min_people=1, max_people=4)
-        db.add(tour)
-        db.commit()
-        identity = tour.id
-    response = client.put(f'/tours/{identity}/', headers=admin_headers, json={'min_people': 5})
-    assert response.status_code == 422
+        db.add(model(**{**base, **changes}))
+        with pytest.raises(ValueError):
+            db.flush()
+
+
+def test_partial_group_update_checks_existing_other_bound(seed):
+    identity = seed(m.Tour, title='Group boundaries', price=10, min_people=1, max_people=4)
+    with SessionLocal() as db:
+        db.get(m.Tour, identity).min_people = 5
+        with pytest.raises(ValueError):
+            db.flush()
     with SessionLocal() as db:
         assert db.get(m.Tour, identity).min_people == 1

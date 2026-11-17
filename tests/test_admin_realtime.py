@@ -1,4 +1,4 @@
-def test_authenticated_admin_receives_new_request_event(client, admin_headers):
+def test_authenticated_admin_receives_new_request_event(client, panel_admin):
     from mysite.admin.realtime import publish_new_request
 
     login = client.post(
@@ -13,7 +13,7 @@ def test_authenticated_admin_receives_new_request_event(client, admin_headers):
         assert websocket.receive_json() == {'type': 'new_request', 'request_id': 713}
 
 
-def test_admin_request_list_includes_live_update_script(client, admin_headers):
+def test_admin_request_list_includes_live_update_script(client, panel_admin):
     client.post(
         '/admin/login',
         data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},

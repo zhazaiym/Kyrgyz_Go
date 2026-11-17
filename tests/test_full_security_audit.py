@@ -2,7 +2,6 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
-import jwt
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -10,58 +9,11 @@ from sqlalchemy import event
 
 from main import app
 from mysite.api import chat_service, rate_limit
-from mysite.api.admin import SECRET_KEY, password_hash
 from mysite.api.resource_limits import ResourceLimitsMiddleware
 from mysite.database import models as m
 from mysite.database.chat_models import ChatMessage
 from mysite.database.db import SessionLocal, engine
 from tests.test_main_regressions import headers, register
-
-
-@pytest.mark.parametrize(
-    'claims,algorithm',
-    [
-        ({'sub': '1'}, 'HS256'),
-        ({'exp': 4_000_000_000}, 'HS256'),
-        ({'sub': '1', 'exp': 1}, 'HS256'),
-        ({'sub': '1', 'exp': 4_000_000_000}, 'HS384'),
-        ({'sub': '1', 'exp': 4_000_000_000}, 'none'),
-    ],
-)
-def test_admin_jwt_rejects_missing_claims_expiration_and_wrong_algorithms(
-    client, claims, algorithm
-):
-    # A longer valid HS384 key avoids a warning unrelated to algorithm rejection.
-    key = (
-        None
-        if algorithm == 'none'
-        else (SECRET_KEY + 'padding-for-hs384' if algorithm == 'HS384' else SECRET_KEY)
-    )
-    token = jwt.encode(claims, key, algorithm=algorithm)
-    assert client.get('/admin/me/', headers={'Authorization': 'Bearer ' + token}).status_code == 401
-
-
-def test_admin_token_is_revoked_by_deactivation(client):
-    with SessionLocal() as db:
-        admin = m.Admin(
-            username='disabled_' + uuid4().hex[:12],
-            hashed_password=password_hash.hash('AuditPassword123!'),
-        )
-        db.add(admin)
-        db.commit()
-        identity = admin.id
-    from mysite.api.admin_sessions import new_session, token_pair
-
-    with SessionLocal() as db:
-        session, refresh = new_session(db, identity)
-        token = token_pair(session, refresh)['access_token']
-        db.commit()
-    auth = {'Authorization': 'Bearer ' + token}
-    assert client.get('/admin/me/', headers=auth).status_code == 200
-    with SessionLocal() as db:
-        db.get(m.Admin, identity).is_active = False
-        db.commit()
-    assert client.get('/admin/me/', headers=auth).status_code == 401
 
 
 @pytest.mark.parametrize(
@@ -299,7 +251,7 @@ def test_cookie_admin_actions_reject_cross_site_requests(client):
     assert response.status_code == 403
 
 
-def test_sqladmin_escapes_stored_html_in_catalogue_details(client, admin_headers):
+def test_sqladmin_escapes_stored_html_in_catalogue_details(client, panel_admin):
     marker = '<script>window.__stored_xss_marker__=1</script>'
     with SessionLocal() as db:
         row = m.Tour(title='XSS audit', description=marker, price=10)

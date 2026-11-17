@@ -11,8 +11,8 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
+from mysite.admin.credentials import password_hash
 from mysite.api import oauth_providers
-from mysite.api.admin import password_hash
 from mysite.api.provider_secrets import open_secret, seal_secret
 from mysite.api.social_auth import configured, valid_secret
 from mysite.database.db import SessionLocal

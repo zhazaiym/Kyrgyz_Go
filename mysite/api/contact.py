@@ -1,32 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import Contact
-from mysite.database.schemas.content import (ContactInputSchema, ContactOutSchema,
-                                             ContactUpdateSchema)
-from mysite.translations.content import Language, localized, update_translations
+from mysite.database.schemas.content import ContactOutSchema
+from mysite.translations.content import Language, localized
 
 contact_router = APIRouter(prefix='/contacts', tags=['Contacts'])
-
-
-@contact_router.post(
-    '/',
-    response_model=ContactOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def create_contact(contact: ContactInputSchema, db: Session = Depends(get_db)):
-    contact_db = Contact(**contact.model_dump())
-
-    db.add(contact_db)
-    update_translations(contact_db)
-    db.commit()
-    db.refresh(contact_db)
-
-    return contact_db
 
 
 @contact_router.get('/', response_model=list[ContactOutSchema])
@@ -51,44 +33,3 @@ def detail_contact(contact_id: int, lang: Language = 'ru', db: Session = Depends
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return localized(contact_db, lang)
-
-
-@contact_router.put(
-    '/{contact_id}/',
-    response_model=ContactOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def update_contact(contact_id: int, contact: ContactUpdateSchema, db: Session = Depends(get_db)):
-    contact_db = db.get(Contact, contact_id)
-
-    if contact_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    data = contact.model_dump(exclude_unset=True)
-
-    if 'is_active' in data and data['is_active'] is None:
-        raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
-
-    for key, value in data.items():
-        setattr(contact_db, key, value)
-
-    update_translations(contact_db)
-    db.commit()
-    db.refresh(contact_db)
-
-    return contact_db
-
-
-@contact_router.delete(
-    '/{contact_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def delete_contact(contact_id: int, db: Session = Depends(get_db)):
-    contact_db = db.get(Contact, contact_id)
-
-    if contact_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    db.delete(contact_db)
-    db.commit()
-
-    return success_detail('deleted')

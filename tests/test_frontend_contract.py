@@ -4,9 +4,10 @@ import pytest
 
 from mysite.database import models
 from mysite.database.db import SessionLocal
+from mysite.translations.source import source_field_hash
 
 
-def test_helicopter_fields_are_returned(client, admin_headers, customer_headers):
+def test_helicopter_fields_are_returned(client, seed, customer_headers):
     fields = dict(
         duration_minutes=45,
         max_passengers=4,
@@ -14,81 +15,47 @@ def test_helicopter_fields_are_returned(client, admin_headers, customer_headers)
         destination='Ala-Archa',
         main_image='https://example.com/helicopter.jpg',
     )
-    response = client.post(
-        '/helicopter-tours/',
-        headers=admin_headers,
-        json=dict(title='Contract flight', price='1000', **fields),
-    )
-    assert response.status_code == 200, response.text
-    flight = response.json()
-    for path in ['/helicopter-tours/', f'/helicopter-tours/{flight["id"]}/']:
+    identity = seed(models.HelicopterTour, title='Contract flight', price=1000, **fields)
+    for path in ['/helicopter-tours/', f'/helicopter-tours/{identity}/']:
         data = client.get(path, headers=customer_headers).json()
-        item = next(x for x in data if x['id'] == flight['id']) if isinstance(data, list) else data
+        item = next(x for x in data if x['id'] == identity) if isinstance(data, list) else data
         assert {key: item.get(key) for key in fields} == fields
 
 
-def test_tour_coordinates_round_trip_and_validation(
-    client, admin_headers, customer_headers, monkeypatch
-):
-    monkeypatch.setattr(
-        'mysite.api.tour.translate_tour', lambda data: {lang: data for lang in ('en', 'de', 'zh')}
-    )
-    response = client.post(
-        '/tours/',
-        headers=admin_headers,
-        json={'title': 'Map tour', 'price': '100', 'latitude': 42.64, 'longitude': 74.48},
-    )
-    assert response.status_code == 200, response.text
-    tour = response.json()
-    detail = client.get(f'/tours/{tour["id"]}/', headers=customer_headers).json()
-    assert Decimal(str(detail.get('latitude'))) == Decimal('42.64')
-    assert Decimal(str(detail.get('longitude'))) == Decimal('74.48')
-    response = client.put(f'/tours/{tour["id"]}/', headers=admin_headers, json={'latitude': -91})
-    assert response.status_code == 422
-    response = client.put(
-        f'/tours/{tour["id"]}/', headers=admin_headers, json={'latitude': None, 'longitude': None}
-    )
-    assert response.status_code == 200
-    assert response.json()['latitude'] is None
-
-
 def test_tour_category_returns_cards_and_home_slides_return_descriptions(
-    client, admin_headers, customer_headers, monkeypatch
+    client, seed, customer_headers
 ):
-    monkeypatch.setattr(
-        'mysite.api.tour.translate_tour',
-        lambda data: {
-            lang: dict(
-                data, title=f'{data["title"]} {lang}', description=f'{data["description"]} {lang}'
-            )
-            for lang in ('en', 'de', 'zh')
+    category_id = seed(models.TourCategory, name='Visible category')
+    tour_id = seed(
+        models.Tour,
+        category_id=category_id,
+        title='Visible tour',
+        description='Description',
+        price=10,
+        main_image='https://example.com/tour.jpg',
+    )
+    seed(
+        models.TourTranslation,
+        tour_id=tour_id,
+        lang='en',
+        title='Visible tour en',
+        description='Description en',
+        source_hashes={
+            'title': source_field_hash('Visible tour'),
+            'description': source_field_hash('Description'),
         },
     )
-    category = client.post(
-        '/tour-categories/', json={'name': 'Visible category'}, headers=admin_headers
-    ).json()
-    tour = client.post(
-        '/tours/',
-        headers=admin_headers,
-        json={
-            'category_id': category['id'],
-            'title': 'Visible tour',
-            'description': 'Description',
-            'price': '10',
-            'main_image': 'https://example.com/tour.jpg',
-        },
-    ).json()
 
-    by_category = client.get(f'/tours/category/{category["id"]}/?lang=en')
+    by_category = client.get(f'/tours/category/{category_id}/?lang=en')
     assert by_category.status_code == 200, by_category.text
     assert by_category.json()[0]['title'] == 'Visible tour en'
     assert not {'description', 'included', 'excluded'} & by_category.json()[0].keys()
-    detail = client.get(f'/tours/{tour["id"]}/?lang=en', headers=customer_headers)
+    detail = client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers)
     assert detail.status_code == 200 and detail.json()['description'] == 'Description en'
 
     slides = client.get('/tours/home/slides/?lang=en')
     assert slides.status_code == 200, slides.text
-    slide = next(item for item in slides.json()['slides'] if item['id'] == tour['id'])
+    slide = next(item for item in slides.json()['slides'] if item['id'] == tour_id)
     assert slide['description'] == 'Description en'
 
 
@@ -220,51 +187,19 @@ def test_inactive_catalogue_resources_are_hidden(client, customer_headers):
         assert client.get(f'{path}{record_id}/', headers=customer_headers).status_code == 404
 
 
-def test_inactive_public_content_is_hidden(client, admin_headers):
-    for path, payload in (
-        ('/abouts/', {'title': 'Hidden about', 'is_active': False}),
-        ('/about-sections/', {'title': 'Hidden section', 'is_active': False}),
-        ('/faqs/', {'question': 'Hidden question', 'answer': 'Hidden answer', 'is_active': False}),
-        ('/contacts/', {'city': 'Hidden contact', 'is_active': False}),
+def test_inactive_public_content_is_hidden(client, seed):
+    for path, model, fields in (
+        ('/abouts/', models.About, {'title': 'Hidden about'}),
+        ('/about-sections/', models.AboutSection, {'title': 'Hidden section'}),
+        ('/faqs/', models.FAQ, {'question': 'Hidden question', 'answer': 'Hidden answer'}),
+        ('/contacts/', models.Contact, {'city': 'Hidden contact'}),
     ):
-        created = client.post(path, json=payload, headers=admin_headers)
-        assert created.status_code == 200, created.text
-        item_id = created.json()['id']
+        item_id = seed(model, is_active=False, **fields)
         assert all(item['id'] != item_id for item in client.get(path).json())
-        if path == '/contacts/':
-            assert client.get(f'{path}{item_id}/', headers=admin_headers).status_code == 404
-        else:
-            assert client.get(f'{path}{item_id}/').status_code == 404
+        assert client.get(f'{path}{item_id}/').status_code == 404
 
 
-def test_api_updates_translations_and_clears_stale_text_on_failure(
-    client, admin_headers, monkeypatch
-):
-    response = client.post(
-        '/faqs/',
-        headers=admin_headers,
-        json={'question': 'First question', 'answer': 'First answer'},
-    )
-    record_id = response.json()['id']
-    assert client.get(f'/faqs/{record_id}/?lang=en').json()['question'] == 'First question en'
-    response = client.put(
-        f'/faqs/{record_id}/', headers=admin_headers, json={'question': 'Second question'}
-    )
-    assert response.status_code == 200
-    assert client.get(f'/faqs/{record_id}/?lang=en').json()['question'] == 'Second question en'
-
-    def fail(source):
-        raise RuntimeError('Translation provider unavailable')
-
-    monkeypatch.setattr('mysite.translations.content.translate_fields', fail)
-    response = client.put(
-        f'/faqs/{record_id}/', headers=admin_headers, json={'question': 'Third question'}
-    )
-    assert response.status_code == 200
-    assert client.get(f'/faqs/{record_id}/?lang=en').json()['question'] == 'Third question'
-
-
-def test_sqladmin_generates_translations(client, admin_headers):
+def test_sqladmin_generates_translations(client, panel_admin):
     response = client.post(
         '/admin/login',
         data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},
@@ -290,7 +225,7 @@ def test_sqladmin_generates_translations(client, admin_headers):
 
 
 def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues(
-    client, admin_headers, monkeypatch
+    client, panel_admin, monkeypatch
 ):
     from mysite.database.models import FAQ
     from mysite.translations.jobs import translate_record
@@ -368,7 +303,7 @@ def test_sqladmin_form_preserves_worker_translations_and_explicit_clear_requeues
 
 
 def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_update(
-    client, admin_headers, monkeypatch
+    client, panel_admin, monkeypatch
 ):
     import json
 
@@ -449,45 +384,7 @@ def test_sqladmin_stale_empty_translation_does_not_erase_concurrent_worker_updat
         assert saved['_manual_fields'] == []
 
 
-def test_tour_rest_put_only_normalizing_line_endings_keeps_translation(
-    client, admin_headers, customer_headers
-):
-    from mysite.translations.source import source_field_hash
-
-    title_crlf = 'Tour title\r\nsecond line'
-    title_lf = 'Tour title\nsecond line'
-    description_crlf = 'Description\r\nsecond line'
-    with SessionLocal() as db:
-        tour = models.Tour(title=title_crlf, description=description_crlf, price=10)
-        db.add(tour)
-        db.flush()
-        db.add(
-            models.TourTranslation(
-                tour_id=tour.id,
-                lang='en',
-                title='Stable English title',
-                description='Stable English description',
-                source_hashes={
-                    'title': source_field_hash(title_crlf),
-                    'description': source_field_hash(description_crlf),
-                },
-            )
-        )
-        tour_id = tour.id
-        db.commit()
-
-    updated = client.put(f'/tours/{tour_id}/', headers=admin_headers, json={'title': title_lf})
-    assert updated.status_code == 200, updated.text
-    detail = client.get(f'/tours/{tour_id}/?lang=en', headers=customer_headers)
-    assert detail.status_code == 200, detail.text
-    assert detail.json()['title'] == 'Stable English title'
-    assert detail.json()['description'] == 'Stable English description'
-    search = client.get('/tours/', params={'lang': 'en', 'search': 'Stable English title'})
-    assert search.status_code == 200, search.text
-    assert any(item['id'] == tour_id for item in search.json())
-
-
-def test_sqladmin_preserves_manual_translation(client, admin_headers):
+def test_sqladmin_preserves_manual_translation(client, panel_admin):
     client.post(
         '/admin/login', data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'}
     )
@@ -578,7 +475,7 @@ def test_tour_admin_hooks_refresh_translations_and_remove_stale_values(
 
 
 def test_sqladmin_saved_whitespace_translation_is_cleared_and_enqueued_only_once(
-    client, admin_headers, monkeypatch
+    client, panel_admin, monkeypatch
 ):
     import json
 

@@ -51,7 +51,7 @@ def complete_state():
     ],
 )
 def test_complete_chat_requires_approval_and_shows_in_admin(
-    client, admin_headers, monkeypatch, approval
+    client, panel_admin, monkeypatch, approval
 ):
     from mysite.api import chat_service
 
@@ -183,7 +183,7 @@ def test_bare_yes_after_preview_does_not_submit(client, monkeypatch):
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
 
 
-def test_unified_admin_includes_ordinary_requests(client, admin_headers):
+def test_unified_admin_includes_ordinary_requests(client, panel_admin):
     with SessionLocal() as db:
         ordinary = TravelRequest(name='Ordinary external request', phone='+996700999999')
         db.add(ordinary)
@@ -339,7 +339,7 @@ def test_preview_rejects_invalid_collected_values(field, value):
     assert field in preview['missing_fields']
 
 
-def test_websocket_booking_reaches_admin_with_collected_data(client, admin_headers, monkeypatch):
+def test_websocket_booking_reaches_admin_with_collected_data(client, panel_admin, monkeypatch):
     from mysite.api import chat_service
 
     token, identity, session_id = start_chat(client, 'socket_booking_admin')
@@ -384,7 +384,7 @@ def test_websocket_booking_reaches_admin_with_collected_data(client, admin_heade
 
 
 def test_incremental_collection_preserves_answers_and_waits_for_confirmation(
-    client, admin_headers, monkeypatch
+    client, panel_admin, monkeypatch
 ):
     from langchain_core.messages import AIMessageChunk
 
@@ -571,7 +571,7 @@ def test_confirmation_before_summary_lists_missing_fields_without_ai(client, mon
         assert db.query(ChatBookingLink).filter_by(session_id=session_id).count() == 0
 
 
-def test_confirmation_before_summary_shows_full_summary_then_submits(client, admin_headers):
+def test_confirmation_before_summary_shows_full_summary_then_submits(client, panel_admin):
     from mysite.api import chat_service
 
     token, identity, session_id = start_chat(client, 'confirm_before_summary_complete')

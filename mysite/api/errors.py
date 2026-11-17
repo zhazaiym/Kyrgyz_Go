@@ -33,18 +33,6 @@ STATUS_CODES = {
 }
 
 
-SUCCESS_MESSAGES = {
-    'deleted': 'Запись удалена',
-    'translated': 'Перевод выполнен',
-    'directions_ready': 'Направления созданы',
-}
-
-
-def success_detail(code):
-    """A finished action: a stable code for the site and a Russian text for people."""
-    return {'code': code, 'message': SUCCESS_MESSAGES[code]}
-
-
 def error_detail(code):
     return {'code': code, 'message': ERROR_MESSAGES[code]}
 

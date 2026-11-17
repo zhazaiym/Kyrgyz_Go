@@ -25,7 +25,7 @@ def count_selects(client, path, auth):
     return len(queries), response.json()
 
 
-def test_catalogue_and_selection_queries_stay_constant_as_page_grows(client, admin_headers):
+def test_catalogue_and_selection_queries_stay_constant_as_page_grows(client):
     account, _ = register(client)
     marker = 'QueryScale' + uuid4().hex[:10]
     samples = {}
@@ -69,7 +69,6 @@ def test_catalogue_and_selection_queries_stay_constant_as_page_grows(client, adm
         for path, auth in [
             (f'/tours/?lang=en&search={marker}', headers(account)),
             ('/travel-selections/me/', headers(account)),
-            ('/manager/travel-selections/', admin_headers),
         ]:
             number, _ = count_selects(client, path, auth)
             samples[size, path] = number

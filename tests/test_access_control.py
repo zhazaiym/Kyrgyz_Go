@@ -3,23 +3,12 @@ def test_catalogue_read_is_public(client):
     assert response.status_code == 200
 
 
-def test_catalogue_write_requires_admin(client):
-    response = client.post('/tour-categories/', json={'name': 'Protected'})
-    assert response.status_code == 401
+def test_contact_listing_is_public(client, seed):
+    from mysite.database.models import Contact
 
-
-def test_admin_can_write_catalogue(client, admin_headers):
-    response = client.post('/tour-categories/', json={'name': 'Authorized'}, headers=admin_headers)
-    assert response.status_code == 200, response.text
-
-
-def test_contact_listing_is_public_and_writes_require_admin(client, admin_headers):
-    response = client.post('/contacts/', json={'phone': '+996700000000'})
-    assert response.status_code == 401, response.text
-    response = client.post('/contacts/', json={'phone': '+996700000000'}, headers=admin_headers)
-    assert response.status_code == 200, response.text
+    identity = seed(Contact, phone='+996700000000')
     assert client.get('/contacts/').status_code == 200
-    assert client.get(f'/contacts/{response.json()["id"]}/').status_code == 200
+    assert client.get(f'/contacts/{identity}/').status_code == 200
 
 
 def test_travel_request_submission_requires_client_and_listing_is_private(client):
@@ -33,13 +22,7 @@ def test_travel_request_submission_requires_client_and_listing_is_private(client
         },
     )
     assert response.status_code == 401, response.text
-    assert client.get('/travel-requests/').status_code == 401
-
-
-def test_admin_can_list_travel_requests(client, admin_headers):
-    response = client.get('/travel-requests/', headers=admin_headers)
-    assert response.status_code == 200, response.text
-    assert isinstance(response.json(), list)
+    assert client.get('/travel-requests/').status_code == 405
 
 
 def test_sqladmin_requires_login(client):
@@ -48,8 +31,7 @@ def test_sqladmin_requires_login(client):
     assert response.headers['location'].endswith('/admin/login')
 
 
-def test_sqladmin_accepts_existing_admin_credentials(client, admin_headers):
-    del admin_headers
+def test_sqladmin_accepts_existing_admin_credentials(client, panel_admin):
     response = client.post(
         '/admin/login',
         data={'username': 'test-admin', 'password': 'StrongAdminPassword123!'},

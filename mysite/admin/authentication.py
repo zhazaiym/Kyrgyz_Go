@@ -4,7 +4,7 @@ from fastapi import HTTPException, Request
 from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
 
-from mysite.api.admin import SECRET_KEY, dummy_admin_hash, verify_password
+from mysite.admin.credentials import SECRET_KEY, dummy_admin_hash, verify_password
 from mysite.api.admin_sessions import new_session, setting, sql_session_admin
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.admin_security_models import AdminSession
@@ -42,7 +42,7 @@ class AdminAuthBackend(AuthenticationBackend):
             admin = db.get(Admin, identity, with_for_update=True, populate_existing=True)
             if not admin or not admin.is_active or admin.hashed_password != encoded:
                 return None
-            row, _ = new_session(db, identity, request.headers.get('user-agent', ''))
+            row = new_session(db, identity, request.headers.get('user-agent', ''))
             result = (identity, row.id, row.created_at.timestamp())
             db.commit()
             return result

@@ -5,19 +5,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from mysite.admin.realtime import publish_new_request
-from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import require_status_transition
-from mysite.database.chat_models import ChatBookingLink, ChatClient
+from mysite.database.chat_models import ChatClient
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
 from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
-from mysite.database.schemas.requests import TravelRequestOutSchema, TravelRequestUpdateSchema
+from mysite.database.schemas.requests import TravelRequestOutSchema
 from mysite.database.selection_models import TravelSelection
-from mysite.database.travel_request_queries import list_travel_requests as query_travel_requests
 from mysite.database.traveler_validation import MAX_TRAVELERS, validate_travelers_count
 from mysite.dates import bishkek_today
 from mysite.phone_validation import Phone
@@ -133,76 +131,3 @@ def cancel_my_travel_request(
     db.commit()
     db.refresh(request)
     return request
-
-
-@travel_request_router.get(
-    '/',
-    response_model=list[TravelRequestOutSchema],
-    dependencies=[Depends(require_admin_roles('manager'))],
-)
-def list_travel_requests(db: Session = Depends(get_db), pagination: Pagination = Depends()):
-    return query_travel_requests(db, pagination.offset, pagination.limit)
-
-
-@travel_request_router.get(
-    '/{request_id}/',
-    response_model=TravelRequestOutSchema,
-    dependencies=[Depends(require_admin_roles('manager'))],
-)
-def detail_travel_request(request_id: int, db: Session = Depends(get_db)):
-    request_db = db.get(TravelRequest, request_id)
-
-    if request_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    return request_db
-
-
-@travel_request_router.put(
-    '/{request_id}/',
-    response_model=TravelRequestOutSchema,
-    dependencies=[Depends(require_admin_roles('manager'))],
-)
-def update_travel_request(
-    request_id: int, request: TravelRequestUpdateSchema, db: Session = Depends(get_db)
-):
-    request_db = db.get(TravelRequest, request_id, with_for_update=True, populate_existing=True)
-
-    if request_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    data = request.model_dump(exclude_unset=True)
-    if 'status' in data:
-        require_status_transition(request_db.status, data['status'])
-
-    for field in ('name', 'phone', 'status'):
-        if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
-
-    for key, value in data.items():
-        setattr(request_db, key, value)
-
-    db.commit()
-    db.refresh(request_db)
-
-    return request_db
-
-
-@travel_request_router.delete(
-    '/{request_id}/', dependencies=[Depends(require_admin_roles('manager'))]
-)
-def delete_travel_request(request_id: int, db: Session = Depends(get_db)):
-    request_db = db.get(TravelRequest, request_id)
-
-    if request_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    if (
-        request_db.selection_id is not None
-        or db.query(ChatBookingLink.id).filter(ChatBookingLink.request_id == request_id).first()
-    ):
-        raise HTTPException(409, error_detail('conflict'))
-    db.delete(request_db)
-    db.commit()
-
-    return success_detail('deleted')

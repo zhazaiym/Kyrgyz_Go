@@ -8,10 +8,9 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from mysite.api.admin import require_admin_roles
 from mysite.api.errors import error_detail
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL
 from mysite.api.resource_limits import setting
@@ -123,10 +122,3 @@ async def save_video_upload(request: Request) -> dict:
         if not hasattr(upload, 'file'):
             raise HTTPException(400, detail=error_detail('invalid_request'))
         return await run_in_threadpool(store_video, upload.file)
-
-
-@video_media_router.post(
-    '/videos/', status_code=201, dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-async def upload_video(request: Request):
-    return await save_video_upload(request)

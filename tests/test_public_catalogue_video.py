@@ -60,16 +60,15 @@ def test_nested_resources_hide_inactive_and_missing_parents(
     assert child_id not in [item['id'] for item in client.get(f'/{path}/').json()]
 
 
-def upload(client, headers, content, filename='untrusted.bin', mime='application/octet-stream'):
-    return client.post(
-        '/admin/media/videos/', headers=headers, files={'file': (filename, content, mime)}
-    )
+def upload(client, content, filename='untrusted.bin', mime='application/octet-stream'):
+    return client.post('/admin/media/video-upload', files={'file': (filename, content, mime)})
 
 
 @pytest.mark.parametrize('extension,mime', [('mp4', 'video/mp4'), ('webm', 'video/webm')])
-def test_real_video_upload_attach_read_update_delete(client, admin_headers, extension, mime):
+def test_real_video_upload_attach_and_read(panel, seed, extension, mime):
+    client = panel
     content = (Path(__file__).parent / 'fixtures' / f'video.{extension}').read_bytes()
-    response = upload(client, admin_headers, content, '../../wrong.exe', 'text/plain')
+    response = upload(client, content, '../../wrong.exe', 'text/plain')
     assert response.status_code == 201, response.text
     stored = response.json()
     assert stored['content_type'] == mime and stored['size'] == len(content)
@@ -81,60 +80,33 @@ def test_real_video_upload_attach_read_update_delete(client, admin_headers, exte
     assert partial.status_code == 206
     assert partial.content == content[:32]
     assert partial.headers['content-range'] == f'bytes 0-31/{len(content)}'
-    tour = client.post(
-        '/tours/', headers=admin_headers, json={'title': 'Video example', 'price': 100}
-    ).json()
-    tour_id = tour['id']
+    tour_id = seed(m.Tour, title='Video example', price=100)
     assert client.get(f'/tours/{tour_id}/').json()['videos'] == []
-    attached = client.post(
-        '/tour-videos/',
-        headers=admin_headers,
-        json={'tour_id': tour_id, 'video_url': stored['url'], 'order': 2},
-    )
-    assert attached.status_code == 200, attached.text
-    video_id = attached.json()['id']
-    second = client.post(
-        '/tour-videos/',
-        headers=admin_headers,
-        json={'tour_id': tour_id, 'video_url': stored['url'], 'order': 1},
-    ).json()
+    video_id = seed(m.TourVideo, tour_id=tour_id, video_url=stored['url'], order=2)
+    second_id = seed(m.TourVideo, tour_id=tour_id, video_url=stored['url'], order=1)
     detail = client.get(f'/tours/{tour_id}/').json()
-    assert [row['id'] for row in detail['videos']] == [second['id'], video_id]
+    assert [row['id'] for row in detail['videos']] == [second_id, video_id]
     assert 'images' in detail and 'main_image' in detail
-    assert (
-        client.put(
-            f'/tour-videos/{video_id}/',
-            headers=admin_headers,
-            json={'order': 0, 'poster_url': '/media/poster.webp'},
-        ).status_code
-        == 200
-    )
-    assert client.delete(f'/tour-videos/{video_id}/', headers=admin_headers).status_code == 200
+    with SessionLocal() as db:
+        db.delete(db.get(m.TourVideo, video_id))
+        db.commit()
     assert client.get(f'/tour-videos/{video_id}/').status_code == 404
 
 
-def test_video_rejections_cleanup_and_permissions(
-    client, admin_headers, customer_headers, monkeypatch, tmp_path
-):
+def test_video_rejections_cleanup_and_login(panel, monkeypatch, tmp_path):
     monkeypatch.setattr(video_media, 'MEDIA_ROOT', tmp_path)
-    for headers in ({}, customer_headers):
-        assert upload(client, headers, b'data').status_code == 401
-        for method, path in [
-            ('post', '/tour-videos/'),
-            ('put', '/tour-videos/1/'),
-            ('delete', '/tour-videos/1/'),
-        ]:
-            assert client.request(method, path, headers=headers, json={}).status_code == 401
     for content in (b'not a video', b'\x00\x00\x00\x18ftypisom' + b'\0' * 500):
-        assert upload(client, admin_headers, content, 'fake.mp4', 'video/mp4').status_code == 400
+        assert upload(panel, content, 'fake.mp4', 'video/mp4').status_code == 400
     assert not list(tmp_path.rglob('*.upload'))
     monkeypatch.setenv('MAX_VIDEO_UPLOAD_BYTES', '100')
     from mysite.api.resource_limits import setting
 
     setting.cache_clear()
-    assert upload(client, admin_headers, b'x' * 101).status_code == 413
-    assert upload(client, admin_headers, b'x' * 66000).status_code == 413
+    assert upload(panel, b'x' * 101).status_code == 413
+    assert upload(panel, b'x' * 66000).status_code == 413
     assert not [path for path in tmp_path.rglob('*') if path.is_file()]
+    panel.get('/admin/logout')
+    assert upload(panel, b'data').status_code == 401
 
 
 def test_video_detail_query_count_is_constant(client):
@@ -177,13 +149,13 @@ def test_store_video_reads_bounded_chunks_and_removes_partial_file(monkeypatch, 
     assert not [path for path in tmp_path.rglob('*') if path.is_file()]
 
 
-def test_video_roles_and_sqladmin_management(client, admin_headers):
+def test_video_roles_and_sqladmin_management():
     from uuid import uuid4
 
     from fastapi.testclient import TestClient
 
     from main import app
-    from mysite.api.admin import password_hash
+    from mysite.admin.credentials import password_hash
 
     content = (Path(__file__).parent / 'fixtures' / 'video.mp4').read_bytes()
     for role in ('manager', 'catalog_editor'):
@@ -194,11 +166,6 @@ def test_video_roles_and_sqladmin_management(client, admin_headers):
                 m.Admin(username=username, hashed_password=password_hash.hash(password), role=role)
             )
             db.commit()
-        tokens = client.post('/admin/login/', json={'username': username, 'password': password})
-        assert tokens.status_code == 200
-        headers = {'Authorization': 'Bearer ' + tokens.json()['access_token']}
-        response = upload(client, headers, content)
-        assert response.status_code == (201 if role == 'catalog_editor' else 401)
         with TestClient(app) as browser:
             assert (
                 browser.post(
@@ -220,7 +187,7 @@ def test_video_roles_and_sqladmin_management(client, admin_headers):
             assert result.status_code == (201 if role == 'catalog_editor' else 401)
 
 
-def test_video_upload_unknown_length_request_is_bounded(client, admin_headers, monkeypatch):
+def test_video_upload_unknown_length_request_is_bounded(panel, monkeypatch):
     from mysite.api.resource_limits import setting
 
     monkeypatch.setenv('MAX_VIDEO_UPLOAD_BYTES', '100')
@@ -237,9 +204,9 @@ def test_video_upload_unknown_length_request_is_bounded(client, admin_headers, m
             yield b'x' * 1024
         yield b'\r\n--' + boundary + b'--\r\n'
 
-    response = client.post(
-        '/admin/media/videos/',
-        headers={**admin_headers, 'Content-Type': 'multipart/form-data; boundary=video-test'},
+    response = panel.post(
+        '/admin/media/video-upload',
+        headers={'Content-Type': 'multipart/form-data; boundary=video-test'},
         content=chunks(),
     )
     assert response.status_code == 413

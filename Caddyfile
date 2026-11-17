@@ -2,7 +2,8 @@
     default_sni {$API_DOMAIN}
 }
 
-{$API_DOMAIN} {
+# ADMIN_DOMAIN is optional: when it is empty this block serves the API host alone.
+{$API_DOMAIN} {$ADMIN_DOMAIN} {
     tls {
         issuer acme {
             dir https://acme-v02.api.letsencrypt.org/directory

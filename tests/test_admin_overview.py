@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from mysite.admin.credentials import password_hash
 from mysite.admin.overview import build_overview, label_positions, nice_top, plural
-from mysite.api.admin import password_hash
 from mysite.database.chat_models import ChatClient, ChatMessage, ChatSession
 from mysite.database.db import SessionLocal
 from mysite.database.models import (Admin, RequestStatusChoices, Tour, TourProgram, TourTranslation,

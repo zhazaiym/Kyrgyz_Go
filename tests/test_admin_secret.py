@@ -10,7 +10,7 @@ def test_admin_api_rejects_missing_weak_and_placeholder_secrets(secret_key):
     environment = os.environ.copy()
     environment['SECRET_KEY'] = secret_key
     result = subprocess.run(
-        [sys.executable, '-B', '-c', 'import mysite.api.admin'],
+        [sys.executable, '-B', '-c', 'import mysite.admin.credentials'],
         env=environment,
         capture_output=True,
         text=True,
@@ -25,7 +25,7 @@ def test_admin_api_accepts_a_long_non_placeholder_secret():
     environment = os.environ.copy()
     environment['SECRET_KEY'] = 'test-secret-key-for-isolated-tests'
     result = subprocess.run(
-        [sys.executable, '-B', '-c', 'import mysite.api.admin'],
+        [sys.executable, '-B', '-c', 'import mysite.admin.credentials'],
         env=environment,
         capture_output=True,
         text=True,

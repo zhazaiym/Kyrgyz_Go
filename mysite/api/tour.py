@@ -3,25 +3,18 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi_filter import FilterDepends
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
-from mysite.api.admin import require_admin_roles
-from mysite.api.deletion_guards import protect_selected_item
-from mysite.api.errors import error_detail, success_detail
+from mysite.api.errors import error_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.db import get_db
-from mysite.database.models import Country, Tour, TourCategory, TourTranslation
-from mysite.database.schemas.catalogue import (TourDetailSchema, TourInputSchema, TourOutSchema,
-                                               TourUpdateSchema)
+from mysite.database.models import Tour, TourCategory
+from mysite.database.schemas.catalogue import TourDetailSchema, TourOutSchema
 from mysite.database.tour_review_models import TourReview
 from mysite.filters.filter import TourFilter
 from mysite.translations.content import localized
-from mysite.translations.jobs import schedule_translation, translate_record
-from mysite.translations.source import (TOUR_TRANSLATION_FIELDS, active_manual_fields,
-                                        normalize_text, source_value_changed, translation_ready)
-from mysite.translations.translator import translate_tour
+from mysite.translations.source import TOUR_TRANSLATION_FIELDS, translation_ready
 
 tour_router = APIRouter(prefix='/tours', tags=['Tours'])
 
@@ -84,38 +77,6 @@ def localized_tour_cards_with_reviews(tours, db: Session, lang: str):
     return results
 
 
-@tour_router.post(
-    '/', response_model=TourOutSchema, dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
-    if tour.country_id is not None and db.get(Country, tour.country_id) is None:
-        raise HTTPException(404, error_detail('not_found'))
-    if tour.category_id is not None:
-        category_db = db.get(TourCategory, tour.category_id)
-
-        if category_db is None:
-            raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    try:
-        tour_db = Tour(**tour.model_dump())
-
-        db.add(tour_db)
-        db.flush()
-
-        schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
-
-        db.commit()
-        db.refresh(tour_db)
-
-        return tour_db
-
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception('Could not save the tour')
-
-        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
-
-
 @tour_router.get('/', response_model=list[TourCardSchema])
 def list_tours(
     lang: str = Query(default='ru', pattern='^(ru|en|de|zh)$'),
@@ -148,130 +109,6 @@ def detail_tour(
         raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     return get_localized_tour(tour_db, lang, detail=True)
-
-
-@tour_router.put(
-    '/{tour_id}/',
-    response_model=TourOutSchema,
-    dependencies=[Depends(require_admin_roles('catalog_editor'))],
-)
-def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_db)):
-    tour_db = db.scalars(select(Tour).where(Tour.id == tour_id)).first()
-
-    if tour_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    data = tour.model_dump(exclude_unset=True)
-    data = {
-        field: normalize_text(value) if field in TRANSLATED_FIELDS else value
-        for field, value in data.items()
-    }
-    source_changed = any(
-        field in data and source_value_changed(getattr(tour_db, field), data[field])
-        for field in TRANSLATED_FIELDS
-    )
-    if data.get('country_id') is not None and db.get(Country, data['country_id']) is None:
-        raise HTTPException(404, error_detail('not_found'))
-    minimum = data.get('min_people', tour_db.min_people)
-    maximum = data.get('max_people', tour_db.max_people)
-    if maximum is not None and minimum > maximum:
-        raise HTTPException(422, error_detail('validation_error'))
-
-    if data.get('category_id') is not None:
-        category_db = db.get(TourCategory, data['category_id'])
-
-        if category_db is None:
-            raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    try:
-        for key, value in data.items():
-            setattr(tour_db, key, value)
-
-        if source_changed:
-            source = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
-            for translation in tour_db.translations:
-                translation.source_hashes = translation.source_hashes or {}
-                translation.manual_fields = active_manual_fields(
-                    translation.manual_fields or [], translation.source_hashes, source
-                )
-
-        db.flush()
-
-        if source_changed:
-            schedule_translation(tour_db, TRANSLATED_FIELDS, translate_tour)
-
-        db.commit()
-        db.refresh(tour_db)
-
-        return tour_db
-
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception('Could not update the tour')
-
-        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
-
-
-@tour_router.post(
-    '/{tour_id}/translate/', dependencies=[Depends(require_admin_roles('catalog_editor'))]
-)
-def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
-    tour_db = db.scalars(select(Tour).where(Tour.id == tour_id)).first()
-
-    if tour_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    try:
-        source = {field: getattr(tour_db, field) for field in TRANSLATED_FIELDS}
-        db.commit()
-        result = translate_record(Tour, tour_id, source, translate_tour)
-        if result == 'busy':
-            raise HTTPException(status_code=503, detail=error_detail('service_unavailable'))
-        if result == 'source_changed':
-            raise HTTPException(status_code=409, detail=error_detail('conflict'))
-        if result == 'missing':
-            raise HTTPException(status_code=404, detail=error_detail('not_found'))
-        if result != 'translated':
-            raise HTTPException(status_code=502, detail=error_detail('service_unavailable'))
-
-        db.commit()
-
-        return {**success_detail('translated'), 'languages': LANGUAGES}
-
-    except HTTPException:
-        raise
-
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception('Could not save the tour translation')
-
-        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
-
-
-@tour_router.delete('/{tour_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))])
-def delete_tour(tour_id: int, db: Session = Depends(get_db)):
-    tour_db = db.get(Tour, tour_id)
-
-    if tour_db is None:
-        raise HTTPException(status_code=404, detail=error_detail('not_found'))
-
-    protect_selected_item(db, Tour, tour_id)
-
-    try:
-        db.query(TourTranslation).filter(TourTranslation.tour_id == tour_id).delete(
-            synchronize_session=False
-        )
-
-        db.delete(tour_db)
-        db.commit()
-
-        return success_detail('deleted')
-
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception('Could not delete the tour')
-
-        raise HTTPException(status_code=500, detail=error_detail('internal_error')) from exc
 
 
 @tour_router.get('/home/slides/')

@@ -44,8 +44,8 @@ RESOURCE_LIMITS = {
     'WS_IDLE_SECONDS': (600, 3600),
     'WS_AUTH_SECONDS': (10, 30),
 }
-IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload', '/chat/images/'}
-VIDEO_UPLOAD_PATHS = {'/admin/media/videos/', '/admin/media/video-upload'}
+IMAGE_UPLOAD_PATHS = {'/admin/media/upload', '/chat/images/'}
+VIDEO_UPLOAD_PATHS = {'/admin/media/video-upload'}
 UPLOAD_PATHS = IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
 
 
