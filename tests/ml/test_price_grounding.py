@@ -190,3 +190,65 @@ def test_verified_offer_is_still_answered_when_model_repeats_invented_currency(m
     answer, _, _ = asyncio.run(agent.respond('Сколько стоит Бурана?', {}, []))
     assert 'Бурана' in answer and '65' in answer
     assert 'USD' not in answer
+
+
+@pytest.mark.parametrize(
+    'answer',
+    [
+        'Вам стоит взять 2 тёплые куртки: ночью в горах холодно.',
+        'Поездка стоит того: 3 дня в горах запомнятся надолго.',
+        'Цена в 2026 году может измениться.',
+        'Сон-Куль лежит на высоте 3016 м, туда стоит ехать с июня.',
+        'Тур на 1 день, группа от 2 до 8 человек.',
+        'Выезд в 8:00, возвращение к 19:30.',
+    ],
+)
+def test_numbers_that_are_not_prices_are_accepted(answer):
+    from ML.price_grounding import PriceEvidence
+
+    assert PriceEvidence().accepts(answer)
+
+
+@pytest.mark.parametrize(
+    'answer',
+    [
+        'Тур стоит 95.',
+        'Тур стоит от 95 за человека.',
+        'Стоимость тура «Бурана» — 95.',
+        '95 за человека.',
+        'Price: 95.',
+    ],
+)
+def test_bare_price_claims_need_catalogue_evidence(answer):
+    from ML.price_grounding import PriceEvidence
+
+    evidence = PriceEvidence()
+    evidence.add({'title': 'Бурана', 'price': '80.00', 'currency': None})
+    assert not evidence.accepts(answer)
+    assert evidence.accepts(answer.replace('95', '80'))
+
+
+def test_reply_with_numbers_keeps_streaming_sentence_by_sentence(monkeypatch):
+    agent = runtime(
+        monkeypatch,
+        [
+            [
+                AIMessageChunk(content='Иссык-Куль летом тёплый. '),
+                AIMessageChunk(content='Возьмите 2 куртки. '),
+                AIMessageChunk(content='Даты?'),
+            ]
+        ],
+    )
+    listener = Listener()
+    seen = []
+    original = listener.__call__
+
+    async def record(text):
+        await original(text)
+        seen.append(listener.visible())
+
+    listener.__call__ = record
+    answer, _, _ = asyncio.run(agent.respond('Что взять?', {}, [], on_chunk=listener))
+    assert answer == listener.visible() == 'Иссык-Куль летом тёплый. Возьмите 2 куртки. Даты?'
+    assert ('reset', None) not in listener.events
+    assert [kind for kind, _ in listener.events].count('delta') >= 3

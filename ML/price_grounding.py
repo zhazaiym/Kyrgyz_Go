@@ -10,10 +10,29 @@ _MONEY = re.compile(
     rf'|(?P<prefix>{_CURRENCY})\s*(?P<prefixed>{_NUMBER})',
     re.IGNORECASE,
 )
-_LABELLED = re.compile(
-    rf'(?:цена|стоимость|стоит|стоят|price|costs?|preis|kostet|价格)'
-    rf'(?:[^\S\n]+[^\W\d_]+){{0,3}}[^\S\n]*[:=—-]?[^\S\n]*({_NUMBER})',
-    re.IGNORECASE,
+# A bare number is a price only where the wording makes it one. "Вам стоит взять
+# 2 куртки" and "цена в 2026 году" are not price claims; "цена: 80",
+# "стоимость составляет 80", "стоит от 80" and "80 за человека" are.
+_PRICE_NOUN = r'(?:цен[аы]|стоимость|стоимости|price|cost|preis|kosten|价格|费用|баасы|наркы)'
+_PRICE_VERB = r'(?:стоит|стоят|costs?|kostet)'
+_LINK = (
+    r'(?:составляет|составит|равна|равен|будет|от|около|всего|лишь|только|'
+    r'is|are|from|about|only|beträgt|ab|ca\.?|约|为)'
+)
+_PER = (
+    r'(?:(?:за|на|с)[^\S\n]+(?:человека|чел\.?|персону|группу|компанию|поездку|тур|ночь|сутки|'
+    r'день|машину|автомобиль|полёт|полет|вертол[её]т)|per[^\S\n]+\w+|pro[^\S\n]+\w+|每\w+)'
+)
+# What may follow a bare amount: the end of the phrase, a currency or a price unit.
+_AMOUNT_END = rf'(?=[^\S\n]*(?:$|[^\w\s]|{_CURRENCY}|{_PER}))'
+_LABELLED = tuple(
+    re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+    for pattern in (
+        rf'(?<!\w){_PRICE_NOUN}[^\S\n]*(?:[:=—–-][^\S\n]*)?(?:{_LINK}[^\S\n]+)*({_NUMBER}){_AMOUNT_END}',
+        rf'(?<!\w){_PRICE_NOUN}[^\d\n.!?:=—–]{{1,60}}[:=—–][^\S\n]*(?:{_LINK}[^\S\n]+)*({_NUMBER})',
+        rf'(?<!\w){_PRICE_VERB}[^\S\n]+(?:{_LINK}[^\S\n]+)*({_NUMBER}){_AMOUNT_END}',
+        rf'(?<![\d.,])({_NUMBER})[^\S\n]*{_PER}',
+    )
 )
 _BUDGET = re.compile(r'бюджет|budget|预算', re.IGNORECASE)
 
@@ -71,7 +90,11 @@ class PriceEvidence:
             if (amount, currency) not in self.prices:
                 return False
         amounts = {amount for amount, _ in self.prices}
-        return all(_amount(match[1]) in amounts for match in _LABELLED.finditer(answer))
+        return all(
+            _amount(match[1]) in amounts
+            for pattern in _LABELLED
+            for match in pattern.finditer(answer)
+        )
 
     def fallback(self, language):
         if not self.offers:
