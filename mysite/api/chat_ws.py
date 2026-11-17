@@ -280,13 +280,10 @@ async def _next_message(connection):
             if isinstance(data, ValueError):
                 raise data
         except asyncio.TimeoutError:
-            # A forgotten tab must not hold one of the few chat places.
-            await _reject(
-                websocket,
-                'idle_timeout',
-                'Соединение закрыто из-за простоя. Подключитесь снова, чтобы продолжить.',
-                close_code=1000,
-            )
+            # A forgotten tab must not hold one of the few chat places. This is a normal
+            # close, not an error: the site reconnects on its own and shows nothing.
+            await websocket.close(code=1000, reason='idle')
+            raise _Closed from None
         except ValueError:
             await _warn(
                 connection,
