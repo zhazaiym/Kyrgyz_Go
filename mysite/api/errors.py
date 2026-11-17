@@ -33,7 +33,11 @@ STATUS_CODES = {
 }
 
 
-SUCCESS_MESSAGES = {'deleted': 'Запись удалена', 'translated': 'Перевод выполнен'}
+SUCCESS_MESSAGES = {
+    'deleted': 'Запись удалена',
+    'translated': 'Перевод выполнен',
+    'directions_ready': 'Направления созданы',
+}
 
 
 def success_detail(code):
