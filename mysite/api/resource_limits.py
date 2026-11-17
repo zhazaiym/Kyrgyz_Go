@@ -16,7 +16,6 @@ from starlette.websockets import WebSocketDisconnect
 from mysite.api.errors import error_detail
 from mysite.api.network_identity import client_network, rate_limits_enabled
 from mysite.api.observability import record_websocket_connection
-from mysite.api.origin_config import configured_origins
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -249,8 +248,7 @@ class ResourceLimitsMiddleware:
             ):
                 origin = request_headers.get('origin')
                 own = f'{scope.get("scheme", "http")}://{request_headers.get("host", "")}'
-                allowed = set(configured_origins('CORS_ALLOWED_ORIGINS'))
-                if (origin and origin != own and origin not in allowed) or request_headers.get(
+                if (origin and origin != own) or request_headers.get(
                     'sec-fetch-site'
                 ) == 'cross-site':
                     return await reject(403, 'Cross-site admin request rejected')

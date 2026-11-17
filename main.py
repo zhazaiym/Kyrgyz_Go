@@ -38,7 +38,7 @@ from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.observability import router as observability_router
 from mysite.api.observability import validate_metrics_config
-from mysite.api.origin_config import configured_origins
+from mysite.api.origin_config import configured_origins, validate_origin_settings
 from mysite.api.password_reset import router as password_reset_router
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
@@ -105,6 +105,7 @@ async def lifespan(app):
 
 validate_resource_settings()
 validate_chat_settings()
+validate_origin_settings()
 validate_metrics_config()
 app = FastAPI(
     title='KYRGYZGO',
@@ -127,8 +128,6 @@ from mysite.api.observability import HTTPMetricsMiddleware
 
 app.add_middleware(HTTPMetricsMiddleware)
 cors_allowed_origins = list(configured_origins('CORS_ALLOWED_ORIGINS'))
-if '*' in cors_allowed_origins:
-    raise RuntimeError('CORS_ALLOWED_ORIGINS must list trusted origins explicitly')
 
 app.add_middleware(
     CORSMiddleware,
