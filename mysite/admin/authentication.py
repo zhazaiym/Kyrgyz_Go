@@ -1,7 +1,5 @@
 """SQLAdmin authentication uses the same revocable sessions as the API."""
 
-import os
-
 from fastapi import HTTPException, Request
 from sqladmin.authentication import AuthenticationBackend
 from starlette.concurrency import run_in_threadpool
@@ -13,6 +11,7 @@ from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
 from mysite.database.models import Admin
 from mysite.database.token_utils import utcnow
+from mysite.settings import flag
 
 
 class AdminAuthBackend(AuthenticationBackend):
@@ -21,7 +20,7 @@ class AdminAuthBackend(AuthenticationBackend):
             secret_key=SECRET_KEY,
             max_age=setting('ADMIN_SESSION_HOURS') * 3600,
             same_site='strict',
-            https_only=os.getenv('ADMIN_COOKIE_SECURE', 'true').lower() == 'true',
+            https_only=flag('ADMIN_COOKIE_SECURE'),
         )
 
     @staticmethod

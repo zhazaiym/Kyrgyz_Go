@@ -1,7 +1,6 @@
 """Bounded admission, request sizes and cheap rejection before application work."""
 
 import asyncio
-import os
 import time
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
@@ -16,6 +15,7 @@ from starlette.websockets import WebSocketDisconnect
 from mysite.api.errors import error_detail
 from mysite.api.network_identity import client_network, rate_limits_enabled
 from mysite.api.observability import record_websocket_connection
+from mysite.settings import parse_number
 
 RESOURCE_LIMITS = {
     'AI_MAX_CONCURRENT': (4, 32),
@@ -49,13 +49,7 @@ VIDEO_UPLOAD_PATHS = {'/admin/media/videos/', '/admin/media/video-upload'}
 @lru_cache(maxsize=len(RESOURCE_LIMITS))
 def setting(name):
     default, maximum = RESOURCE_LIMITS[name]
-    try:
-        value = int(os.getenv(name, str(default)))
-    except ValueError as exc:
-        raise RuntimeError(f'{name} must be an integer') from exc
-    if not 1 <= value <= maximum:
-        raise RuntimeError(f'{name} must be between 1 and {maximum}')
-    return value
+    return parse_number(name, default, 1, maximum)
 
 
 @lru_cache(maxsize=1)

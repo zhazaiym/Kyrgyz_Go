@@ -1,7 +1,6 @@
 # ruff: noqa: E402 -- load environment variables before importing application modules.
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -57,6 +56,7 @@ from mysite.api.trekking import trekking_router
 from mysite.api.trekking_program import trekking_program_router
 from mysite.api.trip_options import trip_options_router
 from mysite.api.video_media import video_media_router
+from mysite.settings import flag, validate_settings
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,8 @@ validate_resource_settings()
 validate_chat_settings()
 validate_origin_settings()
 validate_metrics_config()
-api_docs = os.getenv('API_DOCS', 'true').strip().casefold() not in {'0', 'false', 'no'}
+validate_settings()
+api_docs = flag('API_DOCS')
 app = FastAPI(
     title='KYRGYZGO',
     description='KYRGYZGO Tourism API + AI Travel Assistant',
@@ -203,7 +204,7 @@ app.include_router(observability_router)
 
 # MEDIA FILES
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-if os.getenv('SERVE_MEDIA_LOCALLY', 'true').lower() == 'true':
+if flag('SERVE_MEDIA_LOCALLY'):
     app.mount(MEDIA_URL, StaticFiles(directory=MEDIA_ROOT), name='media')
 
 

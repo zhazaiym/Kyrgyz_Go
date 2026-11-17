@@ -4,6 +4,8 @@ import sys
 
 import pytest
 
+from mysite.settings import flag, validate_settings
+
 
 @pytest.mark.parametrize(
     'origin,expected_status,expected_origin',
@@ -81,3 +83,21 @@ def test_api_docs_can_be_hidden_on_production():
         check=True,
     )
     assert result.stdout.strip().splitlines()[-1] == '[404, 404, 404]'
+
+
+@pytest.mark.parametrize(
+    ('raw', 'expected'), [('1', True), (' TRUE ', True), ('off', False), ('', True)]
+)
+def test_flags_read_every_usual_spelling(monkeypatch, raw, expected):
+    monkeypatch.setenv('ADMIN_COOKIE_SECURE', raw)
+    assert flag('ADMIN_COOKIE_SECURE') is expected
+
+
+@pytest.mark.parametrize(
+    ('name', 'raw'),
+    [('API_DOCS', 'maybe'), ('GEMINI_REQUESTS_PER_MINUTE', 'ten'), ('TRIP_OPTION_RADIUS_KM', '0')],
+)
+def test_wrong_setting_stops_the_start(monkeypatch, name, raw):
+    monkeypatch.setenv(name, raw)
+    with pytest.raises(RuntimeError, match=name):
+        validate_settings()
