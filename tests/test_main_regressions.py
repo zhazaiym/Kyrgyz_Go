@@ -42,13 +42,10 @@ def test_registration_login_and_profile_share_one_identity(client):
     assert login.status_code == 200, login.text
     assert login.json()['client_id'] == account['client_id']
     assert client.get('/account/me', headers=headers(account)).json()['email'] == email
-    for removed in (
-        '/auth/register',
-        '/auth/login',
-        '/chat/auth/login',
-        '/account/forgot-password',
-    ):
+    for removed in ('/chat/auth/login', '/account/forgot-password'):
         assert client.post(removed, json={'email': email}).status_code == 404
+    legacy = client.get('/auth/me', headers=headers(account))
+    assert legacy.status_code == 200 and legacy.json()['client_id'] == account['client_id']
 
 
 def test_concurrent_registration_cannot_split_login_between_routes(client):

@@ -295,10 +295,9 @@ def test_silent_connection_is_closed_and_frees_its_place(client, monkeypatch):
         websocket.send_json({'type': 'auth', 'token': token})
         assert websocket.receive_json()['type'] == 'connected'
         assert active_websockets() == before + 1
-        assert websocket.receive_json()['code'] == 'idle_timeout'
         with pytest.raises(WebSocketDisconnect) as closed:
             websocket.receive_json()
-        assert closed.value.code == 1000
+        assert (closed.value.code, closed.value.reason) == (1000, 'idle')
     assert active_websockets() == before
     assert identity not in chat_ws._client_connections
 
