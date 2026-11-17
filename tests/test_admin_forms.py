@@ -93,7 +93,7 @@ def test_manager_publishes_a_review_from_the_admin(client):
 
     tour_id, _ = create_tour()
     headers = register_review_client(client)
-    client_id = client.get('/auth/me', headers=headers).json()['client_id']
+    client_id = client.get('/account/me', headers=headers).json()['client_id']
     with SessionLocal() as db:
         review = TourReview(
             tour_id=tour_id, client_id=client_id, display_name='Guest', rating=4, text='Nice'

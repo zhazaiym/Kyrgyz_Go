@@ -16,7 +16,7 @@ from mysite.database.selection_models import TravelSelection
 PASSWORD = 'RegressionPassword123!'
 
 
-def register(client, route='/auth', email=None):
+def register(client, route='/account', email=None):
     """Register with login + password, then attach an email as a legacy
     account would have, so email login and recovery stay covered."""
     identity = uuid4().hex[:16]
@@ -34,19 +34,21 @@ def headers(account):
     return {'Authorization': 'Bearer ' + account['access_token']}
 
 
-@pytest.mark.parametrize('route', ['/auth', '/account'])
-def test_registration_login_and_profile_share_one_identity(client, route):
-    account, email = register(client, route)
-    other = '/account' if route == '/auth' else '/auth'
+def test_registration_login_and_profile_share_one_identity(client):
+    account, email = register(client)
     duplicate_body = {'username': account['username'].upper(), 'password': PASSWORD}
-    assert client.post(other + '/register', json=duplicate_body).status_code == 409
-    for prefix in ('/auth', '/account', '/chat/auth'):
-        login = client.post(prefix + '/login', json={'email': email.upper(), 'password': PASSWORD})
-        assert login.status_code == 200, login.text
-        assert login.json()['client_id'] == account['client_id']
-        me = client.get(prefix + '/me', headers=headers(account))
-        assert me.json()['email'] == email
-    assert client.post('/account/forgot-password', json={'email': email}).status_code == 404
+    assert client.post('/account/register', json=duplicate_body).status_code == 409
+    login = client.post('/account/login', json={'email': email.upper(), 'password': PASSWORD})
+    assert login.status_code == 200, login.text
+    assert login.json()['client_id'] == account['client_id']
+    assert client.get('/account/me', headers=headers(account)).json()['email'] == email
+    for removed in (
+        '/auth/register',
+        '/auth/login',
+        '/chat/auth/login',
+        '/account/forgot-password',
+    ):
+        assert client.post(removed, json={'email': email}).status_code == 404
 
 
 def test_concurrent_registration_cannot_split_login_between_routes(client):
@@ -58,7 +60,7 @@ def test_concurrent_registration_cannot_split_login_between_routes(client):
             barrier.wait(timeout=10)
 
     bodies = [
-        ('/auth/register', {'username': login, 'password': PASSWORD}),
+        ('/account/register', {'username': login, 'password': PASSWORD}),
         ('/account/register', {'username': login.upper(), 'password': PASSWORD}),
     ]
     event.listen(engine, 'before_cursor_execute', synchronize)

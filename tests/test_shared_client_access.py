@@ -76,10 +76,10 @@ def test_guest_sees_cards_and_details(client, catalogue_entries):
         assert response.status_code == 200
 
 
-@pytest.mark.parametrize('entrypoint', ['/auth', '/chat/auth'])
+@pytest.mark.parametrize('entrypoint', ['/account'])
 def test_one_registration_opens_chat_and_details(client, catalogue_entries, entrypoint):
     headers = register_customer(client, 'shared_' + entrypoint.replace('/', '_'), entrypoint)
-    assert client.get('/auth/me', headers=headers).status_code == 200
+    assert client.get('/account/me', headers=headers).status_code == 200
     for path, entry_id in catalogue_entries:
         response = client.get(f'{path}{entry_id}/', headers=headers)
         assert response.status_code == 200, response.text
@@ -91,8 +91,8 @@ def test_one_registration_opens_chat_and_details(client, catalogue_entries, entr
     ) as socket:
         socket.send_json({'type': 'auth', 'token': headers['Authorization'].split()[1]})
         assert socket.receive_json()['type'] == 'connected'
-    assert client.post('/auth/logout', headers=headers).status_code == 200
-    assert client.get('/auth/me', headers=headers).status_code == 401
+    assert client.post('/account/logout', headers=headers).status_code == 200
+    assert client.get('/account/me', headers=headers).status_code == 401
     assert client.post('/chat/session', headers=headers).status_code == 401
     for path, entry_id in catalogue_entries:
         assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 200
@@ -114,35 +114,37 @@ def test_guest_can_read_nested_catalogue_resources(client, path):
     assert client.get(path).status_code == 200
 
 
-def test_shared_auth_is_visible_and_legacy_chat_auth_hidden(client):
+def test_password_sign_in_lives_only_under_account(client):
     paths = client.get('/openapi.json').json()['paths']
-    assert '/auth/register' in paths
-    assert '/auth/login' in paths
-    assert '/chat/auth/register' not in paths
+    assert '/account/register' in paths
+    assert '/account/login' in paths
+    assert '/account/logout' in paths
+    assert not any(path.startswith('/chat/auth') for path in paths)
+    assert not {'/auth/register', '/auth/login', '/auth/me', '/auth/logout'} & set(paths)
 
 
 def test_login_required_response_describes_registration_action(client):
     response = client.post('/chat/session')
     assert response.status_code == 401
-    assert response.json()['detail']['register_url'] == '/auth/register'
+    assert response.json()['detail']['register_url'] == '/account/register'
 
 
 def test_legacy_and_shared_registration_use_the_same_account(client):
     credentials = {'username': 'single_customer_identity', 'password': 'StrongPassword123!'}
-    assert client.post('/auth/register', json=credentials).status_code == 201
-    assert client.post('/chat/auth/register', json=credentials).status_code == 409
-    login = client.post('/auth/login', json=credentials)
+    assert client.post('/account/register', json=credentials).status_code == 201
+    assert client.post('/account/register', json=credentials).status_code == 409
+    login = client.post('/account/login', json=credentials)
     assert login.status_code == 200
     headers = {'Authorization': 'Bearer ' + login.json()['access_token']}
-    assert client.get('/chat/auth/me', headers=headers).status_code == 200
+    assert client.get('/account/me', headers=headers).status_code == 200
     assert (
         client.post(
             '/tours/', headers=headers, json={'title': 'Unauthorized creation', 'price': 100}
         ).status_code
         == 401
     )
-    assert client.post('/chat/auth/logout', headers=headers).status_code == 200
-    assert client.get('/auth/me', headers=headers).status_code == 401
+    assert client.post('/account/logout', headers=headers).status_code == 200
+    assert client.get('/account/me', headers=headers).status_code == 401
 
 
 def test_public_catalogue_does_not_depend_on_token_validity(client, catalogue_entries):

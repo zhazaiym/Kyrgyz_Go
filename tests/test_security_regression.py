@@ -18,11 +18,13 @@ from mysite.database.db import SessionLocal
 )
 def test_sql_injection_payloads_are_rejected_or_treated_as_values(client, payload):
     registration = client.post(
-        '/auth/register', json={'username': payload, 'password': 'StrongPassword123!'}
+        '/account/register', json={'username': payload, 'password': 'StrongPassword123!'}
     )
     assert registration.status_code == 422
 
-    login = client.post('/auth/login', json={'username': payload, 'password': 'StrongPassword123!'})
+    login = client.post(
+        '/account/login', json={'username': payload, 'password': 'StrongPassword123!'}
+    )
     assert login.status_code == 401
 
     numeric_path = client.get(f'/tours/category/{payload}/')
@@ -32,7 +34,7 @@ def test_sql_injection_payloads_are_rejected_or_treated_as_values(client, payloa
 def test_stale_chat_worker_cannot_overwrite_newer_session_state(client):
     username = 'concurrency_' + uuid.uuid4().hex[:16]
     registered = client.post(
-        '/auth/register', json={'username': username, 'password': 'StrongPassword123!'}
+        '/account/register', json={'username': username, 'password': 'StrongPassword123!'}
     )
     assert registered.status_code == 201, registered.text
     token = registered.json()['access_token']

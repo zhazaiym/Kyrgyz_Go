@@ -151,7 +151,7 @@ def test_redirect_sign_in_uses_each_provider_contract(client, site, monkeypatch,
     signed_in = client.post('/auth/oauth/exchange', json={'login_code': result['login_code']})
     assert signed_in.status_code == 200, signed_in.text
     token = signed_in.json()['access_token']
-    me = client.get('/auth/me', headers={'Authorization': f'Bearer {token}'}).json()
+    me = client.get('/account/me', headers={'Authorization': f'Bearer {token}'}).json()
     with SessionLocal() as db:
         identity = db.query(ClientIdentity).filter_by(provider=provider).one()
         assert identity.client_id == me['client_id']

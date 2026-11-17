@@ -9,7 +9,7 @@ from mysite.database.selection_models import TravelSelection
 def register_client(client):
     username = 'request_' + uuid4().hex[:20]
     response = client.post(
-        '/auth/register', json={'username': username, 'password': 'StrongRequestPassword123!'}
+        '/account/register', json={'username': username, 'password': 'StrongRequestPassword123!'}
     )
     assert response.status_code == 201, response.text
     return {'Authorization': 'Bearer ' + response.json()['access_token']}
@@ -67,7 +67,8 @@ def test_client_can_submit_once_and_cancel_request(client, customer_headers, mon
         stored = db.get(TravelRequest, request_id)
         assert stored is not None
         assert (
-            stored.client_id == client.get('/auth/me', headers=customer_headers).json()['client_id']
+            stored.client_id
+            == client.get('/account/me', headers=customer_headers).json()['client_id']
         )
         assert stored.selection_id == selection_id
         selection = db.get(TravelSelection, selection_id)

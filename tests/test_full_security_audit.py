@@ -73,7 +73,7 @@ def test_injection_payloads_remain_values_and_never_bypass_auth(client, payload)
     assert client.get('/tours/', params={'order_by': payload}).status_code == 422
     assert (
         client.post(
-            '/auth/login', json={'username': payload, 'password': 'WrongPassword123!'}
+            '/account/login', json={'username': payload, 'password': 'WrongPassword123!'}
         ).status_code
         == 401
     )
@@ -86,19 +86,23 @@ def test_injection_payloads_remain_values_and_never_bypass_auth(client, payload)
 
 def test_oversized_and_chunked_requests_are_rejected_before_json_parsing(client, monkeypatch):
     monkeypatch.setenv('MAX_REQUEST_BODY_BYTES', '1024')
-    assert client.post('/auth/login', content=b'x' * 1025).status_code == 413
+    assert client.post('/account/login', content=b'x' * 1025).status_code == 413
 
     def chunks():
         yield b'x' * 700
         yield b'x' * 700
 
-    assert client.post('/auth/login', content=chunks()).status_code == 413
+    assert client.post('/account/login', content=chunks()).status_code == 413
     assert (
-        client.post('/auth/login', content=b'x' * 1400, headers={'Content-Length': '1'}).status_code
+        client.post(
+            '/account/login', content=b'x' * 1400, headers={'Content-Length': '1'}
+        ).status_code
         == 413
     )
     assert (
-        client.post('/auth/login', content=b'{}', headers={'Content-Length': 'invalid'}).status_code
+        client.post(
+            '/account/login', content=b'{}', headers={'Content-Length': 'invalid'}
+        ).status_code
         == 400
     )
     assert client.get('/tours/?search=' + 'x' * 9000).status_code == 414

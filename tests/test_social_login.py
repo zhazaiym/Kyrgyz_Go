@@ -73,7 +73,7 @@ def _facebook(monkeypatch, app_id=FACEBOOK_ID, subject='10001', email=None):
 def _me(client, response):
     assert response.status_code == 200, response.text
     token = response.json()['access_token']
-    return client.get('/auth/me', headers={'Authorization': f'Bearer {token}'}).json()
+    return client.get('/account/me', headers={'Authorization': f'Bearer {token}'}).json()
 
 
 def test_providers_are_hidden_until_the_owner_enables_them(client, providers):
@@ -186,7 +186,7 @@ def test_provider_outage_is_reported_as_unavailable(client, providers, monkeypat
 def test_social_clients_cannot_sign_in_with_a_guessed_password(client, providers, google_keys):
     email = f'nopass.{uuid.uuid4().hex[:8]}@gmail.com'
     _me(client, client.post('/auth/google', json={'credential': _google_token(email=email)}))
-    response = client.post('/auth/login', json={'email': email, 'password': 'password123'})
+    response = client.post('/account/login', json={'email': email, 'password': 'password123'})
     assert response.status_code == 401
     with SessionLocal() as db:
         assert db.query(ChatClient).filter_by(email=email).one().password_hash.startswith('$argon2')

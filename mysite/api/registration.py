@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from mysite.api.client_auth import (LoginCredentials, RegistrationCredentials,
                                     create_password_client, current_client, issue_token,
-                                    login_client, passwords)
+                                    login_client, login_required, passwords)
 from mysite.api.errors import error_detail
 from mysite.api.rate_limit import enforce_login_attempt
 from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.client_profile import ClientProfile
 from mysite.database.db import get_db
+from mysite.database.token_utils import digest
 
 router = APIRouter(prefix='/account', tags=['Tourist Account'])
 
@@ -87,3 +88,16 @@ def logout_everywhere(client: ChatClient = Depends(current_client), db: Session 
     )
     db.commit()
     return Response(status_code=204)
+
+
+@router.post('/logout')
+def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """Revoke the token of this request only; other devices stay signed in."""
+    scheme, _, token = (authorization or '').partition(' ')
+    if scheme.lower() != 'bearer' or not token:
+        raise login_required('Требуется вход')
+    access = db.query(ChatLoginToken).filter(ChatLoginToken.token_hash == digest(token)).first()
+    if access:
+        db.delete(access)
+        db.commit()
+    return {'ok': True}

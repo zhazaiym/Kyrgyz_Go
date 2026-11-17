@@ -2,7 +2,7 @@ import re
 import secrets
 from datetime import timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
@@ -16,7 +16,6 @@ from mysite.database.chat_models import ChatClient, ChatLoginToken
 from mysite.database.db import get_db
 from mysite.database.token_utils import digest, utcnow
 
-router = APIRouter(tags=['Client authentication'])
 passwords = BoundedPasswords()
 dummy_password_hash = passwords.hash(secrets.token_urlsafe(32))
 client_bearer = HTTPBearer(auto_error=False, scheme_name='ClientBearer')
@@ -28,8 +27,8 @@ def login_required(message: str) -> HTTPException:
         detail={
             'code': 'authentication_required',
             'message': message,
-            'register_url': '/auth/register',
-            'login_url': '/auth/login',
+            'register_url': '/account/register',
+            'login_url': '/account/login',
         },
         headers={'WWW-Authenticate': 'Bearer'},
     )
@@ -127,11 +126,6 @@ def create_password_client(db: Session, request: Request, data: RegistrationCred
     return client
 
 
-@router.post('/register', status_code=201)
-def register(data: RegistrationCredentials, request: Request, db: Session = Depends(get_db)):
-    return issue_token(db, create_password_client(db, request, data))
-
-
 def login_client(db: Session, request: Request, data: LoginCredentials):
     identifier = (data.email if data.email is not None else data.username).strip().lower()
     if data.email is not None or '@' in identifier:
@@ -144,11 +138,6 @@ def login_client(db: Session, request: Request, data: LoginCredentials):
     return authenticate_client(
         db, identifier, data.password, email_only=data.email is not None, request=request
     )
-
-
-@router.post('/login')
-def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db)):
-    return issue_token(db, login_client(db, request, data))
 
 
 def client_by_token(db: Session, token: str):
@@ -175,25 +164,3 @@ def current_client(
     if credentials is None:
         raise login_required('Войдите в аккаунт для доступа к деталям и чату')
     return client_by_token(db, credentials.credentials)
-
-
-@router.get('/me')
-def me(client: ChatClient = Depends(current_client)):
-    return {
-        'client_id': client.id,
-        'client_code': f'KG-{client.id:06d}',
-        'username': client.username,
-        'email': client.email,
-    }
-
-
-@router.post('/logout')
-def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
-    scheme, _, token = (authorization or '').partition(' ')
-    if scheme.lower() != 'bearer' or not token:
-        raise login_required('Требуется вход')
-    access = db.query(ChatLoginToken).filter(ChatLoginToken.token_hash == digest(token)).first()
-    if access:
-        db.delete(access)
-        db.commit()
-    return {'ok': True}

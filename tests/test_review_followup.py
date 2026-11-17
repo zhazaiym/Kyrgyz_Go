@@ -153,7 +153,7 @@ def test_login_hash_work_holds_no_row_lock_and_rejects_a_concurrent_reset(
         return original_verify(password, encoded)
 
     monkeypatch.setattr(client_auth.passwords, 'verify', verify)
-    response = client.post('/auth/login', json={'email': email, 'password': PASSWORD})
+    response = client.post('/account/login', json={'email': email, 'password': PASSWORD})
     assert response.status_code == (401 if reset_during_verify else 200)
 
 

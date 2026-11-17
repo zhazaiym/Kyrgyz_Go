@@ -200,7 +200,7 @@ def test_client_login_limit_blocks_an_attacking_ip_but_not_another_ip(client, mo
     # Keep all attempts in one fixed window; real minute rollover legitimately resets it.
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_200)
     identity = {'email': email}
-    route = '/auth/login'
+    route = '/account/login'
     attempts = 8
     with (
         TestClient(app, client=('198.51.100.130', 1)) as attacker,
@@ -232,7 +232,9 @@ def test_unknown_254_character_email_is_not_stored_as_rate_limit_identity(client
     assert len(email) == 254
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 2_111_222_334)
-    response = client.post('/auth/login', json={'email': email, 'password': 'NotThePassword123!'})
+    response = client.post(
+        '/account/login', json={'email': email, 'password': 'NotThePassword123!'}
+    )
     assert response.status_code == 401, response.text
 
     expected = 'unknown:' + hashlib.sha256(email.encode()).hexdigest()
@@ -320,7 +322,7 @@ def test_failed_authentication_does_not_rollback_the_callers_pending_changes(cli
                         'http_version': '1.1',
                         'method': 'POST',
                         'scheme': 'http',
-                        'path': '/auth/login',
+                        'path': '/account/login',
                         'headers': [],
                         'client': ('198.51.100.14', 54321),
                         'server': ('testserver', 80),

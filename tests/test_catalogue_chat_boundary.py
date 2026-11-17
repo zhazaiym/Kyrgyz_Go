@@ -7,7 +7,7 @@ from starlette.websockets import WebSocketDisconnect
 def test_public_catalogue_keeps_http_and_websocket_chat_private(client):
     def register():
         response = client.post(
-            '/auth/register',
+            '/account/register',
             json={'username': 'boundary_' + uuid4().hex[:16], 'password': 'StrongPassword123!'},
         )
         assert response.status_code == 201

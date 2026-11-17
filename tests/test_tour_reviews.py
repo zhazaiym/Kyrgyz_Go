@@ -17,7 +17,7 @@ def create_tour():
 
 
 def finish_trip(client, headers, tour_id, status=RequestStatusChoices.completed):
-    client_id = client.get('/auth/me', headers=headers).json()['client_id']
+    client_id = client.get('/account/me', headers=headers).json()['client_id']
     with SessionLocal() as db:
         db.add(
             TravelRequest(
@@ -40,7 +40,7 @@ def publish(review_id):
 def register_review_client(client):
     username = 'review_' + uuid4().hex[:20]
     response = client.post(
-        '/auth/register', json={'username': username, 'password': 'StrongReviewPassword123!'}
+        '/account/register', json={'username': username, 'password': 'StrongReviewPassword123!'}
     )
     assert response.status_code == 201, response.text
     return {'Authorization': 'Bearer ' + response.json()['access_token']}
@@ -140,7 +140,7 @@ def test_tour_cards_include_review_aggregates(client, customer_headers):
 
 def test_database_rejects_duplicate_tour_review(client, customer_headers):
     tour_id, _ = create_tour()
-    client_id = client.get('/auth/me', headers=customer_headers).json()['client_id']
+    client_id = client.get('/account/me', headers=customer_headers).json()['client_id']
     with SessionLocal() as db:
         db.add_all(
             [
