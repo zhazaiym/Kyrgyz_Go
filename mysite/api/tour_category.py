@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination
 from mysite.database.db import get_db
 from mysite.database.models import TourCategory
@@ -89,7 +89,7 @@ def delete_category(category_id: int, db: Session = Depends(get_db)):
     db.delete(category_db)
     db.commit()
 
-    return {'message': 'Категория өчүрүлдү'}
+    return success_detail('deleted')
 
 
 @category_router.post(
@@ -117,6 +117,6 @@ def setup_directions(db: Session = Depends(get_db)):
     categories = db.query(TourCategory).filter(TourCategory.name.in_(directions)).all()
 
     return {
-        'message': '5 багыт даяр',
+        **success_detail('directions_ready'),
         'categories': [{'id': category.id, 'name': category.name} for category in categories],
     }

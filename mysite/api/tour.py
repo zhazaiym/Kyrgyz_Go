@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from mysite.api.admin import require_admin_roles
 from mysite.api.deletion_guards import protect_selected_item
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import TourCardSchema
 from mysite.database.db import get_db
@@ -111,7 +111,7 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
 
     except SQLAlchemyError:
         db.rollback()
-        logger.exception('Турду сактоо катасы')
+        logger.exception('Could not save the tour')
 
         raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
@@ -207,7 +207,7 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
 
     except SQLAlchemyError:
         db.rollback()
-        logger.exception('Турду жаңыртуу катасы')
+        logger.exception('Could not update the tour')
 
         raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
@@ -236,14 +236,14 @@ def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
 
         db.commit()
 
-        return {'message': 'Тур 3 тилге которулду', 'languages': LANGUAGES}
+        return {**success_detail('translated'), 'languages': LANGUAGES}
 
     except HTTPException:
         raise
 
     except SQLAlchemyError:
         db.rollback()
-        logger.exception('Котормону сактоо катасы')
+        logger.exception('Could not save the tour translation')
 
         raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
@@ -265,11 +265,11 @@ def delete_tour(tour_id: int, db: Session = Depends(get_db)):
         db.delete(tour_db)
         db.commit()
 
-        return {'message': 'Тур өчүрүлдү'}
+        return success_detail('deleted')
 
     except SQLAlchemyError:
         db.rollback()
-        logger.exception('Турду өчүрүү катасы')
+        logger.exception('Could not delete the tour')
 
         raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 

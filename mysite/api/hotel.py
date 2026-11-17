@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from mysite.api.admin import require_admin_roles
 from mysite.api.deletion_guards import protect_selected_item
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination, filtered_list
 from mysite.database.catalogue_schema import HotelCardSchema
 from mysite.database.db import get_db
@@ -102,7 +102,7 @@ def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
     db.delete(hotel_db)
     db.commit()
 
-    return {'message': 'Мейманкана өчүрүлдү'}
+    return success_detail('deleted')
 
 
 @hotel_router.get('/', response_model=list[HotelCardSchema])

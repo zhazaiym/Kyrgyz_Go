@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from mysite.admin.realtime import publish_new_request
 from mysite.api.admin import require_admin_roles
 from mysite.api.client_auth import current_client
-from mysite.api.errors import error_detail
+from mysite.api.errors import error_detail, success_detail
 from mysite.api.filter_utils import Pagination
 from mysite.api.selected_services import selected_services
 from mysite.api.selection_status import require_status_transition
@@ -205,4 +205,4 @@ def delete_travel_request(request_id: int, db: Session = Depends(get_db)):
     db.delete(request_db)
     db.commit()
 
-    return {'message': 'Заявка өчүрүлдү'}
+    return success_detail('deleted')
