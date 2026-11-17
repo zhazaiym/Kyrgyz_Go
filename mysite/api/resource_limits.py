@@ -36,6 +36,8 @@ RESOURCE_LIMITS = {
     'MAX_VIDEO_UPLOAD_BYTES': (104_857_600, 1_073_741_824),
     'REQUEST_BODY_TIMEOUT': (10, 60),
     'UPLOAD_MAX_SECONDS': (900, 3600),
+    'UPLOAD_MAX_CONCURRENT': (8, 64),
+    'UPLOAD_MAX_PER_IP': (2, 16),
     'WS_MAX_CONNECTIONS': (64, 512),
     'WS_MAX_PER_IP': (8, 64),
     'WS_MAX_PER_CLIENT': (8, 64),
@@ -44,6 +46,7 @@ RESOURCE_LIMITS = {
 }
 IMAGE_UPLOAD_PATHS = {'/admin/media/', '/admin/media/upload', '/chat/images/'}
 VIDEO_UPLOAD_PATHS = {'/admin/media/videos/', '/admin/media/video-upload'}
+UPLOAD_PATHS = IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
 
 
 @lru_cache(maxsize=len(RESOURCE_LIMITS))
@@ -248,6 +251,7 @@ class ResourceLimitsMiddleware:
         self.app = app
         self.lock = Lock()
         self.http_active = 0
+        self.uploads = {}
         self.ws_active = 0
         self.ws_clients = {}
         self.http_counters = OrderedDict()
@@ -290,10 +294,22 @@ class ResourceLimitsMiddleware:
         address = (scope.get('client') or ('unknown', 0))[0]
         if kind == 'websocket':
             return await self.websocket(scope, receive, send, address)
+        # A slow upload may last minutes, so uploads have their own small pool and a
+        # cap per network: they cannot take the slots of the rest of the API.
+        upload = scope.get('method') == 'POST' and scope.get('path') in UPLOAD_PATHS
+        network = client_network(address)
         with self.lock:
-            admitted = self.http_active < setting('HTTP_MAX_CONCURRENT')
-            if admitted:
-                self.http_active += 1
+            if upload:
+                busy = sum(self.uploads.values()) >= setting('UPLOAD_MAX_CONCURRENT')
+                crowded = self.uploads.get(network, 0) >= setting('UPLOAD_MAX_PER_IP')
+                admitted = not busy and not crowded
+                if admitted:
+                    self.uploads[network] = self.uploads.get(network, 0) + 1
+            else:
+                crowded = False
+                admitted = self.http_active < setting('HTTP_MAX_CONCURRENT')
+                if admitted:
+                    self.http_active += 1
 
         async def safe_send(message):
             if message['type'] == 'http.response.start':
@@ -307,6 +323,8 @@ class ResourceLimitsMiddleware:
                 scope, receive, safe_send
             )
 
+        if crowded:
+            return await reject(429, headers={'Retry-After': '5'})
         if not admitted:
             return await reject(503, headers={'Retry-After': '1'})
         try:
@@ -319,10 +337,7 @@ class ResourceLimitsMiddleware:
                     self.http_quota(address, scope.get('method'))
                 except HTTPException as exc:
                     return await reject(exc.status_code, exc.detail, exc.headers)
-            if (
-                scope.get('method') == 'POST'
-                and scope.get('path') in IMAGE_UPLOAD_PATHS | VIDEO_UPLOAD_PATHS
-            ):
+            if upload:
                 return await self.app(scope, upload_receive(receive, maximum), safe_send)
             try:
                 replay = await buffered_body(receive, maximum)
@@ -332,7 +347,12 @@ class ResourceLimitsMiddleware:
                 await self.app(scope, replay, safe_send)
         finally:
             with self.lock:
-                self.http_active -= 1
+                if not upload:
+                    self.http_active -= 1
+                elif self.uploads[network] > 1:
+                    self.uploads[network] -= 1
+                else:
+                    del self.uploads[network]
 
     async def websocket(self, scope, receive, send, address):
         address = client_network(address)

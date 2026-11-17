@@ -62,3 +62,56 @@ def test_upload_may_be_slow_but_not_silent(monkeypatch, pauses, status):
         assert asyncio.run(_upload(pauses)) == status
     finally:
         resource_limits.setting.cache_clear()
+
+
+def test_slow_uploads_cannot_take_the_slots_of_the_api(monkeypatch):
+    monkeypatch.setenv('HTTP_MAX_CONCURRENT', '2')
+    monkeypatch.setenv('UPLOAD_MAX_PER_IP', '2')
+    resource_limits.setting.cache_clear()
+    released = asyncio.Event()
+
+    async def app(scope, receive, send):
+        if scope['path'] == '/chat/images/':
+            await released.wait()
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b''})
+
+    middleware = resource_limits.ResourceLimitsMiddleware(app)
+
+    async def call(path, client):
+        sent = []
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {
+            'type': 'http',
+            'method': 'POST',
+            'path': path,
+            'query_string': b'',
+            'headers': [],
+            'client': (client, 1000),
+            'scheme': 'http',
+        }
+        await middleware(scope, receive, send)
+        return next(m['status'] for m in sent if m['type'] == 'http.response.start')
+
+    async def scenario():
+        slow = [asyncio.create_task(call('/chat/images/', '203.0.113.9')) for _ in range(2)]
+        await asyncio.sleep(0.05)
+        third = await call('/chat/images/', '203.0.113.9')
+        others = [await call('/account/login/', '198.51.100.7') for _ in range(3)]
+        released.set()
+        return third, others, [await task for task in slow]
+
+    try:
+        third, others, slow = asyncio.run(scenario())
+    finally:
+        resource_limits.setting.cache_clear()
+    assert third == 429
+    assert others == [200, 200, 200]
+    assert slow == [200, 200]
+    assert middleware.uploads == {} and middleware.http_active == 0
