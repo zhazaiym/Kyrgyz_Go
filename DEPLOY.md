@@ -133,23 +133,25 @@ docker compose logs --tail=100 api
 curl --fail http://127.0.0.1:8000/
 ```
 
-The container runs as an unprivileged user, uses one Uvicorn worker, rotates
+The container runs as an unprivileged user, uses one Uvicorn worker (pinned
+with `--workers 1`, so `WEB_CONCURRENCY` cannot raise it), rotates
 logs, and restarts after process failures. The healthcheck verifies HTTP
 availability; it does not verify PostgreSQL or Gemini connectivity. An unhealthy
 status alone does not trigger Docker's restart policy.
 
 Database-backed rate limits are enabled by default and shared across workers:
 client registration is limited by IP/account, client and admin login by IP and
-identifier, password-reset requests by IP/email, WebSocket handshakes by IP,
+identifier, WebSocket handshakes by IP,
 and AI messages by client account. The AI limit is 10 messages per minute and
 300 per day per client. Counters store hashed identifiers and old windows are
 cleaned automatically. Keep `RATE_LIMIT_ENABLED=true` in production.
 
-The coarse HTTP/IP limit uses a bounded in-memory counter per worker, with no
-PostgreSQL writes. GET/HEAD health checks and SQLAdmin static assets bypass
-this counter; admission, header and body limits still apply. With N workers,
-the coarse allowance can reach N times the configured value. Use the proxy
-or an upstream service for network-level and cross-worker traffic limits.
+The coarse HTTP/IP limits (`HTTP_REQUESTS_PER_MINUTE` for writes,
+`HTTP_READS_PER_MINUTE` for GET/HEAD) use bounded in-memory counters, with no
+PostgreSQL writes; so do AI capacity and WebSocket connection counts. They are
+exact only because the API runs as one process. Running more workers would
+need these counters in a shared store first; network-level limits belong to
+the proxy or an upstream service.
 Numeric resource settings are validated at startup; restart after changing them.
 
 The coarse counter uses LRU eviction and groups IPv6 addresses by /64. Evicted
