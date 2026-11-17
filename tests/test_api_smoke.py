@@ -137,7 +137,7 @@ def test_openapi_advertises_client_requests_and_chat_booking(client):
     assert '/bookings/' not in paths
     assert 'post' in paths['/travel-requests/']
     assert paths['/travel-requests/']['post']['security'] == [{'ClientBearer': []}]
-    assert '/booking/confirm' in paths
+    assert '/booking/confirm/' in paths
 
 
 def test_legacy_booking_submission_requires_chat(client, admin_headers):

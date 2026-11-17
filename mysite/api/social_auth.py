@@ -254,12 +254,12 @@ def client_for(db, provider, identity):
         return linked_client(db, provider, identity)
 
 
-@router.post('/google')
+@router.post('/google/')
 def google_login(data: GoogleLogin, request: Request, db: Session = Depends(get_db)):
     return sign_in(request, db, 'google', lambda app_id: google_identity(data.credential, app_id))
 
 
-@router.post('/facebook')
+@router.post('/facebook/')
 def facebook_login(data: FacebookLogin, request: Request, db: Session = Depends(get_db)):
     return sign_in(
         request, db, 'facebook', lambda app_id: facebook_identity(data.access_token, app_id)

@@ -40,7 +40,7 @@ async def _upload(pauses):
     scope = {
         'type': 'http',
         'method': 'POST',
-        'path': '/chat/images',
+        'path': '/chat/images/',
         'query_string': b'',
         'headers': [],
         'client': ('203.0.113.9', 1000),

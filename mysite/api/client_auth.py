@@ -27,8 +27,8 @@ def login_required(message: str) -> HTTPException:
         detail={
             'code': 'authentication_required',
             'message': message,
-            'register_url': '/account/register',
-            'login_url': '/account/login',
+            'register_url': '/account/register/',
+            'login_url': '/account/login/',
         },
         headers={'WWW-Authenticate': 'Bearer'},
     )

@@ -36,7 +36,7 @@ def detached_client_identity(authorization: str | None = Header(default=None)) -
         return client_by_token(db, token).id, token
 
 
-@chat_router.post('/chat/session')
+@chat_router.post('/chat/session/')
 def create_session(client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
     enforce_rate_limit(
         'chat-session-create', f'client:{client.id}', max_requests=30, window_seconds=3600
@@ -50,7 +50,7 @@ def create_session(client: ChatClient = Depends(current_client), db: Session = D
     return {'session_id': sid, 'welcome': WELCOME_MESSAGE}
 
 
-@chat_router.get('/chat/sessions')
+@chat_router.get('/chat/sessions/')
 def sessions(client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
     rows = (
         db.query(ChatSession)
@@ -64,7 +64,7 @@ def sessions(client: ChatClient = Depends(current_client), db: Session = Depends
     ]
 
 
-@chat_router.get('/chat/history/{session_id}')
+@chat_router.get('/chat/history/{session_id}/')
 def history(
     session_id: str, client: ChatClient = Depends(current_client), db: Session = Depends(get_db)
 ):
@@ -82,7 +82,7 @@ def history(
     ]
 
 
-@chat_router.post('/booking/preview')
+@chat_router.post('/booking/preview/')
 def preview(
     data: BookingAction, client: ChatClient = Depends(current_client), db: Session = Depends(get_db)
 ):
@@ -90,7 +90,7 @@ def preview(
     return build_preview(db, session)
 
 
-@chat_router.post('/booking/confirm')
+@chat_router.post('/booking/confirm/')
 async def confirm(
     data: BookingConfirm, identity: tuple[int, str] = Depends(detached_client_identity)
 ):
@@ -103,7 +103,7 @@ async def confirm(
     return result
 
 
-@chat_router.delete('/chat/{session_id}/services/{kind}')
+@chat_router.delete('/chat/{session_id}/services/{kind}/')
 async def remove_service(
     session_id: str,
     kind: Literal['hotel', 'transport'],

@@ -38,6 +38,7 @@ from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
 from mysite.api.observability import router as observability_router
 from mysite.api.observability import validate_metrics_config
 from mysite.api.origin_config import configured_origins, validate_origin_settings
+from mysite.api.paths import TrailingSlashMiddleware
 from mysite.api.region import region_router
 from mysite.api.registration import router as registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
@@ -140,6 +141,7 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+app.add_middleware(TrailingSlashMiddleware)
 
 
 # ADMIN ROUTER

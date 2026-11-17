@@ -31,7 +31,7 @@
 1. Без входа показать списки туров, отелей, транспорта, трекингов и вертолётных туров.
 2. При открытии полной карточки запросить вход, если нет действующего клиентского токена.
 3. Зарегистрировать пользователя (логин + пароль) через `/account/register`, затем использовать один полученный токен везде.
-4. Выбрать тур, затем по шагам отель и транспорт из `/tours/{tour_id}/hotel-options/` и `/transport-options/` (см. раздел 5). Для выбранных тура, отеля и транспорта создать подборку через `POST /travel-selections/`, затем вызвать её `/start-chat/`. Для свободного запроса без подборки вызвать `POST /chat/session`.
+4. Выбрать тур, затем по шагам отель и транспорт из `/tours/{tour_id}/hotel-options/` и `/transport-options/` (см. раздел 5). Для выбранных тура, отеля и транспорта создать подборку через `POST /travel-selections/`, затем вызвать её `/start-chat/`. Для свободного запроса без подборки вызвать `POST /chat/session/`.
 5. Подключить WebSocket, отправить токен первым сообщением, затем вести переписку.
 6. Показать `booking_preview` и кнопку подтверждения только при `can_confirm=true`. Сохранить `revision` именно этой сводки.
 7. По отдельному действию пользователя вызвать `/booking/confirm` с `confirmed=true` и сохранённой revision.
@@ -43,17 +43,17 @@
 
 Форма регистрации и входа содержит только два поля: **логин** и **пароль**. Телефон, имя и email при регистрации не запрашиваются.
 
-`POST /account/register` (и `POST /account/register`) принимает `{username, password}`. Username (логин) содержит 3-50 символов `a-z`, `0-9`, `_`, регистр не важен; пароль 8-128 символов. Лишние поля (например, `phone`, `email`) игнорируются и не сохраняются. Успех 201: `{access_token, token_type, client_id, client_code, username, email}`; у нового аккаунта `email` равен null.
+`POST /account/register/` (и `POST /account/register/`) принимает `{username, password}`. Username (логин) содержит 3-50 символов `a-z`, `0-9`, `_`, регистр не важен; пароль 8-128 символов. Лишние поля (например, `phone`, `email`) игнорируются и не сохраняются. Успех 201: `{access_token, token_type, client_id, client_code, username, email}`; у нового аккаунта `email` равен null.
 
-`POST /account/login` принимает `{username, password}`. Для старых аккаунтов поле username может содержать email; поле `{email, password}` тоже поддерживается для совместимости. Не передавайте username и email одновременно. Успех 200 имеет тот же набор полей, что регистрация. Неверные данные дают 401, совпавший логин/email при регистрации даёт 409. Токен действует 7 дней; отдельный refresh-токен/endpoint не реализован.
+`POST /account/login/` принимает `{username, password}`. Для старых аккаунтов поле username может содержать email; поле `{email, password}` тоже поддерживается для совместимости. Не передавайте username и email одновременно. Успех 200 имеет тот же набор полей, что регистрация. Неверные данные дают 401, совпавший логин/email при регистрации даёт 409. Токен действует 7 дней; отдельный refresh-токен/endpoint не реализован.
 
 `/account/*` работает с той же учётной записью и принимает те же тела: регистрация `{username, password}`, вход `{username, password}`. Ответ дополнен `name` и `phone` (у новых аккаунтов null; телефон для заявки указывается в самой заявке). Оба login-маршрута выдают тот же семидневный bearer token; refresh-токена/endpoint нет. Два маршрута не создают два независимых аккаунта.
 
 Подтверждения владения email при регистрации нет. Email из заявки менеджеру не считается email учётной записи.
 
-`GET /account/me` возвращает `{client_id, client_code, username, email}`. `GET /account/me` добавляет имя и телефон. `POST /account/logout` отзывает переданный клиентский токен, а не все сессии пользователя. После выхода удалите токен на фронтенде и закройте WebSocket.
+`GET /account/me/` возвращает `{client_id, client_code, username, email}`. `GET /account/me/` добавляет имя и телефон. `POST /account/logout/` отзывает переданный клиентский токен, а не все сессии пользователя. После выхода удалите токен на фронтенде и закройте WebSocket.
 
-Восстановления пароля нет: вход только по логину и паролю или через соцсети. Пароль меняется после входа (`POST /account/password`).
+Восстановления пароля нет: вход только по логину и паролю или через соцсети. Пароль меняется после входа (`POST /account/password/`).
 
 Пример входа:
 
@@ -72,18 +72,18 @@ const clientToken = payload.access_token;
 
 Кнопки входа рисует фронтенд официальными SDK, а бэкенд проверяет полученный токен и выдаёт обычный клиентский токен - тот же ответ, что у `/account/login`. Ключи вводит владелец в SQLAdmin, раздел «Вход через соцсети»; на фронтенде их хранить не нужно.
 
-1. `GET /auth/providers` - публичный, без токена: `{google: {enabled, client_id}, facebook: {enabled, app_id}, telegram: {enabled, bot}, redirect: [{provider, title, start_url}]}`. Показывайте кнопку только у включённых сервисов: у Google, Facebook и Telegram при `enabled: true`, остальные - по списку `redirect`. У выключенного входа ID равен null.
-2. **Google:** загрузите Google Identity Services (`https://accounts.google.com/gsi/client`), вызовите `google.accounts.id.initialize({client_id, callback})` и отрисуйте кнопку. В `callback` придёт `response.credential` (ID-токен). Отправьте его: `POST /auth/google` с `{credential}`.
-3. **Facebook:** загрузите JavaScript SDK, `FB.init({appId: app_id, version})` с актуальной версией Graph API из кабинета Meta, затем `FB.login(callback, {scope: 'public_profile,email'})`. Из `response.authResponse.accessToken` отправьте токен: `POST /auth/facebook` с `{access_token}`.
+1. `GET /auth/providers/` - публичный, без токена: `{google: {enabled, client_id}, facebook: {enabled, app_id}, telegram: {enabled, bot}, redirect: [{provider, title, start_url}]}`. Показывайте кнопку только у включённых сервисов: у Google, Facebook и Telegram при `enabled: true`, остальные - по списку `redirect`. У выключенного входа ID равен null.
+2. **Google:** загрузите Google Identity Services (`https://accounts.google.com/gsi/client`), вызовите `google.accounts.id.initialize({client_id, callback})` и отрисуйте кнопку. В `callback` придёт `response.credential` (ID-токен). Отправьте его: `POST /auth/google/` с `{credential}`.
+3. **Facebook:** загрузите JavaScript SDK, `FB.init({appId: app_id, version})` с актуальной версией Graph API из кабинета Meta, затем `FB.login(callback, {scope: 'public_profile,email'})`. Из `response.authResponse.accessToken` отправьте токен: `POST /auth/facebook/` с `{access_token}`.
 4. Успех 200: `{access_token, token_type, client_id, client_code, username, email}`. Дальше всё как после обычного входа.
 
-**Telegram:** встройте Telegram Login Widget с `data-telegram-login` = значение `bot` из `/auth/providers`. Объект пользователя из виджета отправьте как есть: `POST /auth/telegram` с `{id, first_name, last_name?, username?, photo_url?, auth_date, hash}`. Бэкенд проверяет подпись токеном бота; данные старше суток не принимаются. Домен сайта нужно указать боту в @BotFather (`/setdomain`).
+**Telegram:** встройте Telegram Login Widget с `data-telegram-login` = значение `bot` из `/auth/providers`. Объект пользователя из виджета отправьте как есть: `POST /auth/telegram/` с `{id, first_name, last_name?, username?, photo_url?, auth_date, hash}`. Бэкенд проверяет подпись токеном бота; данные старше суток не принимаются. Домен сайта нужно указать боту в @BotFather (`/setdomain`).
 
 **VK ID, Яндекс ID, Apple, Kakao, Naver, LINE, X, GitHub, Discord, Microsoft, TikTok** - вход через перенаправление, без SDK на фронтенде:
 
 1. Кнопка ведёт на `${API_URL}${start_url}?return_to=<адрес страницы возврата на сайте>`, например `https://site/auth/callback`. Адрес возврата должен начинаться с origin из `CORS_ALLOWED_ORIGINS`, иначе 400.
 2. Бэкенд отправляет пользователя на страницу соцсети, получает от неё код, сам обменивает его на токен по ID и секрету из админки и возвращает пользователя на `return_to`.
-3. На странице возврата в адресе будет либо `login_code`, либо `login_error`. Код одноразовый и живёт 60 секунд: сразу отправьте `POST /auth/oauth/exchange` с `{login_code}` и получите тот же ответ, что у `/account/login`.
+3. На странице возврата в адресе будет либо `login_code`, либо `login_error`. Код одноразовый и живёт 60 секунд: сразу отправьте `POST /auth/oauth/exchange/` с `{login_code}` и получите тот же ответ, что у `/account/login`.
 4. `login_error`: `denied` - пользователь отказался; `invalid_credentials` - соцсеть не подтвердила вход; `service_unavailable` - соцсеть не ответила; `unavailable` - вход через сервис выключили, пока пользователь входил.
 
 VK ID пускает также аккаунты Mail.ru и Одноклассников. Apple возвращает пользователя POST-формой, для фронтенда это ничего не меняет. Адрес возврата для настроек каждой соцсети - `https://<адрес сервера>/auth/oauth/<provider>/callback`, он же показан в админке. Многие соцсети не принимают IP-адрес, для них серверу нужен домен.
@@ -167,9 +167,9 @@ google.accounts.id.initialize({
 
 ## 6. Чат по HTTP и WebSocket
 
-`POST /chat/session` без тела создаёт беседу и возвращает `{session_id, welcome}`. Нужен клиентский токен. Не создавайте новую беседу при каждом reconnect.
+`POST /chat/session/` без тела создаёт беседу и возвращает `{session_id, welcome}`. Нужен клиентский токен. Не создавайте новую беседу при каждом reconnect.
 
-`GET /chat/sessions` возвращает максимум 50 последних бесед клиента: `[{session_id, created_at, stage}]`. `GET /chat/history/{session_id}` возвращает максимум 500 последних сообщений в хронологическом порядке: `[{role, content, created_at}]`. Чужая беседа даёт 404.
+`GET /chat/sessions/` возвращает максимум 50 последних бесед клиента: `[{session_id, created_at, stage}]`. `GET /chat/history/{session_id}/` возвращает максимум 500 последних сообщений в хронологическом порядке: `[{role, content, created_at}]`. Чужая беседа даёт 404.
 
 Подключение и первые сообщения:
 
@@ -230,7 +230,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ## 7. Сводка и подтверждение заявки
 
-`POST /booking/preview` принимает `{session_id}` и возвращает:
+`POST /booking/preview/` принимает `{session_id}` и возвращает:
 
 ```json
 {
@@ -1822,7 +1822,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Единый вход клиента
 
-#### `POST /account/register`
+#### `POST /account/register/`
 
 Создать клиента по логину и паролю и сразу выдать токен. Доступ: **Публичный**.
 
@@ -1830,7 +1830,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **201**, {access_token, token_type, client_id, client_code, username, email}.
 
-#### `POST /account/login`
+#### `POST /account/login/`
 
 Войти по username или email. Доступ: **Публичный**.
 
@@ -1838,7 +1838,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
-#### `GET /account/me`
+#### `GET /account/me/`
 
 Проверить клиентский токен и получить текущего клиента. Доступ: **Клиент**.
 
@@ -1846,7 +1846,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {client_id, client_code, username, email}.
 
-#### `POST /account/logout`
+#### `POST /account/logout/`
 
 Отозвать переданный клиентский токен. Доступ: **Клиент**.
 
@@ -1858,7 +1858,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {ok:true}.
 
-#### `GET /auth/providers`
+#### `GET /auth/providers/`
 
 Какие кнопки входа через соцсети показывать. Доступ: **Публичный**.
 
@@ -1866,7 +1866,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {google: {enabled, client_id}, facebook: {enabled, app_id}}.
 
-#### `POST /auth/google`
+#### `POST /auth/google/`
 
 Войти или зарегистрироваться по ID-токену Google Identity Services. Доступ: **Публичный**.
 
@@ -1874,7 +1874,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
-#### `POST /auth/facebook`
+#### `POST /auth/facebook/`
 
 Войти или зарегистрироваться по access token из Facebook JavaScript SDK. Доступ: **Публичный**.
 
@@ -1882,7 +1882,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
-#### `POST /auth/telegram`
+#### `POST /auth/telegram/`
 
 Войти или зарегистрироваться по данным Telegram Login Widget. Доступ: **Публичный**.
 
@@ -1890,7 +1890,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {access_token, token_type, client_id, client_code, username, email}.
 
-#### `GET /auth/oauth/{provider}/start`
+#### `GET /auth/oauth/{provider}/start/`
 
 Начать вход через соцсеть с перенаправлением. Доступ: **Публичный**.
 
@@ -1901,13 +1901,13 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **302** на страницу соцсети.
 
-#### `GET /auth/oauth/{provider}/callback`
+#### `GET /auth/oauth/{provider}/callback/`
 
 Сюда соцсеть возвращает пользователя: GET, у Apple - POST-форма. Фронтенд этот адрес не вызывает. Доступ: **Публичный**.
 
 Успех: **302** на `return_to` с `login_code` или `login_error`.
 
-#### `POST /auth/oauth/exchange`
+#### `POST /auth/oauth/exchange/`
 
 Обменять одноразовый `login_code` на клиентский токен. Доступ: **Публичный**.
 
@@ -1917,7 +1917,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Чаты
 
-#### `POST /chat/session`
+#### `POST /chat/session/`
 
 Создать независимую беседу без подборки. Доступ: **Клиент**.
 
@@ -1925,7 +1925,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {session_id, welcome}.
 
-#### `GET /chat/sessions`
+#### `GET /chat/sessions/`
 
 Получить до 50 последних своих бесед. Доступ: **Клиент**.
 
@@ -1933,7 +1933,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {session_id, created_at, stage}[].
 
-#### `GET /chat/history/{session_id}`
+#### `GET /chat/history/{session_id}/`
 
 Прочитать до 500 последних сообщений своей беседы. Доступ: **Клиент**.
 
@@ -1945,7 +1945,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, {role, content, created_at}[].
 
-#### `DELETE /chat/{session_id}/services/{kind}`
+#### `DELETE /chat/{session_id}/services/{kind}/`
 
 Убрать отель или транспорт и получить новую сводку. Доступ: **Клиент**.
 
@@ -1963,7 +1963,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Подтверждение заявки
 
-#### `POST /booking/preview`
+#### `POST /booking/preview/`
 
 Получить актуальную сводку без отправки заявки. Доступ: **Клиент**.
 
@@ -1971,7 +1971,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, Сводка из раздела 7.
 
-#### `POST /booking/confirm`
+#### `POST /booking/confirm/`
 
 Явно подтвердить показанную revision и создать заявку. Доступ: **Клиент**.
 
@@ -2083,7 +2083,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Профиль и восстановление пароля
 
-#### `POST /account/register`
+#### `POST /account/register/`
 
 Создать клиента по логину и паролю и выдать токен. Доступ: **Публичный**.
 
@@ -2091,7 +2091,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **201**, Токен клиента + {name, phone, email}.
 
-#### `POST /account/login`
+#### `POST /account/login/`
 
 Войти по логину и паролю и вернуть профиль. Доступ: **Публичный**.
 
@@ -2099,7 +2099,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, Токен клиента + {name, phone, email}.
 
-#### `GET /account/me`
+#### `GET /account/me/`
 
 Получить профиль текущего клиента. Доступ: **Клиент**.
 
@@ -2109,7 +2109,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 ### Проверка доступности
 
-#### `POST /account/password`
+#### `POST /account/password/`
 
 Сменить пароль. Доступ: **Клиент**.
 
@@ -2117,7 +2117,7 @@ ws.send(JSON.stringify({ type: 'message', message: 'Хочу сюда', image_id
 
 Успех: **200**, новый токен в том же формате, что у `/account/login`. Все прежние токены клиента, включая текущий, отозваны. Неверный текущий пароль - **401**, совпадающий новый - **422**.
 
-#### `POST /account/logout-all`
+#### `POST /account/logout-all/`
 
 Выйти на всех устройствах. Доступ: **Клиент**.
 

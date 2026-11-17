@@ -1,3 +1,5 @@
+import secrets
+
 import pytest
 
 from mysite.database import models
@@ -116,17 +118,16 @@ def test_guest_can_read_nested_catalogue_resources(client, path):
 
 def test_password_sign_in_lives_only_under_account(client):
     paths = client.get('/openapi.json').json()['paths']
-    assert '/account/register' in paths
-    assert '/account/login' in paths
-    assert '/account/logout' in paths
+    assert {'/account/register/', '/account/login/', '/account/logout/'} <= set(paths)
     assert not any(path.startswith('/chat/auth') for path in paths)
-    assert not {'/auth/register', '/auth/login', '/auth/me', '/auth/logout'} & set(paths)
+    assert not {'/auth/register/', '/auth/login/', '/auth/me/', '/auth/logout/'} & set(paths)
+    assert all(path.endswith('/') for path in paths if path != '/metrics')
 
 
 def test_login_required_response_describes_registration_action(client):
     response = client.post('/chat/session')
     assert response.status_code == 401
-    assert response.json()['detail']['register_url'] == '/account/register'
+    assert response.json()['detail']['register_url'] == '/account/register/'
 
 
 def test_legacy_and_shared_registration_use_the_same_account(client):
@@ -152,3 +153,10 @@ def test_public_catalogue_does_not_depend_on_token_validity(client, catalogue_en
     for path, entry_id in catalogue_entries:
         assert client.get(f'{path}{entry_id}/', headers=headers).status_code == 200
         assert client.get(path, headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize('path', ['/account/register', '/account/register/'])
+def test_path_with_or_without_slash_is_served_without_redirect(client, path):
+    body = {'username': f'slash_{secrets.token_hex(6)}', 'password': 'StrongSlashPassword1!'}
+    response = client.post(path, json=body, follow_redirects=False)
+    assert response.status_code == 201, response.text

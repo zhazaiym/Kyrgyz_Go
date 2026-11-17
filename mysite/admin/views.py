@@ -433,7 +433,7 @@ def provider_callback(model, attribute):
         return 'не нужен'
     if model.provider == 'telegram':
         return 'домен сайта в @BotFather (/setdomain)'
-    return f'/auth/oauth/{model.provider}/callback'
+    return f'/auth/oauth/{model.provider}/callback/'
 
 
 def provider_secret(model, attribute):

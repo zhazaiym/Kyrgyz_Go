@@ -27,19 +27,19 @@ def with_profile(db: Session, client: ChatClient, result: dict):
     return result
 
 
-@router.post('/register', status_code=201)
+@router.post('/register/', status_code=201)
 def register(data: RegistrationCredentials, request: Request, db: Session = Depends(get_db)):
     client = create_password_client(db, request, data)
     return with_profile(db, client, issue_token(db, client))
 
 
-@router.post('/login')
+@router.post('/login/')
 def login(data: LoginCredentials, request: Request, db: Session = Depends(get_db)):
     client = login_client(db, request, data)
     return with_profile(db, client, issue_token(db, client))
 
 
-@router.get('/me')
+@router.get('/me/')
 def my_profile(client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
     return with_profile(
         db,
@@ -53,7 +53,7 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
-@router.post('/password')
+@router.post('/password/')
 def change_password(
     data: PasswordChange,
     request: Request,
@@ -80,7 +80,7 @@ def change_password(
     return issue_token(db, locked)
 
 
-@router.post('/logout-all', status_code=204)
+@router.post('/logout-all/', status_code=204)
 def logout_everywhere(client: ChatClient = Depends(current_client), db: Session = Depends(get_db)):
     """Revoke every login token of the caller, including the one used for this request."""
     db.query(ChatLoginToken).filter(ChatLoginToken.client_id == client.id).delete(
@@ -90,7 +90,7 @@ def logout_everywhere(client: ChatClient = Depends(current_client), db: Session 
     return Response(status_code=204)
 
 
-@router.post('/logout')
+@router.post('/logout/')
 def logout(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     """Revoke the token of this request only; other devices stay signed in."""
     scheme, _, token = (authorization or '').partition(' ')

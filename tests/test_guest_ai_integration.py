@@ -81,7 +81,7 @@ def test_global_guest_quota_applies_across_networks(monkeypatch):
 
 def test_openapi_guest_contract_matches_documentation(client):
     spec = client.get('/openapi.json').json()
-    operation = spec['paths']['/api/ask-ai']['post']
+    operation = spec['paths']['/api/ask-ai/']['post']
     assert not operation.get('security')
     schema = spec['components']['schemas']['GuestQuestion']
     assert schema['required'] == ['context']
