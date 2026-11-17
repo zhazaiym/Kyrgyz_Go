@@ -463,3 +463,39 @@ for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_chats_silent_for_a_year_are_removed_unless_a_request_needs_them(client):
+    from mysite.api.token_maintenance import cleanup_old_chats
+    from mysite.database.chat_models import ChatBookingLink, ChatMessage, ChatSession
+
+    account, _ = register(client)
+    client_id = account['client_id']
+    old = datetime.now(timezone.utc) - timedelta(days=400)
+    recent = datetime.now(timezone.utc) - timedelta(days=10)
+    sessions = {name: str(uuid4()) for name in ('silent', 'answered', 'booked')}
+    with SessionLocal() as db:
+        for name, identity in sessions.items():
+            db.add(ChatSession(id=identity, client_id=client_id, state={}, created_at=old))
+        db.flush()
+        for name, identity in sessions.items():
+            when = recent if name == 'answered' else old
+            db.add(ChatMessage(session_id=identity, role='user', content=name, created_at=when))
+        request = m.TravelRequest(client_id=client_id, name='Guest', phone='+996700000000')
+        db.add(request)
+        db.flush()
+        db.add(
+            ChatBookingLink(
+                client_id=client_id,
+                session_id=sessions['booked'],
+                request_id=request.id,
+                revision=0,
+            )
+        )
+        db.commit()
+    assert cleanup_old_chats() >= 1
+    with SessionLocal() as db:
+        assert db.get(ChatSession, sessions['silent']) is None
+        assert db.query(ChatMessage).filter_by(session_id=sessions['silent']).count() == 0
+        assert db.get(ChatSession, sessions['answered']) is not None
+        assert db.get(ChatSession, sessions['booked']) is not None
