@@ -37,7 +37,7 @@ from mysite.api.observability import observability_router, validate_metrics_conf
 from mysite.api.origin_config import configured_origins, validate_origin_settings
 from mysite.api.paths import TrailingSlashMiddleware
 from mysite.api.region import region_router
-from mysite.api.registration import registration_router
+from mysite.api.registration import legacy_auth_router, registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
 from mysite.api.social_auth import social_auth_router
 from mysite.api.social_oauth import social_oauth_router
@@ -196,6 +196,7 @@ app.include_router(chat_images_router)
 app.include_router(chat_ws_router)
 app.include_router(selection_router)
 app.include_router(registration_router)
+app.include_router(legacy_auth_router)
 app.include_router(observability_router)
 
 

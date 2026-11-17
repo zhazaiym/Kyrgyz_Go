@@ -101,3 +101,13 @@ def logout(authorization: str | None = Header(default=None), db: Session = Depen
         db.delete(access)
         db.commit()
     return {'ok': True}
+
+
+# The site's server bridge still asks /auth/me before it hands out a chat token, and
+# falls back to /auth/login and /auth/register. These hidden aliases keep it working
+# until the bridge uses /account/* alone.
+legacy_auth_router = APIRouter(prefix='/auth', include_in_schema=False)
+legacy_auth_router.add_api_route('/register/', register, methods=['POST'], status_code=201)
+legacy_auth_router.add_api_route('/login/', login, methods=['POST'])
+legacy_auth_router.add_api_route('/me/', my_profile, methods=['GET'])
+legacy_auth_router.add_api_route('/logout/', logout, methods=['POST'])
