@@ -107,6 +107,7 @@ def test_oversized_and_chunked_requests_are_rejected_before_json_parsing(client,
 def test_http_quota_cannot_be_bypassed_with_untrusted_forwarded_headers(monkeypatch):
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setenv('HTTP_REQUESTS_PER_MINUTE', '3')
+    monkeypatch.setenv('HTTP_READS_PER_MINUTE', '3')
     monkeypatch.setattr(rate_limit, '_current_epoch', lambda: 1_950_000_000)
     with TestClient(app, client=('198.51.100.111', 50001)) as browser:
         statuses = [

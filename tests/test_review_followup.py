@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +29,7 @@ from tests.test_user_flow_regressions import complete, submit
 def test_caddy_clients_have_independent_http_quotas_and_https_scheme(monkeypatch):
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setenv('HTTP_REQUESTS_PER_MINUTE', '1')
+    monkeypatch.setenv('HTTP_READS_PER_MINUTE', '1')
     proxy = ProxyHeadersMiddleware(app, trusted_hosts='172.30.240.2')
     with TestClient(proxy, client=('172.30.240.2', 1234)) as browser:
         first = {'X-Forwarded-For': '203.0.113.201', 'X-Forwarded-Proto': 'https'}
@@ -68,6 +70,7 @@ def test_websocket_limit_behind_caddy_is_per_client_not_per_proxy(client, monkey
 def test_http_limiter_health_and_admin_assets_do_not_write_to_postgresql(monkeypatch):
     monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
     monkeypatch.setenv('HTTP_REQUESTS_PER_MINUTE', '1')
+    monkeypatch.setenv('HTTP_READS_PER_MINUTE', '1')
     statements = []
 
     def record(connection, cursor, statement, parameters, context, executemany):
@@ -338,3 +341,19 @@ finally:
             text=True,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_catalogue_reads_and_writes_have_separate_limits(monkeypatch):
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setenv('HTTP_REQUESTS_PER_MINUTE', '1')
+    monkeypatch.setenv('HTTP_READS_PER_MINUTE', '3')
+    from mysite.api.resource_limits import ResourceLimitsMiddleware
+
+    limiter = ResourceLimitsMiddleware(app)
+    for _ in range(3):
+        limiter.http_quota('203.0.113.50', 'GET')
+    limiter.http_quota('203.0.113.50', 'POST')
+    with pytest.raises(HTTPException):
+        limiter.http_quota('203.0.113.50', 'GET')
+    with pytest.raises(HTTPException):
+        limiter.http_quota('203.0.113.50', 'POST')

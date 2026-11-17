@@ -28,6 +28,8 @@ RESOURCE_LIMITS = {
     'AUTH_MAX_CONCURRENT': (4, 16),
     'HTTP_MAX_CONCURRENT': (64, 512),
     'HTTP_REQUESTS_PER_MINUTE': (120, 100_000),
+    # Reading the catalogue is cheap and a page makes many reads; writes keep the lower limit.
+    'HTTP_READS_PER_MINUTE': (600, 100_000),
     'HTTP_IP_BUCKETS': (8192, 65_536),
     'MAX_REQUEST_BODY_BYTES': (1_048_576, 16_777_216),
     'MAX_IMAGE_UPLOAD_BYTES': (10_485_760, 33_554_432),
@@ -144,10 +146,11 @@ class ResourceLimitsMiddleware:
         self.ws_clients = {}
         self.http_counters = OrderedDict()
 
-    def http_quota(self, address):
+    def http_quota(self, address, method='POST'):
         if not rate_limits_enabled():
             return
-        address = client_network(address)
+        reading = method in {'GET', 'HEAD', 'OPTIONS'}
+        address = (client_network(address), reading)
         instant = time.monotonic()
         window = int(instant // 60)
         with self.lock:
@@ -163,7 +166,7 @@ class ResourceLimitsMiddleware:
             old_window, count = self.http_counters[address]
             if old_window != window:
                 count = 0
-            maximum = setting('HTTP_REQUESTS_PER_MINUTE')
+            maximum = setting('HTTP_READS_PER_MINUTE' if reading else 'HTTP_REQUESTS_PER_MINUTE')
             self.http_counters[address] = (window, min(count + 1, maximum + 1))
             self.http_counters.move_to_end(address)
         if count >= maximum:
@@ -259,7 +262,7 @@ class ResourceLimitsMiddleware:
                     path == '/' or path.startswith(('/admin/statics/', '/media/'))
                 )
                 if not cheap_read:
-                    self.http_quota(address)
+                    self.http_quota(address, scope.get('method'))
             except HTTPException as exc:
                 return await reject(exc.status_code, exc.detail, exc.headers)
             if (

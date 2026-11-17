@@ -106,11 +106,15 @@ validate_resource_settings()
 validate_chat_settings()
 validate_origin_settings()
 validate_metrics_config()
+api_docs = os.getenv('API_DOCS', 'true').strip().casefold() not in {'0', 'false', 'no'}
 app = FastAPI(
     title='KYRGYZGO',
     description='KYRGYZGO Tourism API + AI Travel Assistant',
     version='1.0.0',
     lifespan=lifespan,
+    docs_url='/docs' if api_docs else None,
+    redoc_url='/redoc' if api_docs else None,
+    openapi_url='/openapi.json' if api_docs else None,
 )
 
 from sqlalchemy.exc import TimeoutError as DatabasePoolTimeout

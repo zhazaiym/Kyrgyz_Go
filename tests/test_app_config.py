@@ -61,3 +61,23 @@ def test_standalone_scripts_register_every_referenced_table(script):
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_api_docs_can_be_hidden_on_production():
+    import os
+    import subprocess
+    import sys
+
+    script = (
+        'from fastapi.testclient import TestClient; import main; '
+        "c = TestClient(main.app); print([c.get(p).status_code for p in ('/docs', '/redoc', '/openapi.json')])"
+    )
+    result = subprocess.run(
+        [sys.executable, '-c', script],
+        env={**os.environ, 'API_DOCS': 'false'},
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    assert result.stdout.strip().splitlines()[-1] == '[404, 404, 404]'
