@@ -24,7 +24,7 @@ from mysite.database.chat_models import ChatClient
 from mysite.database.db import get_db
 from mysite.database.social_models import AuthProvider, ClientIdentity
 
-router = APIRouter(tags=['Client authentication'])
+social_auth_router = APIRouter(tags=['Client authentication'])
 
 GOOGLE_CERTS = 'https://www.googleapis.com/oauth2/v3/certs'
 GOOGLE_ISSUERS = ('accounts.google.com', 'https://accounts.google.com')
@@ -254,12 +254,12 @@ def client_for(db, provider, identity):
         return linked_client(db, provider, identity)
 
 
-@router.post('/google/')
+@social_auth_router.post('/google/')
 def google_login(data: GoogleLogin, request: Request, db: Session = Depends(get_db)):
     return sign_in(request, db, 'google', lambda app_id: google_identity(data.credential, app_id))
 
 
-@router.post('/facebook/')
+@social_auth_router.post('/facebook/')
 def facebook_login(data: FacebookLogin, request: Request, db: Session = Depends(get_db)):
     return sign_in(
         request, db, 'facebook', lambda app_id: facebook_identity(data.access_token, app_id)

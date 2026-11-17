@@ -21,7 +21,7 @@ from mysite.api.admin_access import AdminAccessMiddleware
 from mysite.api.booking import booking_router
 from mysite.api.chat import chat_router
 from mysite.api.chat_images import chat_images_router
-from mysite.api.chat_ws import router as chat_ws_router
+from mysite.api.chat_ws import chat_ws_router
 from mysite.api.contact import contact_router
 from mysite.api.country import country_router
 from mysite.api.district import district_router
@@ -34,15 +34,14 @@ from mysite.api.image_routes import (helicopter_image_router, hotel_image_router
                                      transport_image_router, trekking_image_router)
 from mysite.api.manager_selection import manager_selection_router
 from mysite.api.media import MEDIA_ROOT, MEDIA_URL, media_router
-from mysite.api.observability import router as observability_router
-from mysite.api.observability import validate_metrics_config
+from mysite.api.observability import observability_router, validate_metrics_config
 from mysite.api.origin_config import configured_origins, validate_origin_settings
 from mysite.api.paths import TrailingSlashMiddleware
 from mysite.api.region import region_router
-from mysite.api.registration import router as registration_router
+from mysite.api.registration import registration_router
 from mysite.api.resource_limits import ResourceLimitsMiddleware, validate_resource_settings
-from mysite.api.social_auth import router as social_auth_router
-from mysite.api.social_oauth import router as social_oauth_router
+from mysite.api.social_auth import social_auth_router
+from mysite.api.social_oauth import social_oauth_router
 from mysite.api.token_maintenance import token_cleanup_loop
 from mysite.api.tour import tour_router
 from mysite.api.tour_category import category_router

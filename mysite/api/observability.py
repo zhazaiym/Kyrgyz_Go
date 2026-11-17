@@ -8,7 +8,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import Response
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 
-router = APIRouter()
+observability_router = APIRouter()
 _AI_OPERATIONS = {'extractor', 'generation', 'tool'}
 _AI_OUTCOMES = {'success', 'failure', 'timeout', 'blocked'}
 _AI_TOKEN_OPERATIONS = {'extractor', 'generation'}
@@ -165,7 +165,7 @@ class HTTPMetricsMiddleware:
             _metrics['http_time'].labels(method, route).observe(time.perf_counter() - started)
 
 
-@router.get('/metrics', include_in_schema=False)
+@observability_router.get('/metrics', include_in_schema=False)
 def metrics(authorization: str | None = Header(default=None)):
     configured = os.getenv('METRICS_BEARER_TOKEN', '').strip()
     scheme, _, supplied = (authorization or '').partition(' ')
