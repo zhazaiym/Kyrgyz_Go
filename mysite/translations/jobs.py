@@ -431,6 +431,69 @@ def _translate_tour(source):
     return translate_tour(source)
 
 
+def _source_changed(record, source):
+    return any(source_value_changed(getattr(record, key), value) for key, value in source.items())
+
+
+def _merge_language(current, store, hashes, manual_fields, values, source):
+    """Take fresh values, except manual edits that still match their source."""
+    for field, value in values.items():
+        if field in manual_fields and translation_ready(
+            current(field), hashes.get(field), source[field]
+        ):
+            continue
+        manual_fields.discard(field)
+        store(field, value)
+        hashes[field] = source_field_hash(source[field])
+
+
+def _save_tour_translations(db, identity, translated, source):
+    for language, values in translated.items():
+        row = db.query(TourTranslation).filter_by(tour_id=identity, lang=language).first()
+        if row is None:
+            row = TourTranslation(tour_id=identity, lang=language)
+            db.add(row)
+        hashes = dict(row.source_hashes) if isinstance(row.source_hashes, dict) else {}
+        manual_fields = set(active_manual_fields(row.manual_fields or [], hashes, source))
+        _merge_language(
+            lambda field: getattr(row, field),
+            lambda field, value: setattr(row, field, value),
+            hashes,
+            manual_fields,
+            values,
+            source,
+        )
+        row.manual_fields = sorted(manual_fields)
+        row.source_hashes = hashes
+
+
+def _save_json_translations(record, translated, source):
+    stored = dict(record.translations) if isinstance(record.translations, dict) else {}
+    for language, values in translated.items():
+        previous = stored.get(language)
+        previous = dict(previous) if isinstance(previous, dict) else {}
+        hashes = previous.get('_source_hashes', {})
+        hashes = dict(hashes) if isinstance(hashes, dict) else {}
+        manual_fields = set(
+            active_manual_fields(previous.get('_manual_fields', []), hashes, source)
+        )
+        _merge_language(previous.get, previous.__setitem__, hashes, manual_fields, values, source)
+        previous['_source_hashes'] = hashes
+        previous['_manual_fields'] = sorted(manual_fields)
+        stored[language] = previous
+    record.translations = stored
+
+
+def _failure_code(exc):
+    if isinstance(exc, AIError):
+        code = exc.code
+    elif isinstance(exc, (ValueError, TypeError)):
+        code = 'invalid_translation'
+    else:
+        code = classify_error(exc).code
+    return 'ai_unavailable' if code == 'internal_error' else code
+
+
 def translate_record(entity, identity, source, translator, *, wait_for_capacity=False):
     if not capacity.acquire(blocking=wait_for_capacity):
         logger.warning('Catalogue translation capacity exhausted; keeping stored translations')
@@ -440,111 +503,34 @@ def translate_record(entity, identity, source, translator, *, wait_for_capacity=
         # Check the source before calling the translation provider.
         with SessionLocal() as db:
             record = db.get(entity, identity)
-
             if record is None:
                 return 'missing'
-
-            if any(
-                source_value_changed(getattr(record, key), value) for key, value in source.items()
-            ):
+            if _source_changed(record, source):
                 return 'source_changed'
 
         reserve_translation_call()
         translated = _valid_translation_result(translator(source), source)
-
         if not translated:
             return 'invalid_translation'
 
         with SessionLocal() as db:
             record = db.get(entity, identity, with_for_update=True)
-
             if record is None:
                 return 'missing'
-
             # The source may have changed while the provider was working.
-            if any(
-                source_value_changed(getattr(record, key), value) for key, value in source.items()
-            ):
+            if _source_changed(record, source):
                 return 'source_changed'
-
             if entity is Tour:
-                for language, values in translated.items():
-                    row = (
-                        db.query(TourTranslation).filter_by(tour_id=identity, lang=language).first()
-                    )
-
-                    if row is None:
-                        row = TourTranslation(tour_id=identity, lang=language)
-                        db.add(row)
-
-                    hashes = dict(row.source_hashes) if isinstance(row.source_hashes, dict) else {}
-
-                    manual_fields = set(
-                        active_manual_fields(row.manual_fields or [], hashes, source)
-                    )
-
-                    for field, value in values.items():
-                        existing = getattr(row, field)
-
-                        if field in manual_fields and translation_ready(
-                            existing, hashes.get(field), source[field]
-                        ):
-                            continue
-
-                        manual_fields.discard(field)
-                        setattr(row, field, value)
-                        hashes[field] = source_field_hash(source[field])
-
-                    row.manual_fields = sorted(manual_fields)
-                    row.source_hashes = hashes
-
+                _save_tour_translations(db, identity, translated, source)
             else:
-                stored = dict(record.translations) if isinstance(record.translations, dict) else {}
-
-                for language, values in translated.items():
-                    previous = stored.get(language)
-                    previous = dict(previous) if isinstance(previous, dict) else {}
-
-                    hashes = previous.get('_source_hashes', {})
-                    hashes = dict(hashes) if isinstance(hashes, dict) else {}
-
-                    manual_fields = set(
-                        active_manual_fields(previous.get('_manual_fields', []), hashes, source)
-                    )
-
-                    for field, value in values.items():
-                        if field in manual_fields and translation_ready(
-                            previous.get(field), hashes.get(field), source[field]
-                        ):
-                            continue
-
-                        manual_fields.discard(field)
-                        previous[field] = value
-                        hashes[field] = source_field_hash(source[field])
-
-                    previous['_source_hashes'] = hashes
-                    previous['_manual_fields'] = sorted(manual_fields)
-                    stored[language] = previous
-
-                record.translations = stored
-
+                _save_json_translations(record, translated, source)
             db.commit()
 
         return 'translated'
 
     except Exception as exc:
         # Provider exception messages may contain sensitive information.
-        code = (
-            exc.code
-            if isinstance(exc, AIError)
-            else (
-                'invalid_translation'
-                if isinstance(exc, (ValueError, TypeError))
-                else classify_error(exc).code
-            )
-        )
-        if code == 'internal_error':
-            code = 'ai_unavailable'
+        code = _failure_code(exc)
         log = logger.warning if code in TRANSIENT_ERRORS else logger.error
         log('Catalogue translation failed code=%s; source record is already saved', code)
         return code
