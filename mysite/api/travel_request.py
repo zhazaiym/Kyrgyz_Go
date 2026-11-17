@@ -177,7 +177,7 @@ def update_travel_request(
 
     for field in ('name', 'phone', 'status'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(request_db, key, value)

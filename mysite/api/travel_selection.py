@@ -57,7 +57,7 @@ def validate_items(db, tour_id, hotel_id, transport_id):
                 or not item.is_active
                 or is_demo_name(getattr(item, 'title' if model is Tour else 'name'))
             ):
-                raise HTTPException(status_code=404, detail=f'{name} не найден или недоступен')
+                raise HTTPException(status_code=404, detail=error_detail('not_found'))
 
     check_suitable(db, tour_id, hotel_id, transport_id)
 

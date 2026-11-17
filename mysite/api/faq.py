@@ -66,11 +66,11 @@ def update_faq(faq_id: int, faq: FAQUpdateSchema, db: Session = Depends(get_db))
 
     for field in ('question', 'answer'):
         if field in data and not data[field]:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for field in ('order', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(faq_db, key, value)

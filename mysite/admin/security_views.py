@@ -9,6 +9,7 @@ from starlette.responses import RedirectResponse
 
 from mysite.admin.labels import apply_form_rules, apply_labels
 from mysite.api.admin_sessions import sql_session_admin
+from mysite.api.errors import error_detail
 from mysite.database.admin_security_models import AdminSession
 from mysite.database.db import SessionLocal
 from mysite.database.token_utils import utcnow
@@ -31,7 +32,7 @@ class RevocableAdminAccess:
     @action(name='revoke', label='Отозвать', confirmation_message='Отозвать выбранный доступ?')
     async def revoke(self, request):
         if not self.is_accessible(request):
-            raise HTTPException(403, detail='forbidden')
+            raise HTTPException(403, detail=error_detail('forbidden'))
         try:
             identities = [
                 str(UUID(value))
@@ -39,7 +40,7 @@ class RevocableAdminAccess:
                 if value
             ]
         except ValueError:
-            raise HTTPException(400, detail='invalid_request') from None
+            raise HTTPException(400, detail=error_detail('invalid_request')) from None
 
         def update():
             with SessionLocal() as db:

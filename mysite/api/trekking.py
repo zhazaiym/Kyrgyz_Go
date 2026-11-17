@@ -61,7 +61,7 @@ def update_trekking(
 
     for field in ('title', 'price', 'price_unit', 'is_active'):
         if field in data and data[field] is None:
-            raise HTTPException(status_code=400, detail=f'{field} бош болбошу керек')
+            raise HTTPException(status_code=400, detail=error_detail('invalid_request'))
 
     for key, value in data.items():
         setattr(trekking_db, key, value)

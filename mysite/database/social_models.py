@@ -53,6 +53,6 @@ class SocialLoginCode(Base):
 
     code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     client_id: Mapped[int] = mapped_column(
-        ForeignKey('chat_clients.id', ondelete='CASCADE'), nullable=False
+        ForeignKey('chat_clients.id', ondelete='CASCADE'), nullable=False, index=True
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

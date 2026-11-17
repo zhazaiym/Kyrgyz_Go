@@ -113,7 +113,7 @@ def create_tour(tour: TourInputSchema, db: Session = Depends(get_db)):
         db.rollback()
         logger.exception('Турду сактоо катасы')
 
-        raise HTTPException(status_code=500, detail='Турду сактоо ишке ашкан жок')
+        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
 
 @tour_router.get('/', response_model=list[TourCardSchema])
@@ -209,7 +209,7 @@ def update_tour(tour_id: int, tour: TourUpdateSchema, db: Session = Depends(get_
         db.rollback()
         logger.exception('Турду жаңыртуу катасы')
 
-        raise HTTPException(status_code=500, detail='Турду жаңыртуу ишке ашкан жок')
+        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
 
 @tour_router.post(
@@ -245,7 +245,7 @@ def retry_tour_translation(tour_id: int, db: Session = Depends(get_db)):
         db.rollback()
         logger.exception('Котормону сактоо катасы')
 
-        raise HTTPException(status_code=500, detail='Котормону сактоо ишке ашкан жок')
+        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
 
 @tour_router.delete('/{tour_id}/', dependencies=[Depends(require_admin_roles('catalog_editor'))])
@@ -271,7 +271,7 @@ def delete_tour(tour_id: int, db: Session = Depends(get_db)):
         db.rollback()
         logger.exception('Турду өчүрүү катасы')
 
-        raise HTTPException(status_code=500, detail='Турду өчүрүү ишке ашкан жок')
+        raise HTTPException(status_code=500, detail=error_detail('internal_error'))
 
 
 @tour_router.get('/home/slides/')

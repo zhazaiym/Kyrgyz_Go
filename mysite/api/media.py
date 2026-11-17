@@ -68,9 +68,7 @@ async def check_upload_size(upload: UploadFile):
         return size
 
     if await run_in_threadpool(file_size) > limit:
-        raise HTTPException(
-            status_code=413, detail=f'Сүрөт {limit // 1_048_576} МБдан ашпашы керек'
-        )
+        raise HTTPException(status_code=413, detail=error_detail('file_too_large'))
 
 
 async def save_upload(request: Request, upload: UploadFile) -> str:

@@ -2,7 +2,7 @@
 
 ERROR_MESSAGES = {
     'invalid_request': 'Проверьте данные запроса',
-    'invalid_credentials': 'Неверный логин, пароль или код',
+    'invalid_credentials': 'Неверный логин или пароль',
     'authentication_required': 'Войдите в аккаунт для доступа',
     'forbidden': 'Недостаточно прав',
     'not_found': 'Запись не найдена',
@@ -15,6 +15,7 @@ ERROR_MESSAGES = {
     'invalid_travelers_count': 'Проверьте допустимое число туристов',
     'unsuitable_hotel': 'Этот отель не подходит к выбранному туру, выберите из предложенных',
     'unsuitable_transport': 'Этот транспорт не подходит к выбранному туру, выберите из предложенных',
+    'file_too_large': 'Файл слишком большой',
     'internal_error': 'Не удалось выполнить запрос',
 }
 STATUS_CODES = {
