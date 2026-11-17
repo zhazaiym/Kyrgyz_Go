@@ -252,7 +252,7 @@ def _numbered_tour_choice(message, state, history):
     match = re.fullmatch(r'(\d{1,2})(?:-?(?:й|ый|ой))?(?:\s+вариант)?[.!]?', text)
     if match is None:
         return None
-    if text.isdigit():
+    if text.rstrip('.!').isdigit():
         last = next((item.content for item in reversed(history) if item.role == 'assistant'), '')
         if not re.search(r'выб|вариант|which|choose|welch|哪个', last, re.IGNORECASE):
             return None

@@ -138,7 +138,8 @@ def test_known_numbered_choice_survives_extractor_outage(monkeypatch, choice):
     assert not intent
 
 
-def test_answer_to_people_question_is_not_a_tour_choice(monkeypatch):
+@pytest.mark.parametrize('answer', ['2', '2.', '2!'])
+def test_answer_to_people_question_is_not_a_tour_choice(monkeypatch, answer):
     agent = runtime(monkeypatch, [[AIMessageChunk(content='На какую дату?')]])
 
     async def people(messages):
@@ -152,7 +153,7 @@ def test_answer_to_people_question_is_not_a_tour_choice(monkeypatch):
         ]
     }
     history = [SimpleNamespace(role='assistant', content='Сколько человек поедет?')]
-    _, updated, _ = asyncio.run(agent.respond('2', state, history))
+    _, updated, _ = asyncio.run(agent.respond(answer, state, history))
     assert updated['people_count'] == 2 and 'tour_id' not in updated
 
 
