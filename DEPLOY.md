@@ -249,7 +249,7 @@ Caddy normally serves `/media/`. With a host Nginx either add an equivalent
 
 ### Frontend connection
 
-Customer registration and login use `/auth/register` and `/auth/login`.
+Customer registration and login use `/account/register/` and `/account/login/`.
 Keep one customer token for both catalogue details and chat. Catalogue lists
 return public summary cards; detailed objects, programs, galleries and chat
 require the customer token. On HTTP 401, show the shared registration/login
