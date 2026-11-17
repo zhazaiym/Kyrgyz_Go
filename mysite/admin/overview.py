@@ -343,11 +343,17 @@ def catalog(db):
 
 
 def reviews(db):
-    count, average = db.execute(
-        select(func.count(TourReview.id), func.avg(TourReview.rating))
+    published = TourReview.status == 'published'
+    count, average, pending = db.execute(
+        select(
+            func.count(TourReview.id).filter(published),
+            func.avg(TourReview.rating).filter(published),
+            func.count(TourReview.id).filter(TourReview.status == 'pending'),
+        )
     ).one()
     return {
         'count': count,
+        'pending': pending,
         'average': f'{average:.1f}'.replace('.', ',') if average is not None else None,
         'forms': plural(count, ('отзыв', 'отзыва', 'отзывов')),
     }

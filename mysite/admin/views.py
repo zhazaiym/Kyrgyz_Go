@@ -7,7 +7,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from wtforms import PasswordField, SelectField, validators
 
-from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels
+from mysite.admin.labels import CHOICE_LABELS, apply_form_rules, apply_labels, local_time
 from mysite.api.provider_secrets import open_secret, seal_secret
 from mysite.api.social_auth import WITHOUT_SECRET, valid_app_id, valid_secret
 from mysite.database.db import SessionLocal
@@ -17,6 +17,7 @@ from mysite.database.models import (FAQ, About, AboutSection, Admin, Contact, Di
                                     Transport, TransportImage, TravelRequest, Trekking,
                                     TrekkingImage, TrekkingProgram)
 from mysite.database.social_models import AuthProvider
+from mysite.database.tour_review_models import TourReview
 from mysite.translations.content import (CONTENT_FIELDS, generate_translations,
                                          manual_translation_changed,
                                          manual_translation_needs_refresh, mark_manual_translations,
@@ -536,10 +537,45 @@ class TravelRequestAdmin(ModelView, model=TravelRequest):
     form_columns = [TravelRequest.status]
 
 
+REVIEW_STATUSES = {'pending': 'Ждёт проверки', 'published': 'Опубликован', 'rejected': 'Отклонён'}
+
+
+class TourReviewAdmin(ModelView, model=TourReview):
+    name = 'Отзыв'
+    name_plural = 'Отзывы'
+    icon = 'fa-solid fa-star'
+    can_create = False
+    column_list = [
+        TourReview.status,
+        TourReview.tour,
+        TourReview.display_name,
+        TourReview.rating,
+        TourReview.text,
+        TourReview.created_at,
+    ]
+    column_labels = {
+        'status': 'Статус',
+        'tour': 'Тур',
+        'display_name': 'Автор',
+        'rating': 'Оценка',
+        'text': 'Текст',
+        'created_at': 'Создано',
+    }
+    column_default_sort = [(TourReview.created_at, True)]
+    column_formatters = {
+        'status': lambda model, attribute: REVIEW_STATUSES.get(model.status, model.status),
+        'created_at': local_time('created_at'),
+    }
+    column_formatters_detail = column_formatters
+    form_columns = [TourReview.status]
+    form_overrides = {'status': SelectField}
+    form_args = {'status': {'choices': list(REVIEW_STATUSES.items()), 'label': 'Статус'}}
+
+
 def _view_roles(view):
     if view in (AdminAdmin, AuthProviderAdmin):
         allowed = {'owner'}
-    elif view is TravelRequestAdmin:
+    elif view in (TravelRequestAdmin, TourReviewAdmin):
         allowed = {'owner', 'manager'}
     else:
         allowed = {'owner', 'catalog_editor'}
@@ -584,3 +620,4 @@ for _admin_view in (
     _view_roles(_admin_view)
     apply_labels(_admin_view)
     apply_form_rules(_admin_view)
+_view_roles(TourReviewAdmin)

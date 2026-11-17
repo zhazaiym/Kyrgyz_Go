@@ -70,7 +70,7 @@ def localized_tour_cards_with_reviews(tours, db: Session, lang: str):
             tour_id: (round(float(average), 2), count)
             for tour_id, average, count in (
                 db.query(TourReview.tour_id, func.avg(TourReview.rating), func.count(TourReview.id))
-                .filter(TourReview.tour_id.in_(tour_ids))
+                .filter(TourReview.tour_id.in_(tour_ids), TourReview.status == 'published')
                 .group_by(TourReview.tour_id)
                 .all()
             )

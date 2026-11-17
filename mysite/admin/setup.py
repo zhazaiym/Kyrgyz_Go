@@ -16,8 +16,9 @@ from mysite.database.db import engine
 from .views import (AboutAdmin, AboutSectionAdmin, AdminAdmin, AuthProviderAdmin, ContactAdmin,
                     DistrictAdmin, FAQAdmin, HelicopterImageAdmin, HelicopterTourAdmin, HotelAdmin,
                     HotelImageAdmin, RegionAdmin, TourAdmin, TourCategoryAdmin, TourImageAdmin,
-                    TourProgramAdmin, TourVideoAdmin, TransportAdmin, TransportImageAdmin,
-                    TravelRequestAdmin, TrekkingAdmin, TrekkingImageAdmin, TrekkingProgramAdmin)
+                    TourProgramAdmin, TourReviewAdmin, TourVideoAdmin, TransportAdmin,
+                    TransportImageAdmin, TravelRequestAdmin, TrekkingAdmin, TrekkingImageAdmin,
+                    TrekkingProgramAdmin)
 
 
 async def upload_image(request: Request):
@@ -92,6 +93,7 @@ def setup_admin(auth_app: FastAPI):
     for view in (
         TravelRequestAdmin,
         TourAdmin,
+        TourReviewAdmin,
         TourCategoryAdmin,
         TourProgramAdmin,
         TourImageAdmin,

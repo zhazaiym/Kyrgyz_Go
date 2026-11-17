@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from mysite.database.db import SessionLocal
-from mysite.database.models import Tour
+from mysite.database.models import RequestStatusChoices, Tour, TravelRequest
 from mysite.database.tour_review_models import TourReview
 
 
@@ -14,6 +14,27 @@ def create_tour():
         db.add(tour)
         db.commit()
         return tour.id, tour.title
+
+
+def finish_trip(client, headers, tour_id, status=RequestStatusChoices.completed):
+    client_id = client.get('/auth/me', headers=headers).json()['client_id']
+    with SessionLocal() as db:
+        db.add(
+            TravelRequest(
+                client_id=client_id,
+                name='Trip',
+                phone='+996700000000',
+                status=status,
+                selected_services=[{'kind': 'tour', 'id': tour_id, 'name': 'Tour'}],
+            )
+        )
+        db.commit()
+
+
+def publish(review_id):
+    with SessionLocal() as db:
+        db.get(TourReview, review_id).status = 'published'
+        db.commit()
 
 
 def register_review_client(client):
@@ -30,18 +51,22 @@ def test_reviews_are_public_unique_and_owner_deletable(client, customer_headers)
     url = f'/tours/{tour_id}/reviews/'
     assert client.get(url).status_code == 200
     assert client.post(url, json={'rating': 5, 'text': 'No login'}).status_code == 401
+    finish_trip(client, customer_headers, tour_id)
 
     created = client.post(
         url, headers=customer_headers, json={'rating': 5, 'text': 'Wonderful trip'}
     )
     assert created.status_code == 201, created.text
     review_id = created.json()['id']
-    assert set(created.json()) == {'id', 'display_name', 'rating', 'text', 'created_at'}
+    assert set(created.json()) == {'id', 'display_name', 'rating', 'text', 'status', 'created_at'}
+    assert created.json()['status'] == 'pending'
     assert created.json()['rating'] == 5
     assert created.json()['text'] == 'Wonderful trip'
     assert created.json()['display_name'] == 'catalogue_customer'
     assert 'email' not in created.json()
 
+    assert client.get(url).json() == []
+    publish(review_id)
     assert client.get(url).json()[0]['id'] == review_id
     assert (
         client.post(url, headers=customer_headers, json={'rating': 4, 'text': 'Second'}).status_code
@@ -49,6 +74,7 @@ def test_reviews_are_public_unique_and_owner_deletable(client, customer_headers)
     )
 
     other_headers = register_review_client(client)
+    finish_trip(client, other_headers, tour_id)
     other_review = client.post(url, headers=other_headers, json={'rating': 3, 'text': 'Good'})
     assert other_review.status_code == 201, other_review.text
     assert (
@@ -89,11 +115,19 @@ def test_tour_cards_include_review_aggregates(client, customer_headers):
     assert empty['average_rating'] is None
     assert empty['review_count'] == 0
 
+    finish_trip(client, customer_headers, tour_id)
     first = client.post(url, headers=customer_headers, json={'rating': 5, 'text': 'Excellent'})
     assert first.status_code == 201
     second_headers = register_review_client(client)
+    finish_trip(client, second_headers, tour_id)
     second = client.post(url, headers=second_headers, json={'rating': 4, 'text': 'Very good'})
     assert second.status_code == 201
+    third_headers = register_review_client(client)
+    finish_trip(client, third_headers, tour_id)
+    pending = client.post(url, headers=third_headers, json={'rating': 1, 'text': 'Unchecked'})
+    assert pending.status_code == 201
+    publish(first.json()['id'])
+    publish(second.json()['id'])
 
     rated = next(
         row
@@ -128,3 +162,20 @@ def test_database_rejects_duplicate_tour_review(client, customer_headers):
         )
         with pytest.raises(IntegrityError):
             db.commit()
+
+
+@pytest.mark.parametrize(
+    'trip', [None, 'other tour', RequestStatusChoices.in_progress, RequestStatusChoices.cancelled]
+)
+def test_review_needs_a_completed_trip_on_this_tour(client, trip):
+    tour_id, _ = create_tour()
+    headers = register_review_client(client)
+    if trip == 'other tour':
+        finish_trip(client, headers, create_tour()[0])
+    elif trip is not None:
+        finish_trip(client, headers, tour_id, trip)
+    response = client.post(
+        f'/tours/{tour_id}/reviews/', headers=headers, json={'rating': 5, 'text': 'Text'}
+    )
+    assert response.status_code == 403
+    assert response.json()['detail']['code'] == 'review_requires_trip'

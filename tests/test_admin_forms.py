@@ -85,3 +85,34 @@ def test_list_rows_have_labelled_actions(client):
         assert "Edit: 'Изменить запись'" not in client.get('/admin/faq/create').text
     finally:
         client.get('/admin/logout')
+
+
+def test_manager_publishes_a_review_from_the_admin(client):
+    from mysite.database.tour_review_models import TourReview
+    from tests.test_tour_reviews import create_tour, register_review_client
+
+    tour_id, _ = create_tour()
+    headers = register_review_client(client)
+    client_id = client.get('/auth/me', headers=headers).json()['client_id']
+    with SessionLocal() as db:
+        review = TourReview(
+            tour_id=tour_id, client_id=client_id, display_name='Guest', rating=4, text='Nice'
+        )
+        db.add(review)
+        db.commit()
+        identity = review.id
+    _owner(client)
+    try:
+        page = client.get('/admin/tour-review/list').text
+        assert 'Ждёт проверки' in page
+        saved = client.post(
+            f'/admin/tour-review/edit/{identity}',
+            data={'status': 'published', 'save': 'Save'},
+            follow_redirects=False,
+        )
+        assert saved.status_code in (302, 303), saved.text
+        with SessionLocal() as db:
+            assert db.get(TourReview, identity).status == 'published'
+        assert client.get(f'/tours/{tour_id}/reviews/').json()[0]['id'] == identity
+    finally:
+        client.get('/admin/logout')
