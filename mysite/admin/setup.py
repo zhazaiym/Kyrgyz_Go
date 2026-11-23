@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse
 from mysite.admin.authentication import AdminAuthBackend
 from mysite.admin.overview import DEFAULT_PERIOD, build_overview
 from mysite.admin.realtime import admin_requests_websocket
+from mysite.admin.visibility import add_switch, shown_on_site, visibility_endpoint
 from mysite.api.media import save_upload
 from mysite.api.video_media import save_video_upload
 from mysite.database.db import engine
@@ -119,5 +120,10 @@ def setup_admin(auth_app: FastAPI):
         AdminAdmin,
         AdminSessionAdmin,
     ):
+        if shown_on_site(view):
+            add_switch(view)
         admin.add_view(view)
+    admin.admin.router.add_route(
+        '/{identity}/visibility/{pk}', visibility_endpoint(admin), methods=['POST']
+    )
     return admin
