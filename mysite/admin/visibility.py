@@ -19,11 +19,10 @@ def shown_on_site(view):
 
 
 def switch(model, _attribute):
-    checked = ' checked' if model.is_active else ''
     return Markup(
         '<input type="checkbox" class="form-check-input kt-visibility" role="switch"'
-        f' aria-label="Показывать на сайте" data-pk="{int(model.id)}"{checked}>'
-    )
+        ' aria-label="Показывать на сайте" data-pk="{}"{}>'
+    ).format(model.id, Markup(' checked') if model.is_active else '')
 
 
 def add_switch(view):
