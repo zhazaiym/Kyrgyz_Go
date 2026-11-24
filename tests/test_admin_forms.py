@@ -122,3 +122,41 @@ def test_panel_has_countries_selections_and_admin_passwords(panel):
     for path in ('/admin/country/list', '/admin/country/create', '/admin/travel-selection/list'):
         assert panel.get(path).status_code == 200, path
     assert 'name="password"' in panel.get('/admin/admin/create').text
+
+
+def test_list_switch_shows_and_hides_a_record_on_the_site(panel, seed, customer_headers):
+    from mysite.database.models import Tour
+
+    tour_id = seed(Tour, title='Switch probe', price=10)
+    page = panel.get('/admin/tour/list')
+    assert f'data-pk="{tour_id}"' in page.text and 'kt-visibility' in page.text
+    origin = {'origin': 'http://testserver'}
+    hidden = panel.post(
+        f'/admin/tour/visibility/{tour_id}', json={'is_active': False}, headers=origin
+    )
+    assert hidden.status_code == 200 and hidden.json() == {'is_active': False}
+    assert panel.get(f'/tours/{tour_id}/', headers=customer_headers).status_code == 404
+    shown = panel.post(
+        f'/admin/tour/visibility/{tour_id}', json={'is_active': True}, headers=origin
+    )
+    assert shown.json() == {'is_active': True}
+    assert panel.get(f'/tours/{tour_id}/', headers=customer_headers).status_code == 200
+    assert (
+        panel.post(
+            '/admin/admin/visibility/1', json={'is_active': False}, headers=origin
+        ).status_code
+        == 404
+    )
+    assert (
+        panel.post(
+            f'/admin/tour/visibility/{tour_id}', json={'is_active': 'no'}, headers=origin
+        ).status_code
+        == 400
+    )
+    panel.get('/admin/logout')
+    assert (
+        panel.post(
+            f'/admin/tour/visibility/{tour_id}', json={'is_active': False}, headers=origin
+        ).status_code
+        == 403
+    )
